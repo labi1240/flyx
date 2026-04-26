@@ -767,7 +767,7 @@ async function directExtractWithFallback(
   // Only Flixer is active for movies/TV until new sources are added
   const providerOrder = isAnime
     ? ['animekai', 'hianime', 'flixer']
-    : ['flixer', 'primesrc', 'vidsrc', 'multi-embed'];
+    : ['flixer'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
 

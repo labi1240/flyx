@@ -12,10 +12,11 @@ import styles from './WatchPage.module.css';
 function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
   // Already proxied — don't double-wrap
+  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
-      sourceUrl.includes('/stream/')) {
+      sourceUrl.includes('/primesrc/')) {
     return sourceUrl;
   }
   // Only proxy if the source says it needs it (or it's a known CDN URL)
@@ -403,19 +404,19 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { vidsrc: true, flixer: true, '1movies': false, uflix: false, animekai: true, hianime: true, primesrc: true, 'multi-embed': true };
+      let providerAvailability = { vidsrc: false, flixer: true, '1movies': false, uflix: false, animekai: true, hianime: true, primesrc: false, 'multi-embed': false };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
         providerAvailability = {
-          vidsrc: providerData.providers?.vidsrc?.enabled ?? true,
+          vidsrc: false,
           flixer: providerData.providers?.flixer?.enabled ?? true,
           '1movies': false,
           uflix: false,
           animekai: providerData.providers?.animekai?.enabled ?? true,
           hianime: providerData.providers?.hianime?.enabled ?? true,
-          primesrc: providerData.providers?.primesrc?.enabled ?? true,
-          'multi-embed': providerData.providers?.['multi-embed']?.enabled ?? true,
+          primesrc: false,
+          'multi-embed': false,
         };
       } catch (e) {
         console.warn('[WatchPage] Failed to fetch provider availability, using defaults');
@@ -433,7 +434,7 @@ function WatchContent() {
       const animeOnlyProviders = ['animekai', 'hianime'];
       const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc'> = isAnime
         ? ['hianime', 'animekai', 'flixer']
-        : ['flixer', 'primesrc', 'vidsrc'];
+        : ['flixer'];
 
       // For ANIME content: always put HiAnime + AnimeKai first (sub/dub toggle needs them)
       if (isAnime) {

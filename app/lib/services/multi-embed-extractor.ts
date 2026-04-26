@@ -316,4 +316,4 @@ export const MULTI_EMBED_SOURCES_LIST = HEXA_SERVERS.map(s => ({
  * Note: Most servers require JS execution for full m3u8 extraction.
  * Direct HTML scraping may only work for some servers.
  */
-export const MULTI_EMBED_ENABLED = true;
+export const MULTI_EMBED_ENABLED = false;

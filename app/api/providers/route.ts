@@ -12,18 +12,15 @@
 import { NextResponse } from 'next/server';
 import { ANIMEKAI_ENABLED } from '@/app/lib/services/animekai-extractor';
 import { FLIXER_ENABLED } from '@/app/lib/services/flixer-extractor';
-import { VIDSRC_ENABLED } from '@/app/lib/services/vidsrc-extractor';
-import { PRIMESRC_ENABLED } from '@/app/lib/services/primesrc-extractor';
-import { MULTI_EMBED_ENABLED } from '@/app/lib/services/multi-embed-extractor';
 
 export async function GET() {
   return NextResponse.json({
     providers: {
       primesrc: {
-        enabled: PRIMESRC_ENABLED,
+        enabled: false,
         name: 'PrimeSrc',
         primary: false,
-        description: 'Multi-server streaming via CF Worker (Turnstile-gated)',
+        description: 'Disabled',
       },
       flixer: {
         enabled: FLIXER_ENABLED,
@@ -35,31 +32,31 @@ export async function GET() {
         enabled: false,
         name: 'Uflix',
         primary: false,
-        description: 'Disabled — pending new sources',
+        description: 'Disabled',
       },
       hexa: {
         enabled: false,
         name: 'Hexa',
         primary: false,
-        description: 'Alias for Flixer — use Flixer instead',
+        description: 'Disabled',
       },
       vidsrc: {
-        enabled: VIDSRC_ENABLED,
+        enabled: false,
         name: 'VidSrc',
         primary: false,
-        description: '2embed.stream API — direct m3u8 extraction',
+        description: 'Disabled',
       },
       'multi-embed': {
-        enabled: MULTI_EMBED_ENABLED,
+        enabled: false,
         name: 'MultiEmbed',
         primary: false,
-        description: 'Hexawatch aggregator — multiple embed providers',
+        description: 'Disabled',
       },
       '1movies': {
         enabled: false,
         name: '1movies',
         primary: false,
-        description: 'Disabled — pending new sources',
+        description: 'Disabled',
       },
       animekai: {
         enabled: ANIMEKAI_ENABLED,

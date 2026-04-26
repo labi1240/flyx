@@ -110,10 +110,11 @@ interface VideoPlayerProps {
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
   // Already proxied — don't double-wrap
-  // Note: /animekai? (not /animekai/) is the proxy URL pattern from the API route
+  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
-      sourceUrl.includes('/hianime/') || sourceUrl.includes('/vidsrc/') ||
-      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/stream/')) {
+      sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
+      sourceUrl.includes('/vidsrc/') ||
+      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/')) {
     return sourceUrl;
   }
 
@@ -969,7 +970,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         ? (isMalDirect
           ? ['hianime', 'animekai']
           : ['hianime', 'animekai', 'flixer'])
-        : ['flixer', 'primesrc', 'vidsrc', 'multi-embed'];
+        : ['flixer'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
