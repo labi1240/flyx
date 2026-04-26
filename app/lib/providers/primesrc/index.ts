@@ -24,7 +24,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class PrimeSrcProvider implements Provider {
   readonly name = 'primesrc';
-  readonly priority = 5; // Primary provider — no RPI needed, pure CF Worker
+  readonly priority = 15; // After Flixer — needs Turnstile token which may not be available server-side
   readonly enabled = PRIMESRC_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {

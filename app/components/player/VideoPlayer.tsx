@@ -969,7 +969,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         ? (isMalDirect
           ? ['hianime', 'animekai']
           : ['hianime', 'animekai', 'flixer'])
-        : ['flixer'];
+        : ['flixer', 'primesrc', 'vidsrc', 'multi-embed'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
