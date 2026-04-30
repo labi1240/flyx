@@ -12,7 +12,7 @@ A privacy-first streaming platform built with Next.js 16, featuring movies, TV s
 ## Features
 
 - **Movies & TV Shows** — Browse trending content, search, and watch with multiple video providers
-- **Anime** — Hybrid TMDB + MAL system with dual providers (AnimeKai + HiAnime), sub/dub toggle, automatic episode mapping
+- **Anime** — Hybrid TMDB + MAL system with dual providers (HiAnime + AnimeKai), sub/dub toggle, automatic episode mapping
 - **Live TV** — 850+ channels via DLHD with PoW authentication and server-side decryption
 - **Live Sports** — VIPRow integration with Casthill token auth and manifest rewriting
 - **PPV Events** — Pay-per-view streaming through residential proxy
@@ -31,10 +31,10 @@ All streaming sources are managed through a unified Provider Registry with prior
 | # | Provider | Content | Method | Priority | Status |
 |---|----------|---------|--------|----------|--------|
 | 1 | PrimeSrc | Movies, TV | PrimeVid extraction via CF Worker | 10 | ✅ Enabled |
-| 2 | Flixer | Movies, TV | WASM decryption via Hexa API | 10 | ✅ Enabled |
+| 2 | Flixer | Movies, TV | WASM sign + decrypt via CF Worker (hexa.su) | 10 | ✅ Enabled |
 | 3 | Uflix | Movies, TV | Multi-embed aggregator (5 servers) | 20 | ✅ Enabled |
-| 4 | AnimeKai | Anime | 183-table substitution cipher | 30 | ✅ Enabled |
-| 5 | HiAnime | Anime | MegaCloud TLS fingerprint bypass | 35 | ✅ Enabled |
+| 4 | HiAnime | Anime | MegaCloud extraction via CF Worker (primary) | 30 | ✅ Enabled |
+| 5 | AnimeKai | Anime | Native crypto extraction (secondary) | 35 | ✅ Enabled |
 | 6 | VidSrc | Movies, TV | Multi-embed scraping | 40 | ✅ Enabled |
 | 7 | MultiEmbed | Movies, TV | Direct HTML scraping | 50 | ❌ Disabled |
 | 8 | DLHD | Live TV | PoW auth + AES segment decryption | 100 | ✅ Enabled |

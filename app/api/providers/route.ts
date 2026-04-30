@@ -4,7 +4,8 @@
  *
  * Provider Priority:
  * - Flixer: ONLY provider for movies/TV (WASM-based extraction)
- * - AnimeKai/HiAnime: Anime-only providers (auto-detected via MAL ID)
+ * - HiAnime: Primary anime provider (MegaCloud extraction via CF Worker)
+ * - AnimeKai: Secondary anime provider (native crypto extraction)
  *
  * All other movie/TV providers are disabled until new sources are added.
  */
@@ -58,6 +59,13 @@ export async function GET() {
         primary: false,
         animeOnly: true,
         description: 'Specialized anime streaming with Japanese audio',
+      },
+      hianime: {
+        enabled: true,
+        name: 'HiAnime',
+        primary: false,
+        animeOnly: true,
+        description: 'Primary anime provider (MegaCloud extraction)',
       },
     },
   });

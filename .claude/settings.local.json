@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(scp rpi-proxy/src/routes/dlhd.ts rpi-proxy/src/routes/stream-proxy.ts vynx@vynx-pi.local:~/rpi-proxy/src/routes/)",
+      "Bash(scp rpi-proxy/src/services/domain-allowlist.ts vynx@vynx-pi.local:~/rpi-proxy/src/services/)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(echo \"---EXIT: $?---\")",
+      "Bash(timeout 300 npx next build)",
+      "Bash(npx next *)",
+      "Bash(echo \"Started PID $!\")",
+      "Bash(awk '/<td class=\"episode-number nowrap\" data-raw=\"1\"/,/<\\\\/tr>/' /tmp/mal-ep.html)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(grep -oE \"\\(Popular|Airing|Movie\\)[^<]{0,40}\" /tmp/anime.html)",
+      "Bash(grep -oE \"https://s4\\\\.anilist\\\\.co/[^\\\\\\\\\\\\\"]+\" /tmp/anime.html)",
+      "Bash(grep -oE 'title\":\"[^\"]{1,50}\"' /tmp/anime.html)",
+      "Bash(grep -oE \"Error[^<]{0,100}|error[^<]{0,100}\" /tmp/anime.html)",
+      "Bash(grep -oE '<!--\\\\$.*?-->|B:[0-9]+|/\\\\$' /tmp/anime.html)",
+      "Bash(awk '/<!--\\\\$\\\\?-->/{count++} END{print \"placeholder chunks:\", count}' /tmp/anime.html)",
+      "Bash(grep -oE '.{80}status.{0,20}404.{80}' /tmp/anime.html)",
+      "Bash(grep -oE '.{80}status\\\\\\\\\":404.{80}' /tmp/search.html)",
+      "Bash(echo \"EXIT $?\")",
+      "Bash(npm run *)",
+      "Bash(npx opennextjs-cloudflare *)",
+      "Bash(bun --version)",
+      "Bash(rm -rf .open-next .wrangler/tmp)",
+      "Bash(bun run *)",
+      "Bash(bunx opennextjs-cloudflare *)",
+      "Bash(bunx wrangler *)",
+      "Bash(bun add *)",
+      "Bash(ls .open-next/server-functions/default/handler*.js)",
+      "Bash(grep -l \"handler32\" *.js)",
+      "Bash(grep -l \"Uploaded flyx\" \"C:/Users/Nicks/.wrangler/logs/\"*.log)",
+      "Bash(grep -nE \"^\\\\s*[a-z]+\\\\[[^]]+\\\\]\\(:|[^{,]|$\\)|^\\\\s*:\\(root|focus|hover|active|target\\)\" \"C:/Users/Nicks/Desktop/Flyx-main/app/components/player/VideoPlayer.module.css\")",
+      "Bash(npm view *)",
+      "Bash(npx wrangler@latest deploy --env=\"\")",
+      "Bash(rm -rf .wrangler/tmp)",
+      "Bash(bunx wrangler@4.83.0 deploy --env=\"\")"
+    ]
+  }
+}

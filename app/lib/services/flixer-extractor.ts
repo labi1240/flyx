@@ -1,18 +1,21 @@
 /**
- * Hexa.su Extractor — Browser-Direct Pattern
+ * Hexa/Flixer Extractor — CF Worker Pattern
  *
- * Like DLHD whitelist: the BROWSER calls hexa.su API directly so hexa sees
- * the user's residential IP (no captcha). The CF Worker only provides:
- *   1. /flixer/sign  — signed auth headers (WASM keygen + HMAC)
- *   2. /flixer/decrypt — decrypts the encrypted API response (WASM)
+ * Uses the CF Worker /flixer/extract-all endpoint which handles everything:
+ *   1. WASM keygen + HMAC signing
+ *   2. API call to hexa.su (from CF Worker, which has proper IP handling)
+ *   3. Decryption of encrypted response
+ *   4. Returns parsed sources with stream URLs
  *
- * Flow:
- *   Browser → CF Worker /sign → get headers
- *   Browser → hexa.su API directly (user IP!) → encrypted response
- *   Browser → CF Worker /decrypt → parsed sources with URLs
+ * This works from both browser AND server contexts because the CF Worker
+ * does all the heavy lifting. The previous browser-direct pattern failed
+ * server-side because hexa.su blocks datacenter IPs.
+ *
+ * For browser-direct extraction (sign → direct fetch → decrypt), see
+ * flixer-client-extractor.ts which is used by VideoPlayer.tsx.
  */
 
-import { getFlixerSignUrl, getFlixerDecryptUrl } from '../proxy-config';
+import { cfFetch } from '../utils/cf-fetch';
 
 interface StreamSource {
   quality: string;
@@ -47,6 +50,13 @@ const SERVER_NAMES: Record<string, string> = {
   yankee: 'Ymir', zulu: 'Zeus',
 };
 
+function getCfWorkerBaseUrl(): string {
+  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
+    process.env.CF_STREAM_PROXY_URL ||
+    'https://media-proxy.vynx.workers.dev/stream';
+  return cfProxyUrl.replace(/\/stream\/?$/, '');
+}
+
 async function fetchSubtitles(
   tmdbId: string,
   type: 'movie' | 'tv',
@@ -77,58 +87,16 @@ async function fetchSubtitles(
 }
 
 /**
- * Sign + fetch + decrypt a single hexa API call.
- * Browser calls hexa.su directly — user's IP is visible, no captcha.
- */
-async function hexaDirectFetch(
-  tmdbId: string,
-  type: 'movie' | 'tv',
-  opts?: { server?: string; warmup?: boolean; season?: number; episode?: number },
-): Promise<{ encrypted: string; apiUrl: string }> {
-  // Step 1: Get signed headers from CF Worker
-  const signUrl = getFlixerSignUrl(tmdbId, type, opts);
-  const signRes = await fetch(signUrl, { signal: AbortSignal.timeout(8000) });
-  if (!signRes.ok) throw new Error(`Sign failed: ${signRes.status}`);
-  const signData = await signRes.json() as { success: boolean; url: string; headers: Record<string, string>; error?: string };
-  if (!signData.success) throw new Error(signData.error || 'Sign failed');
-
-  // Step 2: Browser fetches hexa.su API DIRECTLY (user's residential IP!)
-  const apiRes = await fetch(signData.url, {
-    headers: signData.headers,
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!apiRes.ok) {
-    const errText = await apiRes.text().catch(() => '');
-    throw new Error(`Hexa API ${apiRes.status}: ${errText.substring(0, 100)}`);
-  }
-
-  return { encrypted: await apiRes.text(), apiUrl: signData.url };
-}
-
-async function hexaDecrypt(encrypted: string): Promise<any> {
-  const decryptUrl = getFlixerDecryptUrl();
-  const res = await fetch(decryptUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ encrypted }),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Decrypt failed: ${res.status}`);
-  const data = await res.json() as { success: boolean; sources: any[]; servers: string[]; parsed: any; error?: string };
-  if (!data.success) throw new Error(data.error || 'Decrypt failed');
-  return data;
-}
-
-/**
- * Extract streams from Hexa — browser-direct pattern.
- * No PoW captcha needed because hexa sees the user's real IP.
+ * Extract streams from Hexa via CF Worker /flixer/extract-all.
+ * The CF Worker handles WASM keygen, API calls, and decryption.
+ * Works from both browser and server contexts.
  */
 export async function extractFlixerStreams(
   tmdbId: string,
   type: 'movie' | 'tv',
   season?: number,
   episode?: number,
-  _capToken?: string | null, // kept for API compat, not used in browser-direct
+  _capToken?: string | null,
 ): Promise<ExtractionResult> {
   console.log(`[Hexa] Extracting ${type} ${tmdbId}${type === 'tv' ? ` S${season}E${episode}` : ''}`);
 
@@ -140,60 +108,62 @@ export async function extractFlixerStreams(
   }
 
   const subtitlePromise = fetchSubtitles(tmdbId, type, season, episode);
-  const seasonNum = season;
-  const episodeNum = episode;
 
   try {
-    // Step 1: Warm-up (browser-direct)
-    const warmupResult = await hexaDirectFetch(tmdbId, type, {
-      warmup: true, season: seasonNum, episode: episodeNum,
+    const baseUrl = getCfWorkerBaseUrl();
+    const params = new URLSearchParams({ tmdbId, type });
+    if (type === 'tv' && season != null) params.set('season', season.toString());
+    if (type === 'tv' && episode != null) params.set('episode', episode.toString());
+
+    const extractUrl = `${baseUrl}/flixer/extract-all?${params}`;
+    console.log(`[Hexa] Calling CF Worker: ${extractUrl}`);
+
+    // Use cfFetch to route through RPI when on CF Pages
+    const res = await cfFetch(extractUrl, {
+      signal: AbortSignal.timeout(30000),
     });
-    const warmupData = await hexaDecrypt(warmupResult.encrypted);
-    const servers = warmupData.servers?.length > 0 && warmupData.servers.length < 26
-      ? warmupData.servers
-      : Object.keys(SERVER_NAMES);
 
-    console.log(`[Hexa] ${servers.length} servers available: ${servers.slice(0, 6).join(', ')}`);
-
-    // Step 2: Fetch each server (browser-direct, sequential)
-    const sources: StreamSource[] = [];
-    for (const server of servers) {
-      try {
-        const result = await hexaDirectFetch(tmdbId, type, {
-          server, season: seasonNum, episode: episodeNum,
-        });
-        const decrypted = await hexaDecrypt(result.encrypted);
-
-        // Find URL for this server
-        let url: string | null = null;
-        if (decrypted.sources?.length > 0) {
-          const src = decrypted.sources.find((s: any) => s.server === server) || decrypted.sources[0];
-          url = src?.url || null;
-        }
-        if (!url && decrypted.parsed) {
-          url = decrypted.parsed.url || decrypted.parsed.file || decrypted.parsed.stream || null;
-        }
-
-        if (url) {
-          sources.push({
-            quality: 'auto',
-            title: `Flixer ${SERVER_NAMES[server] || server}`,
-            url,
-            type: 'hls',
-            referer: 'https://hexa.su/',
-            requiresSegmentProxy: true,
-            status: 'working',
-            language: 'en',
-            server,
-          });
-          console.log(`[Hexa] ${server}: URL found`);
-        }
-      } catch (e) {
-        console.log(`[Hexa] ${server}: ${e instanceof Error ? e.message : e}`);
-      }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`extract-all ${res.status}: ${errText.substring(0, 100)}`);
     }
 
-    console.log(`[Hexa] ${sources.length}/${servers.length} servers returned URLs`);
+    const data = await res.json() as {
+      success: boolean;
+      sources?: Array<{
+        quality: string; title: string; url: string; type: string;
+        referer: string; requiresSegmentProxy: boolean; status: string;
+        language: string; server: string;
+      }>;
+      error?: string;
+    };
+
+    if (!data.success || !data.sources?.length) {
+      console.warn(`[Hexa] extract-all: ${data.error || 'no sources'}`);
+      const subtitles = await subtitlePromise;
+      return {
+        success: false,
+        sources: [],
+        subtitles: subtitles.length > 0 ? subtitles : undefined,
+        error: data.error || 'No sources found',
+      };
+    }
+
+    const sources: StreamSource[] = data.sources
+      .filter(s => s.url && s.status === 'working')
+      .map(s => ({
+        quality: s.quality || 'auto',
+        title: s.title || `Flixer ${SERVER_NAMES[s.server] || s.server || 'Unknown'}`,
+        url: s.url,
+        type: (s.type || 'hls') as 'hls' | 'mp4',
+        referer: s.referer || 'https://hexa.su/',
+        requiresSegmentProxy: true,
+        status: 'working' as const,
+        language: s.language || 'en',
+        server: s.server,
+      }));
+
+    console.log(`[Hexa] ${sources.length} working sources from CF Worker`);
 
     const subtitles = await subtitlePromise;
     return {
@@ -208,7 +178,7 @@ export async function extractFlixerStreams(
 }
 
 /**
- * Fetch a specific Hexa source by display name (browser-direct).
+ * Fetch a specific Hexa source by server name via CF Worker.
  */
 export async function fetchFlixerSourceByName(
   sourceName: string,
@@ -224,37 +194,33 @@ export async function fetchFlixerSourceByName(
   const server = serverEntry ? serverEntry[0] : 'alpha';
 
   try {
-    // Warm-up first
-    const warmup = await hexaDirectFetch(tmdbId, type, {
-      warmup: true, season, episode,
+    const baseUrl = getCfWorkerBaseUrl();
+    const params = new URLSearchParams({ tmdbId, type, server });
+    if (type === 'tv' && season != null) params.set('season', season.toString());
+    if (type === 'tv' && episode != null) params.set('episode', episode.toString());
+
+    const res = await cfFetch(`${baseUrl}/flixer/extract?${params}`, {
+      signal: AbortSignal.timeout(15000),
     });
-    await hexaDecrypt(warmup.encrypted);
 
-    // Then fetch specific server
-    const result = await hexaDirectFetch(tmdbId, type, { server, season, episode });
-    const decrypted = await hexaDecrypt(result.encrypted);
+    if (!res.ok) return null;
+    const data = await res.json() as { success: boolean; sources?: Array<any> };
+    if (!data.success || !data.sources?.length) return null;
 
-    let url: string | null = null;
-    if (decrypted.sources?.length > 0) {
-      const src = decrypted.sources.find((s: any) => s.server === server) || decrypted.sources[0];
-      url = src?.url || null;
-    }
-
-    if (url) {
-      return {
-        quality: 'auto',
-        title: `Flixer ${SERVER_NAMES[server] || server}`,
-        url,
-        type: 'hls',
-        referer: 'https://hexa.su/',
-        requiresSegmentProxy: true,
-        status: 'working',
-        language: 'en',
-        server,
-      };
-    }
+    const s = data.sources[0];
+    return {
+      quality: s.quality || 'auto',
+      title: s.title || `Flixer ${SERVER_NAMES[server] || server}`,
+      url: s.url,
+      type: (s.type || 'hls') as 'hls' | 'mp4',
+      referer: s.referer || 'https://hexa.su/',
+      requiresSegmentProxy: true,
+      status: 'working',
+      language: s.language || 'en',
+      server: s.server || server,
+    };
   } catch (e) {
     console.error('[Hexa] fetchByName error:', e);
+    return null;
   }
-  return null;
 }

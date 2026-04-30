@@ -46,7 +46,7 @@ bun test security-research/primesrc/e2e.test.ts --timeout 60000
 
 | Provider | Test Type | What It Tests |
 |----------|-----------|---------------|
-| Flixer | Full pipeline | CF Worker sign → hexa.su API → decrypt → stream URL |
+| Flixer | Full pipeline | CF Worker /flixer/extract-all → WASM sign + API + decrypt → stream URLs |
 | Hexa | Server availability | All 8 embed servers reachability + m3u8 extraction |
 | 1movies | Encryption + reachability | AES/XOR/substitution primitives + site status |
 | Tapemotion | Reconnaissance | Protection detection, URL/API pattern probing |

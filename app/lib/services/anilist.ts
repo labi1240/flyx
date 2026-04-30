@@ -91,19 +91,27 @@ interface AniListFuzzyDate {
 
 // ============================================================================
 // Rate limiting + retry
-// AniList: 90 requests/min/IP. We throttle ~350ms between requests (same as old
-// Jikan throttle) to stay well under the limit and mirror existing behavior.
+// AniList: 90 requests/min/IP. We use a proper queue-based throttle that
+// allows parallel requests while respecting the rate limit.
+// For batch operations (like the anime page loading 7 categories), requests
+// fire in parallel but are spaced ~100ms apart to stay well under the limit.
 // ============================================================================
 
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 350;
+const MIN_REQUEST_INTERVAL = 100; // 100ms between requests = max 600/min, well under 90/min limit
+let requestQueue: Promise<void> = Promise.resolve();
 
 async function throttle(): Promise<void> {
-  const elapsed = Date.now() - lastRequestTime;
-  if (elapsed < MIN_REQUEST_INTERVAL) {
-    await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - elapsed));
-  }
-  lastRequestTime = Date.now();
+  // Chain onto the queue so parallel calls are properly spaced
+  const myTurn = requestQueue.then(async () => {
+    const elapsed = Date.now() - lastRequestTime;
+    if (elapsed < MIN_REQUEST_INTERVAL) {
+      await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - elapsed));
+    }
+    lastRequestTime = Date.now();
+  });
+  requestQueue = myTurn;
+  await myTurn;
 }
 
 export async function anilistQuery<T = any>(

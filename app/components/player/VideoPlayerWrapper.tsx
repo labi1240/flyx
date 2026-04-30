@@ -111,6 +111,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
         '1movies': providersData.providers?.['1movies']?.enabled ?? true,
         animekai: providersData.providers?.animekai?.enabled ?? true,
+        hianime: providersData.providers?.hianime?.enabled ?? true,
       };
 
       // Check if anime content
@@ -137,6 +138,9 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       if (isAnime && availability.animekai && !disabledProviders.has('animekai')) {
         providerOrder.push('animekai');
       }
+      if (isAnime && availability.hianime && !disabledProviders.has('hianime')) {
+        providerOrder.push('hianime');
+      }
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
@@ -149,7 +153,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Add any remaining available providers as fallback
       const allProviders = isAnime
-        ? ['animekai', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies']
+        ? ['hianime', 'animekai', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies']
         : ['primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
@@ -160,21 +164,117 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Try each provider
       for (const provider of providerOrder) {
-        const params = new URLSearchParams({
-          tmdbId,
-          type: mediaType,
-          provider,
-        });
-
-        if (mediaType === 'tv' && season && episode) {
-          params.append('season', season.toString());
-          params.append('episode', episode.toString());
-        }
-        
-        if (malId) params.append('malId', malId.toString());
-        if (malTitle) params.append('malTitle', malTitle);
-
         try {
+          // FLIXER: Use browser-direct extraction via CF Worker (same as VideoPlayer.tsx)
+          // The server-side /api/stream/extract route can't call hexa.su directly
+          // because hexa.su blocks datacenter IPs. The CF Worker /flixer/extract-all
+          // handles everything server-side (WASM keygen, API call, decrypt).
+          if (provider === 'flixer') {
+            const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
+            const flixerSources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
+            if (flixerSources.length > 0) {
+              const sources = flixerSources;
+              let sourceUrl = sources[0].url;
+              
+              // Apply proxy — Flixer CDN blocks non-whitelisted origins
+              if (sources[0].requiresSegmentProxy) {
+                const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') || 
+                  sourceUrl.includes('/stream/') ||
+                  sourceUrl.includes('/animekai') ||
+                  sourceUrl.includes('/flixer/stream');
+                
+                if (!isAlreadyProxied) {
+                  sourceUrl = getFlixerStreamProxyUrl(sourceUrl);
+                }
+              }
+
+              setStreamData({
+                url: sourceUrl,
+                sources: sources.map((s: any) => ({
+                  title: s.title || s.quality || 'Source',
+                  url: s.url,
+                  quality: s.quality,
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                })),
+                currentIndex: 0,
+                provider: 'flixer',
+              });
+              setIsLoading(false);
+              return;
+            }
+            continue;
+          }
+
+          // ANIME PROVIDERS: Use dedicated /api/anime/stream when malId is available
+          if (malId && (provider === 'animekai' || provider === 'hianime')) {
+            const animeParams = new URLSearchParams({
+              malId: malId.toString(),
+              provider,
+            });
+            if (mediaType === 'tv' && episode) {
+              animeParams.append('episode', episode.toString());
+            }
+            
+            const response = await fetch(`/api/anime/stream?${animeParams}`, {
+              cache: 'no-store',
+            });
+            const data = await response.json();
+
+            if (data.success && data.sources && data.sources.length > 0) {
+              const sources = data.sources;
+              const actualProvider = data.provider || provider;
+              
+              let sourceUrl = sources[0].url;
+              
+              if (sources[0].requiresSegmentProxy) {
+                const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') || 
+                  sourceUrl.includes('/stream/') ||
+                  sourceUrl.includes('/animekai') ||
+                  sourceUrl.includes('/hianime') ||
+                  sourceUrl.includes('/flixer/stream');
+                
+                if (!isAlreadyProxied) {
+                  const targetUrl = sources[0].directUrl || sourceUrl;
+                  if (actualProvider === 'hianime') {
+                    sourceUrl = getHiAnimeStreamProxyUrl(targetUrl);
+                  } else if (actualProvider === 'animekai') {
+                    sourceUrl = getAnimeKaiProxyUrl(targetUrl);
+                  }
+                }
+              }
+
+              setStreamData({
+                url: sourceUrl,
+                sources: sources.map((s: any) => ({
+                  title: s.title || s.quality || 'Source',
+                  url: s.url,
+                  quality: s.quality,
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                })),
+                currentIndex: 0,
+                provider: actualProvider,
+              });
+              setIsLoading(false);
+              return;
+            }
+            continue;
+          }
+
+          // OTHER PROVIDERS: Use the generic extract API
+          const params = new URLSearchParams({
+            tmdbId,
+            type: mediaType,
+            provider,
+          });
+
+          if (mediaType === 'tv' && season && episode) {
+            params.append('season', season.toString());
+            params.append('episode', episode.toString());
+          }
+          
+          if (malId) params.append('malId', malId.toString());
+          if (malTitle) params.append('malTitle', malTitle);
+
           const response = await fetch(`/api/stream/extract?${params}`, {
             cache: 'no-store',
           });

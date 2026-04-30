@@ -1,25 +1,28 @@
 # Flixer (hexa.su) — Security & Anti-Scraping Research
 
 **Status:** ✅ Working  
-**Extractor:** `app/lib/services/flixer-extractor.ts`  
-**Last Updated:** 2026-03-19
+**Extractor:** `app/lib/services/flixer-extractor.ts` (server/CF Worker pattern)  
+**Client Extractor:** `app/lib/services/flixer-client-extractor.ts` (browser-direct pattern)  
+**Last Updated:** 2026-04-30
 
 ---
 
 ## Overview
 
-Flixer is the PRIMARY streaming provider. It uses hexa.su as its API backend. The extraction follows a "browser-direct" pattern where the user's browser calls hexa.su directly (so hexa sees a residential IP, not a datacenter IP), while a Cloudflare Worker handles signing and decryption.
+Flixer is the PRIMARY streaming provider. It uses hexa.su as its API backend. The main extractor uses a CF Worker pattern where the `/flixer/extract-all` endpoint handles the entire pipeline: WASM keygen, HMAC signing, API calls to hexa.su, and decryption. This works from both browser and server contexts.
+
+A separate browser-direct extractor (`flixer-client-extractor.ts`) is used by VideoPlayer.tsx for client-side extraction using the sign → direct fetch → decrypt pattern.
 
 ## Anti-Scraping Measures
 
 ### 1. WASM-Based Authentication
 - Auth headers are generated via a WASM module running on the CF Worker
-- The CF Worker endpoint `/flixer/sign` produces HMAC-signed headers
+- The CF Worker handles HMAC-signed header generation internally
 - Without valid signed headers, the API returns 403
 
 ### 2. Encrypted API Responses
 - hexa.su returns encrypted payloads
-- Decryption is handled by the CF Worker at `/flixer/decrypt`
+- Decryption is handled internally by the CF Worker
 - The WASM module contains the decryption keys/logic
 
 ### 3. Cap.js Proof-of-Work (PoW)
@@ -32,8 +35,8 @@ Flixer is the PRIMARY streaming provider. It uses hexa.su as its API backend. Th
 
 ### 4. IP-Based Restrictions
 - Datacenter IPs are blocked — requests must come from residential IPs
-- Browser-direct pattern ensures the user's real IP hits hexa.su
-- CF Worker only handles crypto operations, not the actual API call
+- The CF Worker has proper IP handling for making API calls
+- The browser-direct client extractor ensures the user's real IP hits hexa.su
 
 ### 5. Referer/Origin Validation
 - API expects `Referer: https://hexa.su/`
@@ -41,15 +44,27 @@ Flixer is the PRIMARY streaming provider. It uses hexa.su as its API backend. Th
 
 ## Current Bypass Strategy
 
+### Primary: CF Worker Pattern (flixer-extractor.ts)
+
+```
+Browser/Server → CF Worker /flixer/extract-all → (WASM sign + hexa.su API + decrypt) → parsed sources
+```
+
+- Single endpoint handles the full pipeline
+- Works from both browser and server contexts (SSR, API routes)
+- Uses `cfFetch` utility to route through RPI when on CF Pages
+- Also supports `/flixer/extract?server=X` for fetching a specific server
+
+### Secondary: Browser-Direct Pattern (flixer-client-extractor.ts)
+
 ```
 Browser → CF Worker /flixer/sign → get HMAC-signed headers
 Browser → hexa.su API directly (user's residential IP) → encrypted response
 Browser → CF Worker /flixer/decrypt → decrypted stream URLs
 ```
 
-- WASM keygen + HMAC signing on CF Worker
-- Browser makes the actual API call (residential IP)
-- CF Worker decrypts the response
+- Used by VideoPlayer.tsx for client-side extraction
+- Browser makes the actual API call (residential IP visible to hexa.su)
 
 ## Server Mapping
 
@@ -64,6 +79,7 @@ Flixer uses NATO phonetic alphabet codenames for servers:
 2. **Cap.js difficulty increase** — If they increase PoW difficulty (more challenges or harder target prefix), solve time increases.
 3. **Domain changes** — hexa.su could migrate domains.
 4. **Rate limiting** — No explicit rate limiting observed, but aggressive scraping could trigger blocks.
+5. **CF Worker IP blocking** — If hexa.su starts blocking CF Worker IPs, the primary pattern breaks. Fall back to browser-direct client extractor.
 
 ## Subtitles
 
@@ -72,8 +88,10 @@ Flixer uses NATO phonetic alphabet codenames for servers:
 
 ## What to Check When It Breaks
 
-- [ ] Is the CF Worker `/flixer/sign` endpoint returning valid headers?
+- [ ] Is the CF Worker `/flixer/extract-all` endpoint returning sources?
+- [ ] Is the CF Worker `/flixer/extract` endpoint working for single-server fetches?
 - [ ] Has the WASM module been updated? (check hexa.su JS bundle)
 - [ ] Is Cap.js PoW still solvable? (check challenge count/difficulty)
 - [ ] Has the API URL structure changed?
 - [ ] Are the server codenames still the same?
+- [ ] Is `cfFetch` routing correctly through RPI on CF Pages?
