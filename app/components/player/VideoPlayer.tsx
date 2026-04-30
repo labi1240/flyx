@@ -110,10 +110,11 @@ interface VideoPlayerProps {
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
   // Already proxied — don't double-wrap
-  // Note: /animekai? (not /animekai/) is the proxy URL pattern from the API route
+  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
-      sourceUrl.includes('/hianime/') || sourceUrl.includes('/vidsrc/') ||
-      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/stream/')) {
+      sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
+      sourceUrl.includes('/vidsrc/') ||
+      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/')) {
     return sourceUrl;
   }
 
@@ -1059,8 +1060,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
         const { providerName, sources } = winner;
 
-        // Pick best source — must have a URL (skip "unknown" status sources)
-        const workingIdx = sources.findIndex((s: any) => s.url && s.status !== 'unknown');
+        // Pick best source — prefer 'validated' status, then any with a URL
+        const validatedIdx = sources.findIndex((s: any) => s.url && s.status === 'validated');
+        const workingIdx = validatedIdx >= 0 ? validatedIdx : sources.findIndex((s: any) => s.url && s.status !== 'unknown');
         let selectedSource = sources[workingIdx >= 0 ? workingIdx : 0];
         let selectedIndex = workingIdx >= 0 ? workingIdx : 0;
 
@@ -1153,12 +1155,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       playbackStartTimeoutRef.current = null;
     }
     
-    // Auto-advance: if playback doesn't start within 10s, try next source in the list
+    // Auto-advance: if playback doesn't start within 5s, try next source in the list
     const startPlaybackTimeout = () => {
       playbackStartTimeoutRef.current = setTimeout(() => {
         if (playbackStartedRef.current) return; // Already playing, ignore
         
-        console.log(`[VideoPlayer] Source ${currentSourceIndex} didn't start within 10s, auto-advancing...`);
+        console.log(`[VideoPlayer] Source ${currentSourceIndex} didn't start within 5s, auto-advancing...`);
         
         // Save position before switching
         if (video.currentTime > 0 && pendingSeekTimeRef.current === null) {
@@ -1188,7 +1190,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           console.log('[VideoPlayer] No more sources in current provider, exhausted');
           // Let the existing error handling / provider fallback take over
         }
-      }, 10000);
+      }, 5000);
     };
     
     // Listen for the 'playing' event to cancel the timeout
@@ -1220,14 +1222,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           highBufferWatchdogPeriod: 2,
           nudgeOffset: 0.1,
           nudgeMaxRetry: 5, // Increase retry count
-          manifestLoadingTimeOut: 15000, // Increase timeout
-          manifestLoadingMaxRetry: 3,
-          manifestLoadingRetryDelay: 500,
-          levelLoadingTimeOut: 15000,
-          levelLoadingMaxRetry: 3,
-          fragLoadingTimeOut: 30000, // Increase fragment timeout for slow segments
-          fragLoadingMaxRetry: 5, // More retries for fragments
-          fragLoadingRetryDelay: 1000, // Wait longer between retries
+          manifestLoadingTimeOut: 10000,
+          manifestLoadingMaxRetry: 2,
+          manifestLoadingRetryDelay: 300,
+          levelLoadingTimeOut: 10000,
+          levelLoadingMaxRetry: 2,
+          fragLoadingTimeOut: 20000, // Segments can be large
+          fragLoadingMaxRetry: 4,
+          fragLoadingRetryDelay: 500,
           startLevel: -1, // Auto-select quality
           // ABR settings for better quality adaptation
           abrEwmaDefaultEstimate: 1000000, // 1 Mbps default estimate

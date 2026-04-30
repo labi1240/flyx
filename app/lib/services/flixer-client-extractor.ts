@@ -69,7 +69,13 @@ export async function extractFlixerClient(
   }
 
   const sources: FlixerSource[] = data.sources
-    .filter(s => s.url && s.status === 'working')
+    .filter(s => s.url && (s.status === 'working' || s.status === 'validated'))
+    .sort((a, b) => {
+      // Validated sources first
+      if (a.status === 'validated' && b.status !== 'validated') return -1;
+      if (b.status === 'validated' && a.status !== 'validated') return 1;
+      return 0;
+    })
     .map(s => ({
       quality: s.quality || 'auto',
       title: s.title,
@@ -77,7 +83,7 @@ export async function extractFlixerClient(
       type: (s.type || 'hls') as 'hls' | 'mp4',
       referer: s.referer || 'https://flixer.su/',
       requiresSegmentProxy: true, // CDN blocks non-whitelisted origins, needs proxy
-      status: 'working' as const,
+      status: (s.status === 'validated' ? 'working' : s.status || 'working') as 'working' | 'down' | 'unknown',
       language: s.language || 'en',
       server: s.server,
     }));

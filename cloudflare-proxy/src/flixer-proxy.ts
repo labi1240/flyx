@@ -631,6 +631,46 @@ let lastSuccessTime = 0;
 const WASM_MAX_AGE = 10 * 60 * 1000; // 10 minutes — force re-init to avoid stale API key
 let wasmInitTime = 0;
 
+// ── Server health tracking ──────────────────────────────────────────────────
+// Tracks which servers recently returned valid m3u8 URLs vs which failed.
+// Used to sort sources so the player gets a likely-working server first.
+// TTL: 10 minutes — servers can come and go, don't cache too long.
+interface ServerHealthEntry {
+  lastSuccess: number;   // timestamp of last successful extraction
+  lastFailure: number;   // timestamp of last failure
+  successCount: number;  // rolling success count
+  failureCount: number;  // rolling failure count
+}
+const serverHealth = new Map<string, ServerHealthEntry>();
+const HEALTH_TTL = 10 * 60 * 1000; // 10 minutes
+
+function recordServerResult(server: string, success: boolean): void {
+  const entry = serverHealth.get(server) || { lastSuccess: 0, lastFailure: 0, successCount: 0, failureCount: 0 };
+  if (success) {
+    entry.lastSuccess = Date.now();
+    entry.successCount++;
+  } else {
+    entry.lastFailure = Date.now();
+    entry.failureCount++;
+  }
+  serverHealth.set(server, entry);
+}
+
+function getServerScore(server: string): number {
+  const entry = serverHealth.get(server);
+  if (!entry) return 0; // unknown — neutral
+  const now = Date.now();
+  // Expire old data
+  if (now - Math.max(entry.lastSuccess, entry.lastFailure) > HEALTH_TTL) return 0;
+  // Score: positive = healthy, negative = unhealthy
+  const recentSuccess = entry.lastSuccess > 0 && (now - entry.lastSuccess) < HEALTH_TTL;
+  const recentFailure = entry.lastFailure > 0 && (now - entry.lastFailure) < HEALTH_TTL;
+  if (recentSuccess && !recentFailure) return 2;
+  if (recentSuccess && recentFailure) return entry.lastSuccess > entry.lastFailure ? 1 : -1;
+  if (!recentSuccess && recentFailure) return -2;
+  return 0;
+}
+
 async function ensureWasmInitialized(logger: ReturnType<typeof createLogger>, config: HexaConfig): Promise<void> {
   // Auto-reset if too many consecutive failures or WASM is too old
   if (cachedWasmLoader && cachedApiKey) {
@@ -998,7 +1038,7 @@ async function extractAllServers(
 
     logger.info(`Querying ${serversToQuery.length} servers in parallel for ${type}/${tmdbId}`);
 
-    // Step 3: Extract ALL servers in PARALLEL (not sequential — speed matters)
+    // Step 3: Extract ALL servers in PARALLEL with health tracking
     const results = await Promise.allSettled(
       serversToQuery.map(async (server) => {
         const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
@@ -1019,8 +1059,10 @@ async function extractAllServers(
         }
 
         if (url && url.trim()) {
+          recordServerResult(server, true);
           return { server, url };
         }
+        recordServerResult(server, false);
         throw new Error(`${server}: no URL in decrypted data`);
       })
     );
@@ -1034,19 +1076,65 @@ async function extractAllServers(
       }
     }
 
+    // Sort by health score — servers that worked recently go first
+    extractedSources.sort((a, b) => getServerScore(b.server) - getServerScore(a.server));
+
     logger.info(`Extraction done: ${extractedSources.length}/${serversToQuery.length} URLs extracted`);
 
-    // Step 4: Build sources — skip m3u8 validation for speed (<5s target).
-    // URLs from the API are fresh and valid; validation adds 2-5s per source.
-    // The player will handle any bad URLs gracefully via source switching.
-    const allSources = extractedSources.map(src => ({
+    // Step 4: Validate the TOP source's m3u8 via RPI probe.
+    // Only validate the first (best health score) source — adds ~1-2s but guarantees
+    // the player gets a working stream on first try. If probe fails, demote it.
+    let validatedFirst = false;
+    if (extractedSources.length > 0 && env?.RPI_PROXY_URL && env?.RPI_PROXY_KEY) {
+      const top = extractedSources[0];
+      try {
+        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
+        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
+        const rpiParams = new URLSearchParams({
+          url: top.url,
+          key: env.RPI_PROXY_KEY,
+          referer: 'https://flixer.su/',
+          origin: 'https://flixer.su',
+        });
+        const probeRes = await fetch(`${rpiBase}/flixer/stream?${rpiParams.toString()}`, {
+          signal: AbortSignal.timeout(4000),
+          headers: { 'Range': 'bytes=0-511' },
+        });
+        if (probeRes.ok || probeRes.status === 206) {
+          const firstBytes = new Uint8Array(await probeRes.arrayBuffer());
+          const contentType = probeRes.headers.get('content-type') || '';
+          // Valid if it looks like m3u8 (#EXTM3U) or MPEG-TS (0x47 sync byte)
+          const looksValid = contentType.includes('mpegurl') ||
+            (firstBytes.length > 6 && firstBytes[0] === 0x23 && firstBytes[1] === 0x45) ||
+            firstBytes[0] === 0x47;
+          if (looksValid) {
+            validatedFirst = true;
+            logger.info(`Validated top source: ${top.server} ✓`);
+          } else {
+            logger.warn(`Top source ${top.server} probe: unexpected content`);
+            recordServerResult(top.server, false);
+            // Demote to end of list
+            extractedSources.push(extractedSources.shift()!);
+          }
+        } else {
+          logger.warn(`Top source ${top.server} probe: HTTP ${probeRes.status}`);
+          recordServerResult(top.server, false);
+          extractedSources.push(extractedSources.shift()!);
+        }
+      } catch {
+        // Timeout or network error — don't penalize, RPI might be slow
+        logger.debug('Top source probe timed out, skipping validation');
+      }
+    }
+
+    const allSources = extractedSources.map((src, idx) => ({
       quality: 'auto',
       title: `Flixer ${SERVER_NAMES[src.server] || src.server}`,
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
       requiresSegmentProxy: true,
-      status: 'working',
+      status: (idx === 0 && validatedFirst) ? 'validated' : 'working',
       language: 'en',
       server: src.server,
     }));
@@ -1074,7 +1162,7 @@ async function extractAllServers(
       sources: allSources,
       serverCount: serversToQuery.length,
       extractedCount: allSources.length,
-      validatedCount: allSources.length,
+      validatedFirst,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString(),
     }, allSources.length > 0 ? 200 : 404);

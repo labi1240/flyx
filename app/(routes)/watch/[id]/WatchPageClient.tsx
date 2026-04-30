@@ -12,10 +12,11 @@ import styles from './WatchPage.module.css';
 function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
   // Already proxied — don't double-wrap
+  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
-      sourceUrl.includes('/stream/')) {
+      sourceUrl.includes('/primesrc/')) {
     return sourceUrl;
   }
   // Only proxy if the source says it needs it (or it's a known CDN URL)
@@ -403,7 +404,7 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { vidsrc: false, flixer: true, '1movies': false, uflix: false, animekai: true, hianime: true, primesrc: false };
+      let providerAvailability = { vidsrc: false, flixer: true, '1movies': false, uflix: false, animekai: true, hianime: true, primesrc: false, 'multi-embed': false };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
@@ -415,6 +416,7 @@ function WatchContent() {
           animekai: providerData.providers?.animekai?.enabled ?? true,
           hianime: providerData.providers?.hianime?.enabled ?? true,
           primesrc: false,
+          'multi-embed': false,
         };
       } catch (e) {
         console.warn('[WatchPage] Failed to fetch provider availability, using defaults');

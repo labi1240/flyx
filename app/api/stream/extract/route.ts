@@ -736,6 +736,14 @@ async function directExtract(
         }
         throw new Error(result.error || 'MultiEmbed returned no sources');
       }
+      case 'primesrc': {
+        const { extractPrimeSrcStreams } = await import('@/app/lib/services/primesrc-extractor');
+        const result = await extractPrimeSrcStreams(request.tmdbId, request.mediaType, request.season, request.episode);
+        if (result.success && result.sources.length > 0) {
+          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? true })), provider: 'primesrc' };
+        }
+        throw new Error(result.error || 'PrimeSrc returned no sources');
+      }
       default:
         throw new Error(`Unknown provider: ${providerName}`);
     }
