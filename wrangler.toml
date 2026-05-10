@@ -54,7 +54,7 @@ DECODER_SANDBOX_API_KEY = "your-sandbox-api-key"
 # Observability - DISABLED to reduce costs ($0.60/million events was costing ~$400/month!)
 # Only enable temporarily for debugging specific issues
 [observability]
-enabled = true
+enabled = false
 
 # Cron trigger for daily metrics aggregation (midnight UTC)
 [triggers]
