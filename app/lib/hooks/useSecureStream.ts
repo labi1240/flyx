@@ -116,7 +116,7 @@ export function useSecureStream() {
     
     // Set proxy URL from env
     proxyBaseUrl.current = process.env.NEXT_PUBLIC_STREAM_PROXY_URL || 
-                           'https://media-proxy.vynx.workers.dev';
+                           'https://media-proxy.vynx-3b3.workers.dev';
   }, []);
 
   /**
@@ -268,7 +268,7 @@ export function useSecureStream() {
  */
 export async function getSecureStreamUrl(
   originalUrl: string,
-  proxyBaseUrl: string = 'https://media-proxy.vynx.workers.dev'
+  proxyBaseUrl: string = 'https://media-proxy.vynx-3b3.workers.dev'
 ): Promise<string> {
   const fingerprint = await generateFingerprint();
   const sessionId = getSessionId();

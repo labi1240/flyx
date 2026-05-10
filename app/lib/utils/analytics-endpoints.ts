@@ -9,7 +9,7 @@
  *   const url = getAnalyticsEndpoint('live-activity');
  */
 
-const CF_SYNC_WORKER_FALLBACK = 'https://flyx-sync.vynx.workers.dev';
+const CF_SYNC_WORKER_FALLBACK = 'https://flyx-sync.vynx-3b3.workers.dev';
 
 function getSyncWorkerUrl(): string {
   return process.env.NEXT_PUBLIC_CF_SYNC_URL || CF_SYNC_WORKER_FALLBACK;

@@ -1180,7 +1180,7 @@ grecaptcha.ready(function(){
   // VLC-compatible play endpoint - generates JWT locally and fetches M3U8 via RPI
   // CF Worker handles ALL smart logic: JWT generation, server mapping, URL rewriting
   // RPI just acts as a dumb passthrough from residential IP
-  // Usage: vlc "https://dlhd.vynx.workers.dev/play/51?key=vynx"
+  // Usage: vlc "https://dlhd.vynx-3b3.workers.dev/play/51?key=vynx"
   // 
   // CRITICAL FIX: This endpoint now properly handles playlist refresh requests.
   // HLS players refetch the M3U8 every few seconds to get updated segments.

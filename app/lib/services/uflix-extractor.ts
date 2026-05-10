@@ -233,7 +233,7 @@ async function resolveEmbedToStream(
   if (is2embed || isVidsrc) {
     try {
       // Build CF Worker URL — same pattern as vidsrc-extractor.ts extractFrom2EmbedApi()
-      const cfStreamProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx.workers.dev/stream';
+      const cfStreamProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream';
       const cfBase = cfStreamProxy.replace(/\/stream\/?$/, '');
       const cfVidsrcProxy = `${cfBase}/vidsrc`;
 

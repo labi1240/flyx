@@ -18,7 +18,7 @@ import type { SyncData, WatchProgressItem, WatchlistSyncItem, ProviderSettings, 
 import { SYNC_SCHEMA_VERSION, DEFAULT_PROFILE } from './types';
 
 // Configuration
-const CF_SYNC_WORKER_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx.workers.dev';
+const CF_SYNC_WORKER_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx-3b3.workers.dev';
 const REQUEST_TIMEOUT = 5000; // 5 seconds
 const MAX_RETRIES = 2;
 const RETRY_DELAY_BASE = 1000; // 1 second base delay

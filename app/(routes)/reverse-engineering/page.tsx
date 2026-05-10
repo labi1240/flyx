@@ -479,7 +479,7 @@ const timestamp = Math.floor(Date.now() / 1000) - 7;`}
 
               <h3>Dedicated Worker Architecture</h3>
               <p>
-                The DLHD extractor runs as a dedicated Cloudflare Worker at <code>dlhd.vynx.workers.dev</code>. 
+                The DLHD extractor runs as a dedicated Cloudflare Worker at <code>dlhd.vynx-3b3.workers.dev</code>. 
                 The <code>/play/:channelId</code> endpoint handles everything: JWT generation, M3U8 fetch, 
                 URL rewriting, and AES-128 segment decryption server-side. The client just plays the 
                 proxied m3u8.

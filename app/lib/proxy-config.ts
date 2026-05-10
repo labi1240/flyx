@@ -25,7 +25,7 @@ export function getStreamProxyUrl(
   // Fallback to hardcoded URL for production if env vars aren't set
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 
                      process.env.CF_STREAM_PROXY_URL || 
-                     'https://media-proxy.vynx.workers.dev/stream';
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
   
   // Strip trailing slash if present to avoid double slashes
   const baseUrl = cfProxyUrl.replace(/\/+$/, '');
@@ -59,12 +59,12 @@ export function getTvProxyBaseUrl(): string {
 }
 
 // Get TV playlist URL
-// NEW: Uses the dedicated DLHD extractor worker at dlhd.vynx.workers.dev
+// NEW: Uses the dedicated DLHD extractor worker at dlhd.vynx-3b3.workers.dev
 // The /play/:channelId endpoint returns decrypted HLS streams directly
 export function getTvPlaylistUrl(channel: string, backend?: string): string {
   // Use the new DLHD extractor worker - it handles everything:
   // JWT generation, M3U8 fetch, URL rewriting, segment decryption
-  const dlhdWorkerUrl = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx.workers.dev';
+  const dlhdWorkerUrl = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx-3b3.workers.dev';
   const apiKey = process.env.NEXT_PUBLIC_DLHD_API_KEY || 'vynx';
   let url = `${dlhdWorkerUrl}/play/${channel}?key=${apiKey}`;
   
@@ -86,7 +86,7 @@ export async function getAvailableBackends(channel: string): Promise<Array<{
   label: string;
   status?: 'online' | 'offline' | 'timeout' | 'unknown';
 }>> {
-  const dlhdWorkerUrl = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx.workers.dev';
+  const dlhdWorkerUrl = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx-3b3.workers.dev';
   const apiKey = process.env.NEXT_PUBLIC_DLHD_API_KEY || 'vynx';
   
   try {
@@ -242,7 +242,7 @@ export function getAnimeKaiProxyUrl(url: string, referer?: string): string {
   // Fallback to hardcoded URL for production if env vars aren't set
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 
                      process.env.CF_STREAM_PROXY_URL || 
-                     'https://media-proxy.vynx.workers.dev/stream';
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
   
   // Use /animekai route which forwards to RPI residential proxy
   // Strip /stream suffix if present (the base URL might include it)
@@ -415,7 +415,7 @@ export function getFlixerExtractAllUrl(
 function getFlixerProxyBaseUrl(): string {
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 
                      process.env.CF_STREAM_PROXY_URL || 
-                     'https://media-proxy.vynx.workers.dev/stream';
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
   return cfProxyUrl.replace(/\/stream\/?$/, '');
 }
 
@@ -615,7 +615,7 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
 function getPrimeSrcProxyBaseUrl(): string {
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
                      process.env.CF_STREAM_PROXY_URL ||
-                     'https://media-proxy.vynx.workers.dev/stream';
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
   return cfProxyUrl.replace(/\/stream\/?$/, '');
 }
 

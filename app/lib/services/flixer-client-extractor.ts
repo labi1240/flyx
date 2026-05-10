@@ -7,7 +7,7 @@
  */
 
 const CF_WORKER_BASE = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx.workers.dev/stream').replace(/\/stream\/?$/, '')
+  ? (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '')
   : '';
 
 const SERVER_NAMES: Record<string, string> = {

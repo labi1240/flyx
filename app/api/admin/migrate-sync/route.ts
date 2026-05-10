@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'flyx-admin-jwt-secret-key-2024';
-const CF_SYNC_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx.workers.dev';
+const CF_SYNC_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx-3b3.workers.dev';
 const ADMIN_COOKIE = 'admin_token';
 
 // Verify admin auth

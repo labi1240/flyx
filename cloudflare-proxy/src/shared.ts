@@ -70,7 +70,7 @@ export function jsonResponse(data: object, status: number): Response {
  *
  * @param playlist - Raw M3U8 playlist text
  * @param baseUrl - Original URL the playlist was fetched from (for resolving relative URLs)
- * @param proxyOrigin - The proxy worker's origin (e.g., https://media-proxy.vynx.workers.dev)
+ * @param proxyOrigin - The proxy worker's origin (e.g., https://media-proxy.vynx-3b3.workers.dev)
  * @param proxyPath - The proxy route path (e.g., '/hianime/stream' or '/animekai')
  */
 export function rewritePlaylistUrls(

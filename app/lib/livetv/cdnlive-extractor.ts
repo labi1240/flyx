@@ -10,7 +10,7 @@
 
 const CDN_LIVE_WORKER = process.env.NEXT_PUBLIC_CDN_LIVE_WORKER_URL
   || process.env.CDN_LIVE_WORKER_URL
-  || 'https://cdn-live-extractor.vynx.workers.dev';
+  || 'https://cdn-live-extractor.vynx-3b3.workers.dev';
 
 // ── HUNTER decoder ──────────────────────────────────────────
 

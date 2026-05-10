@@ -9,7 +9,7 @@
  * BREAKTHROUGH: Found v1.2embed.stream API that returns m3u8 URLs directly!
  * No Turnstile, no captcha, just a simple JSON API.
  * 
- * The Cloudflare Worker at media-proxy.vynx.workers.dev/vidsrc handles:
+ * The Cloudflare Worker at media-proxy.vynx-3b3.workers.dev/vidsrc handles:
  * - API calls to 2embed.stream
  * - URL rewriting for browser playback
  * - Segment proxying
@@ -48,7 +48,7 @@ const CF_VIDSRC_PROXY = (() => {
   if (streamUrl) {
     return streamUrl.replace(/\/stream\/?$/, '') + '/vidsrc';
   }
-  return 'https://media-proxy.vynx.workers.dev/vidsrc';
+  return 'https://media-proxy.vynx-3b3.workers.dev/vidsrc';
 })();
 
 // 2embed.stream API base URL (FALLBACK - direct access)

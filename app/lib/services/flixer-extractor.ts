@@ -53,7 +53,7 @@ const SERVER_NAMES: Record<string, string> = {
 function getCfWorkerBaseUrl(): string {
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
     process.env.CF_STREAM_PROXY_URL ||
-    'https://media-proxy.vynx.workers.dev/stream';
+    'https://media-proxy.vynx-3b3.workers.dev/stream';
   return cfProxyUrl.replace(/\/stream\/?$/, '');
 }
 

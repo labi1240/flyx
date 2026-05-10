@@ -19,7 +19,7 @@ export async function GET() {
 
   // Test 2: Try to reach CF Worker health endpoint
   try {
-    const healthUrl = 'https://media-proxy.vynx.workers.dev/health';
+    const healthUrl = 'https://media-proxy.vynx-3b3.workers.dev/health';
     const start = Date.now();
     const resp = await fetch(healthUrl, { signal: AbortSignal.timeout(5000) });
     const body = await resp.text();
@@ -34,7 +34,7 @@ export async function GET() {
 
   // Test 3: Try to reach CF Worker flixer health
   try {
-    const url = 'https://media-proxy.vynx.workers.dev/flixer/health';
+    const url = 'https://media-proxy.vynx-3b3.workers.dev/flixer/health';
     const start = Date.now();
     const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const body = await resp.text();
@@ -49,7 +49,7 @@ export async function GET() {
 
   // Test 4: Try to reach CF Worker flixer extract (single server)
   try {
-    const url = 'https://media-proxy.vynx.workers.dev/flixer/extract?tmdbId=550&type=movie&server=bravo';
+    const url = 'https://media-proxy.vynx-3b3.workers.dev/flixer/extract?tmdbId=550&type=movie&server=bravo';
     const start = Date.now();
     const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
     const body = await resp.text();
@@ -72,7 +72,7 @@ export async function GET() {
     };
     // Test cfFetch to CF Worker (should route through RPI in production)
     const start = Date.now();
-    const resp = await cfFetch('https://media-proxy.vynx.workers.dev/health', {
+    const resp = await cfFetch('https://media-proxy.vynx-3b3.workers.dev/health', {
       signal: AbortSignal.timeout(10000),
     });
     const body = await resp.text();

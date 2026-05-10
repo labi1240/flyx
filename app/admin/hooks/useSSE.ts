@@ -70,7 +70,7 @@ export function hasSequenceGap(lastSequence: number, newSequence: number): boole
 // ---------------------------------------------------------------------------
 
 const CF_WORKER_URL = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx.workers.dev')
+  ? (process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx-3b3.workers.dev')
   : '';
 
 

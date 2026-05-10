@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isValidSyncCode } from '@/lib/sync/sync-code';
 
 // Cloudflare Sync Worker URL
-const CF_SYNC_WORKER_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx.workers.dev';
+const CF_SYNC_WORKER_URL = process.env.NEXT_PUBLIC_CF_SYNC_URL || 'https://flyx-sync.vynx-3b3.workers.dev';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 
 /**

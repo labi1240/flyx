@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const CDN_LIVE_WORKER = process.env.CDN_LIVE_WORKER_URL || 'https://cdn-live-extractor.vynx.workers.dev';
+const CDN_LIVE_WORKER = process.env.CDN_LIVE_WORKER_URL || 'https://cdn-live-extractor.vynx-3b3.workers.dev';
 
 export interface CDNLiveChannel {
   id: string;

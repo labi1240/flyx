@@ -5,7 +5,7 @@ const REQUEST_TIMEOUT = 15000;
 
 // Proxy configurations
 // CF proxy is now primary - it tries direct first, then falls back to RPi/Hetzner
-const CF_PROXY_URL = process.env.NEXT_PUBLIC_CF_TV_PROXY_URL || process.env.NEXT_PUBLIC_CF_PROXY_URL || 'https://media-proxy.vynx.workers.dev';
+const CF_PROXY_URL = process.env.NEXT_PUBLIC_CF_TV_PROXY_URL || process.env.NEXT_PUBLIC_CF_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev';
 const RPI_PROXY_URL = process.env.RPI_PROXY_URL;
 const RPI_PROXY_KEY = process.env.RPI_PROXY_KEY;
 const HETZNER_PROXY_URL = process.env.HETZNER_PROXY_URL;

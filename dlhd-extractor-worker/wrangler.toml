@@ -5,7 +5,7 @@ compatibility_date = "2024-01-17"
 # KV namespace for key caching + whitelist session management
 [[kv_namespaces]]
 binding = "KEY_CACHE_KV"
-id = "5253c28083504028a7d0877808b75e4c"
+id = "2588b7ad542644dc9b13e247deba633e"
 
 # Environment variables (set via wrangler secret)
 # API_KEYS - comma-separated list of valid API keys
