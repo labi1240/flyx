@@ -1159,7 +1159,7 @@ async function extractAllServers(
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
-      requiresSegmentProxy: true,
+      requiresSegmentProxy: false,
       status: 'working',
       language: 'en',
       server: src.server,
@@ -1738,7 +1738,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
                 url: retryResult.url,
                 type: 'hls',
                 referer: 'https://hexa.su/',
-                requiresSegmentProxy: true,
+                requiresSegmentProxy: false,
                 status: 'working',
                 language: 'en',
                 server,
@@ -1768,7 +1768,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
           url: result.url,
           type: 'hls',
           referer: 'https://hexa.su/',
-          requiresSegmentProxy: true,
+          requiresSegmentProxy: false,
           status: 'working',
           language: 'en',
           server,
@@ -1883,7 +1883,43 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
 
     const errors: string[] = [];
 
-    // Strategy 1: Direct fetch (cross-account workers.dev works from CF Workers)
+    // Strategy 1: RPI residential proxy (primary — Flixer CDN blocks CF Worker IPs)
+    // origin=__skip__ is CRITICAL: the Flixer CDN returns 403 ":3" for any request
+    // with an Origin header. The RPI stream-proxy already supports this special value
+    // to omit the Origin header entirely.
+    let triedRpi = false;
+    if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
+      try {
+        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
+        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
+
+        const rpiParams = new URLSearchParams({
+          url: decodedUrl,
+          key: env.RPI_PROXY_KEY,
+          referer: 'https://flixer.su/',
+          origin: '__skip__', // Flixer CDN blocks Origin header → must omit
+        });
+        const rpiUrl = `${rpiBase}/flixer/stream?${rpiParams.toString()}`;
+
+        const rpiRes = await fetch(rpiUrl, { signal: AbortSignal.timeout(15000) });
+        if (rpiRes.ok) {
+          return handleFlixerStreamResponse(rpiRes, decodedUrl, url.origin, 'rpi', logger);
+        }
+        const rpiBody = await rpiRes.text().catch(() => '(unreadable)');
+        errors.push(`rpi: HTTP ${rpiRes.status} — ${rpiBody.substring(0, 200)}`);
+        logger.warn('Flixer stream: RPI fetch failed', { status: rpiRes.status, body: rpiBody.substring(0, 200) });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`rpi: ${msg}`);
+        logger.error('Flixer stream: RPI fetch error', { error: msg });
+      }
+      triedRpi = true;
+    } else {
+      errors.push('rpi: not configured (no RPI_PROXY_URL/RPI_PROXY_KEY)');
+    }
+
+    // Strategy 2: Direct fetch (fallback — usually blocked by CDN IP filtering)
+    // Only useful when RPI is down and user has a non-CF IP (rare).
     try {
       const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
       if (directRes.ok) {
@@ -1896,36 +1932,6 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`direct: ${msg}`);
       logger.error('Flixer stream: direct fetch error', { error: msg });
-    }
-
-    // Strategy 2: RPI proxy fallback (for datacenter IP blocking edge cases)
-    if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
-      try {
-        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
-
-        const rpiParams = new URLSearchParams({
-          url: decodedUrl,
-          key: env.RPI_PROXY_KEY,
-          referer: 'https://flixer.su/',
-          origin: 'https://flixer.su',
-        });
-        const rpiUrl = `${rpiBase}/flixer/stream?${rpiParams.toString()}`;
-
-        const rpiRes = await fetch(rpiUrl, { signal: AbortSignal.timeout(15000) });
-        if (rpiRes.ok) {
-          return handleFlixerStreamResponse(rpiRes, decodedUrl, url.origin, 'rpi-legacy', logger);
-        }
-        const rpiBody = await rpiRes.text().catch(() => '(unreadable)');
-        errors.push(`rpi: HTTP ${rpiRes.status} — ${rpiBody.substring(0, 200)}`);
-        logger.warn('Flixer stream: RPI legacy failed', { status: rpiRes.status, body: rpiBody.substring(0, 200) });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        errors.push(`rpi: ${msg}`);
-        logger.error('Flixer stream: RPI legacy error', { error: msg });
-      }
-    } else {
-      errors.push('rpi: not configured (no RPI_PROXY_URL/RPI_PROXY_KEY)');
     }
 
     // Also probe the CDN with a root request to verify general connectivity
