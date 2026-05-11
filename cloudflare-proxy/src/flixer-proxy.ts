@@ -844,7 +844,7 @@ async function makeFlixerRequest(
   // - Origin: https://flixer.su is REQUIRED
   // - Referer: https://flixer.su/ is sent
   // - bw90agfmywth: 1 is sent on warm-up (via extraHeaders)
-  // - No cap token needed
+  // - x-cap-token is now REQUIRED (May 2026) — API returns 403 without it
   // - No sec-fetch-* headers
   const headers: Record<string, string> = {
     'X-Api-Key': apiKey,
@@ -858,8 +858,9 @@ async function makeFlixerRequest(
     'Referer': 'https://flixer.su/',
     ...extraHeaders,
   };
-  
+
   headers['x-fingerprint-lite'] = config.fingerprintLite;
+  if (capToken) headers['x-cap-token'] = capToken;
 
   // Direct fetch to flixer API.
   // Do NOT route through RPI — that adds latency and a failure point.
@@ -1083,14 +1084,22 @@ async function extractAllServers(
     const loader = cachedWasmLoader!;
     const apiPath = buildApiPath(config, type, tmdbId, season, episode);
 
+    // Get cap token: prefer client-provided, then KV cache
+    let capToken: string | null = clientCapToken || null;
+    if (!capToken && env?.HEXA_CONFIG) {
+      capToken = await getCachedCapToken(env.HEXA_CONFIG);
+    }
+    if (!capToken) {
+      logger.warn('No cap token available — API may reject requests with 403');
+    } else {
+      logger.info(`Using cap token: ${capToken.substring(0, 16)}...`);
+    }
+
     // ── Step 1: Warm-up + extract bonus URLs from it ──
-    // The warm-up registers a session with the API. We also extract any source
-    // URLs the warm-up response may contain (like flixer.su's frontend does),
-    // but these are BONUS — per-server queries are the authoritative source.
     let warmupSources: Array<{ server: string; url: string }> = [];
 
     try {
-      const warmupEncrypted = await makeFlixerRequest(apiKey, apiPath, config, { 'bw90agfmywth': '1' });
+      const warmupEncrypted = await makeFlixerRequest(apiKey, apiPath, config, { 'bw90agfmywth': '1' }, capToken);
       const warmupDecrypted = await loader.processImgData(warmupEncrypted, apiKey);
       const warmupData = typeof warmupDecrypted === 'string' ? JSON.parse(warmupDecrypted) : warmupDecrypted;
       warmupSources = extractSourcesFromData(warmupData);
@@ -1116,7 +1125,7 @@ async function extractAllServers(
         const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
           'X-Only-Sources': '1',
           'X-Server': server,
-        });
+        }, capToken);
         const decrypted = await loader.processImgData(encrypted, apiKey);
         const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
         const sources = extractSourcesFromData(data, server);

@@ -104,7 +104,9 @@ async function readFromKV(kv: KVNamespace): Promise<Partial<HexaConfig>> {
  * Allowed domain patterns for the API base URL.
  * Prevents SSRF if KV is poisoned — only hexa/flixer domains are accepted.
  */
-export const ALLOWED_API_DOMAIN_PATTERN = /^https:\/\/[a-z]*(?:moviedb[a-z]*|api|plsdontscrapemelove)\.(hexa|flixer)\.[a-z]{2,6}$/;
+// moviedb domains (e.g. theemoviedb.hexa.su) REQUIRE captcha — blocked.
+// Only allow api.* and plsdontscrapemelove.* which work without captcha.
+export const ALLOWED_API_DOMAIN_PATTERN = /^https:\/\/[a-z]*(?:api|plsdontscrapemelove)\.(hexa|flixer)\.[a-z]{2,6}$/;
 
 /**
  * Fingerprint must be alphanumeric only — prevents header injection.
