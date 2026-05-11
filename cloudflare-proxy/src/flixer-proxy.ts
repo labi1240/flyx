@@ -959,51 +959,56 @@ async function getSourceFromServer(
  * look for them across all known response shapes. This lets us skip
  * per-server queries for servers that the warm-up already covered.
  */
-function extractSourcesFromData(data: any): Array<{ server: string; url: string }> {
+function extractSourcesFromData(
+  data: any,
+  fallbackServer?: string, // used when per-server response omits .server
+): Array<{ server: string; url: string }> {
   const results: Array<{ server: string; url: string }> = [];
   const seen = new Set<string>();
 
   const add = (server: string, url: string) => {
-    if (!server || !url || seen.has(server)) return;
+    if (!url) return;
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || seen.has(server)) return;
     seen.add(server);
-    results.push({ server, url: trimmed });
+    results.push({ server: server || fallbackServer || 'unknown', url: trimmed });
   };
 
-  // Shape 1: sources array — each entry may have .server + .url/.file/.stream
+  // Shape 1: sources is an array — each entry may have .url/.file/.stream
   if (Array.isArray(data?.sources)) {
     for (const s of data.sources) {
+      const sv = s?.server || fallbackServer || 'unknown';
       const url = s?.url || s?.file || s?.stream;
-      if (url && s?.server) add(s.server, url);
-      // Nested sources (e.g. { server: "alpha", sources: [{ url: "..." }] })
-      if (!url && Array.isArray(s?.sources)) {
+      if (url) {
+        add(sv, url);
+      } else if (Array.isArray(s?.sources)) {
+        // Nested: { server: "alpha", sources: [{url: "..."}] }
         const inner = s.sources[0];
-        const innerUrl = inner?.url || inner?.file;
-        if (innerUrl && s?.server) add(s.server, innerUrl);
+        add(sv, inner?.url || inner?.file || '');
       }
     }
   }
 
-  // Shape 2: servers object — keys are server names, values have .url/.file
+  // Shape 2: sources is an object — { file: "https://...", url: "..." }
+  if (data?.sources && !Array.isArray(data.sources) && typeof data.sources === 'object') {
+    const url = data.sources.file || data.sources.url || data.sources.stream;
+    add(fallbackServer || 'unknown', url || '');
+  }
+
+  // Shape 3: servers object — keys are server names
   if (data?.servers && typeof data.servers === 'object') {
     for (const [server, val] of Object.entries(data.servers)) {
       if (Array.isArray(val)) {
-        const url = (val[0] as any)?.url || (val[0] as any)?.file;
-        if (url) add(server, url);
+        add(server, (val[0] as any)?.url || (val[0] as any)?.file || '');
       } else if (val && typeof val === 'object') {
         const v = val as any;
-        const url = v.url || v.file || v.stream;
-        if (url) add(server, url);
+        add(server, v.url || v.file || v.stream || '');
       }
     }
   }
 
-  // Shape 3: top-level .url/.file/.stream (single result, unknown server)
-  const topUrl = data?.url || data?.file || data?.stream;
-  if (topUrl && !results.length) {
-    results.push({ server: 'unknown', url: topUrl.trim() });
-  }
+  // Shape 4: top-level .url/.file/.stream
+  add(fallbackServer || 'unknown', data?.url || data?.file || data?.stream || '');
 
   return results;
 }
@@ -1119,7 +1124,7 @@ async function extractAllServers(
           const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
 
           // Reuse the same extraction logic
-          const sources = extractSourcesFromData(data);
+          const sources = extractSourcesFromData(data, server);
           if (sources.length > 0) {
             recordServerResult(server, true);
             return sources;
