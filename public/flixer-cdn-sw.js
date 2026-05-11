@@ -11,6 +11,15 @@
  * Zero external infrastructure — the user's browser IS the proxy.
  */
 
+// Take control immediately — don't wait for next navigation
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 const FLIXER_CDN_PATTERNS = [
   /frostcomet\./,
   /thunderleaf\./,
@@ -44,16 +53,18 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function proxyFlixerCdn(request) {
-  // Forward critical request headers for proper HLS seeking
-  const fwdHeaders = {
-    'User-Agent': navigator.userAgent,
-    'Accept': '*/*',
-    'Referer': 'https://flixer.su/',
-  };
+  // Build forwarded headers from the original request.
+  // Only forward headers that the CDN needs — do NOT set forbidden
+  // headers (Referer, Origin, etc.) as browsers silently drop them.
+  const fwdHeaders = {};
 
-  // Forward Range header for seeking (critical for HLS.js timeline scrubbing)
+  // Forward Range header for seeking (critical for HLS.js)
   const range = request.headers.get('Range');
   if (range) fwdHeaders['Range'] = range;
+
+  // Forward the original Accept header
+  const accept = request.headers.get('Accept');
+  if (accept) fwdHeaders['Accept'] = accept;
 
   try {
     const cdnResponse = await fetch(request.url, { headers: fwdHeaders });
@@ -61,7 +72,7 @@ async function proxyFlixerCdn(request) {
     const headers = new Headers(cdnResponse.headers);
     const status = cdnResponse.status;
 
-    // Add CORS if missing (but don't modify 206 Partial Content in weird ways)
+    // Add CORS if missing
     if (!headers.has('Access-Control-Allow-Origin')) {
       headers.set('Access-Control-Allow-Origin', '*');
     }
@@ -72,13 +83,13 @@ async function proxyFlixerCdn(request) {
 
     // Only set Cache-Control for non-partial responses
     if (status !== 206 && !headers.has('Cache-Control')) {
+      const contentType = headers.get('Content-Type') || '';
       const isPlaylist = request.url.includes('.m3u8') ||
-        (headers.get('Content-Type') || '').includes('mpegurl');
+        contentType.includes('mpegurl') ||
+        contentType.includes('vnd.apple.mpegurl');
       headers.set('Cache-Control', isPlaylist ? 'public, max-age=5' : 'public, max-age=3600');
     }
 
-    // CRITICAL: preserve 206 status for byte-range responses
-    // HLS.js seeking requires 206 Partial Content, not 200
     return new Response(cdnResponse.body, {
       status,
       statusText: cdnResponse.statusText,
@@ -86,6 +97,7 @@ async function proxyFlixerCdn(request) {
     });
   } catch (err) {
     console.warn('[Flixer SW] CDN fetch failed, passing through:', err);
+    // Still pass through but this will likely hit CORS
     return fetch(request);
   }
 }
