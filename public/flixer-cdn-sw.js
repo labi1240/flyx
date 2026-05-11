@@ -28,14 +28,14 @@ const OWN_DOMAINS = [
   /cdn-live-extractor/,
 ];
 
-function isFlixerCdn(url: string): boolean {
+function isFlixerCdn(url) {
   if (OWN_DOMAINS.some(p => p.test(url))) return false;
   if (FLIXER_CDN_PATTERNS.some(p => p.test(url))) return true;
   if (/\.workers\.dev\//.test(url)) return true;
   return false;
 }
 
-self.addEventListener('fetch', (event: FetchEvent) => {
+self.addEventListener('fetch', (event) => {
   const url = event.request.url;
   if (!isFlixerCdn(url)) return;
   if (event.request.method !== 'GET') return;
@@ -43,9 +43,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   event.respondWith(proxyFlixerCdn(event.request));
 });
 
-async function proxyFlixerCdn(request: Request): Promise<Response> {
+async function proxyFlixerCdn(request) {
   // Forward critical request headers for proper HLS seeking
-  const fwdHeaders: Record<string, string> = {
+  const fwdHeaders = {
     'User-Agent': navigator.userAgent,
     'Accept': '*/*',
     'Referer': 'https://flixer.su/',
