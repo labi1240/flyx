@@ -1024,19 +1024,18 @@ async function extractAllServers(
     // No cap token needed — verified via Puppeteer sniffing of flixer.su.
     // flixer.su makes ZERO requests to cap.hexa.su.
 
-    // Step 2: Warm-up (with bw90agfmywth header)
-    const availableServers = await getAvailableServers(loader, apiKey, apiPath, logger, config);
+    // Step 2: Warm-up (with bw90agfmywth header) — needed to register a session
+    // with the API before per-server queries. We ignore the returned server list
+    // because it's often incomplete and would cause us to miss content.
+    await getAvailableServers(loader, apiKey, apiPath, logger, config);
 
-    // Use warm-up results if we got a filtered list (< 26 = real availability data).
-    // If warm-up returned all 26 (decrypt failed → fallback) or 0, query ALL servers.
-    // Promise.allSettled handles failures gracefully, and querying all 26 in parallel
-    // only adds ~0-200ms vs querying 7, while ensuring we never miss content that
-    // lives on less-common servers (hotel→zulu).
-    const serversToQuery = availableServers.length > 0 && availableServers.length < 26
-      ? availableServers
-      : Object.keys(SERVER_NAMES);
+    // Always query ALL 26 servers. The warm-up list is unreliable (often reports
+    // only 2-6 servers when many more actually have the content). Parallel
+    // Promise.allSettled handles failures gracefully, and querying all 26 adds
+    // minimal overhead while ensuring we never miss content on less-common servers.
+    const serversToQuery = Object.keys(SERVER_NAMES);
 
-    logger.info(`Querying ${serversToQuery.length} servers in parallel for ${type}/${tmdbId}`);
+    logger.info(`Querying all ${serversToQuery.length} servers in parallel for ${type}/${tmdbId}`);
 
     // Step 3: Extract ALL servers in PARALLEL with health tracking
     const results = await Promise.allSettled(
@@ -1081,54 +1080,18 @@ async function extractAllServers(
 
     logger.info(`Extraction done: ${extractedSources.length}/${serversToQuery.length} URLs extracted`);
 
-    // Step 4: Validate the TOP source's m3u8 via direct fetch.
-    // Flixer CDN (*.workers.dev) is cross-account — CF Workers can fetch directly.
-    // No RPI needed. URL-token auth only, no IP/origin restrictions.
-    let validatedFirst = false;
-    if (extractedSources.length > 0) {
-      const top = extractedSources[0];
-      try {
-        const probeRes = await fetch(top.url, {
-          signal: AbortSignal.timeout(8000),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://flixer.su/',
-          },
-          cf: { cacheTtl: 30 }, // Cache m3u8 briefly to reduce CDN load
-        });
-        if (probeRes.ok) {
-          const firstBytes = new Uint8Array(await probeRes.arrayBuffer());
-          const contentType = probeRes.headers.get('content-type') || '';
-          // Valid if it looks like m3u8 (#EXTM3U) or MPEG-TS (0x47 sync byte)
-          const looksValid = contentType.includes('mpegurl') ||
-            (firstBytes.length > 6 && firstBytes[0] === 0x23 && firstBytes[1] === 0x45) ||
-            firstBytes[0] === 0x47;
-          if (looksValid) {
-            validatedFirst = true;
-            logger.info(`Validated top source: ${top.server} ✓`);
-          } else {
-            logger.warn(`Top source ${top.server} probe: unexpected content`);
-            recordServerResult(top.server, false);
-            extractedSources.push(extractedSources.shift()!);
-          }
-        } else {
-          logger.warn(`Top source ${top.server} probe: HTTP ${probeRes.status}`);
-          recordServerResult(top.server, false);
-          extractedSources.push(extractedSources.shift()!);
-        }
-      } catch {
-        logger.debug('Top source probe timed out, skipping validation');
-      }
-    }
+    // Validation is skipped: Flixer CDN blocks CF Worker egress IPs, so any
+    // probe from here would 403 and incorrectly mark servers as failing.
+    // Validation happens client-side when the browser fetches the CDN directly.
 
-    const allSources = extractedSources.map((src, idx) => ({
+    const allSources = extractedSources.map((src) => ({
       quality: 'auto',
       title: `Flixer ${SERVER_NAMES[src.server] || src.server}`,
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
-      requiresSegmentProxy: true,
-      status: (idx === 0 && validatedFirst) ? 'validated' : 'working',
+      requiresSegmentProxy: false, // Browser fetches CDN directly via Service Worker
+      status: 'working',
       language: 'en',
       server: src.server,
     }));
@@ -1156,10 +1119,9 @@ async function extractAllServers(
       sources: allSources,
       serverCount: serversToQuery.length,
       extractedCount: allSources.length,
-      validatedFirst,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString(),
-    }, allSources.length > 0 ? 200 : 404);
+    }, 200);
 
   } catch (error) {
     logger.error('extract-all error', error as Error);
@@ -1920,53 +1882,49 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
 
     const cdnHost = new URL(testUrl).hostname;
     const baseHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': '*/*',
     };
 
     const results: Record<string, string> = {};
 
-    // Test 1: No headers at all
+    // Test 1: Standard fetch (control)
     try {
-      const r = await fetch(testUrl, { signal: AbortSignal.timeout(8000) });
-      results['no-headers'] = `HTTP ${r.status}`;
-    } catch (e) { results['no-headers'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Accept-Encoding': 'identity' }, signal: AbortSignal.timeout(8000) });
+      results['standard'] = `HTTP ${r.status}`;
+      const b = await r.text().catch(() => '');
+      results['standard-body'] = b.substring(0, 100);
+    } catch (e) { results['standard'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
 
-    // Test 2: Just Referer
+    // Test 2: Fetch with cacheEverything (might use CDN infra IP)
     try {
-      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/' }, signal: AbortSignal.timeout(8000) });
-      results['+referer'] = `HTTP ${r.status}`;
-    } catch (e) { results['+referer'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+      const r = await fetch(testUrl, {
+        headers: { ...baseHeaders, 'Accept-Encoding': 'identity' },
+        signal: AbortSignal.timeout(8000),
+        // @ts-ignore
+        cf: { cacheEverything: true, cacheTtl: 60 }
+      });
+      results['cache-everything'] = `HTTP ${r.status}`;
+      const b = await r.text().catch(() => '');
+      results['cache-body'] = b.substring(0, 100);
+    } catch (e) { results['cache-everything'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
 
-    // Test 3: Just Origin
+    // Test 3: Fetch with cacheTtl (another cache config)
     try {
-      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Origin': 'https://flixer.su' }, signal: AbortSignal.timeout(8000) });
-      results['+origin'] = `HTTP ${r.status}`;
-    } catch (e) { results['+origin'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+      const r = await fetch(testUrl, {
+        headers: { ...baseHeaders },
+        signal: AbortSignal.timeout(8000),
+        // @ts-ignore
+        cf: { cacheTtl: 300 }
+      });
+      results['cache-ttl'] = `HTTP ${r.status}`;
+    } catch (e) { results['cache-ttl'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
 
-    // Test 4: Referer but no Origin (current code)
+    // Test 4: Fetch WITHOUT any Cloudflare-added request extensions
     try {
-      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/' }, signal: AbortSignal.timeout(8000) });
-      results['+referer-no-origin'] = `HTTP ${r.status}`;
-    } catch (e) { results['+referer-no-origin'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
-
-    // Test 5: No Referer, no Origin (bare minimum)
-    try {
-      const r = await fetch(testUrl, { headers: baseHeaders, signal: AbortSignal.timeout(8000) });
-      results['bare-minimum'] = `HTTP ${r.status}`;
-    } catch (e) { results['bare-minimum'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
-
-    // Test 6: Accept-Encoding: identity (current code)
-    try {
-      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/', 'Accept-Encoding': 'identity' }, signal: AbortSignal.timeout(8000) });
-      results['+accept-encoding-identity'] = `HTTP ${r.status}`;
-    } catch (e) { results['+accept-encoding-identity'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
-
-    // Test 7: CDN root with no headers
-    try {
-      const r = await fetch(`https://${cdnHost}/`, { headers: baseHeaders, signal: AbortSignal.timeout(5000) });
-      results['cdn-root'] = `HTTP ${r.status}`;
-    } catch (e) { results['cdn-root'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+      const r = await fetch(new Request(testUrl, { headers: baseHeaders }), { signal: AbortSignal.timeout(8000) });
+      results['new-request'] = `HTTP ${r.status}`;
+    } catch (e) { results['new-request'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
 
     return jsonResponse({ cdnHost, testUrl, results }, 200);
   }
