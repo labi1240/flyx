@@ -48,6 +48,15 @@ function createThrowingKV(): KVNamespace {
 // ---------------------------------------------------------------------------
 
 const arbDomain = fc.constantFrom(
+  'https://plsdontscrapemelove.flixer.su',
+  'https://plsdontscrapemelove.hexa.su',
+  'https://api.flixer.su',
+  'https://api.hexa.sh',
+  'https://api.flixer.cc',
+);
+
+// moviedb domains are BLOCKED by the validator (require captcha)
+const arbBlockedDomain = fc.constantFrom(
   'https://theemoviedb.hexa.su',
   'https://themoviedb.hexa.su',
   'https://moviedb.flixer.su',
@@ -192,6 +201,15 @@ describe('Property 2: Config Fallback Always Valid', () => {
     expect(config.apiDomain).toBe(DEFAULTS.apiDomain);
     expect(config.fingerprintLite).toBe(DEFAULTS.fingerprintLite);
   });
+
+  it('rejects moviedb domains and falls back to default', async () => {
+    for (const blocked of ['https://theemoviedb.hexa.su', 'https://moviedb.flixer.su', 'https://theemoviedb.flixer.sh']) {
+      _resetCache();
+      const kv = createMockKV({ api_domain: blocked });
+      const config = await getHexaConfig(kv);
+      expect(config.apiDomain).toBe(DEFAULTS.apiDomain);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -213,7 +231,7 @@ describe('Property 7: In-Memory Cache TTL', () => {
 
           let kvReadCount = 0;
           const store: Record<string, string | null> = {
-            api_domain: 'https://theemoviedb.hexa.su',
+            api_domain: 'https://plsdontscrapemelove.flixer.su',
           };
           const kv = {
             get: async (key: string) => { kvReadCount++; return store[key] ?? null; },
@@ -238,10 +256,10 @@ describe('Property 7: In-Memory Cache TTL', () => {
 
           // Third call past TTL — should re-read from KV
           fakeNow += pastTtl;
-          store.api_domain = 'https://moviedb.flixer.su';
+          store.api_domain = 'https://api.flixer.su';
           const third = await getHexaConfig(kv);
           expect(third).not.toBe(first); // new object
-          expect(third.apiDomain).toBe('https://moviedb.flixer.su');
+          expect(third.apiDomain).toBe('https://api.flixer.su');
           expect(kvReadCount).toBeGreaterThan(readsAfterFirst);
         },
       ),
