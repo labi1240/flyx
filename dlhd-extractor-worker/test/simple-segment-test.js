@@ -5,7 +5,7 @@
 const { execSync } = require('child_process');
 
 // Test segment URL
-const url = 'https://dlhd.vynx.workers.dev/live/ts?url=aHR0cHM6Ly9jaGV2eS5kdmFsbmEucnUvOWFhNGE2YTZhMDZhNjA1Yzk1OWM&key=vynx';
+const url = 'https://dlhd.vynx-3b3.workers.dev/live/ts?url=aHR0cHM6Ly9jaGV2eS5kdmFsbmEucnUvOWFhNGE2YTZhMDZhNjA1Yzk1OWM&key=vynx';
 
 console.log('Testing segment fetch with curl...');
 console.log(`URL: ${url.substring(0, 80)}...`);

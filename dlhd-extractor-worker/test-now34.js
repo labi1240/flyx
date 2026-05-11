@@ -1,7 +1,7 @@
 // Test: Direct key fetch through the worker's /dlhdprivate to see SOCKS5 errors
 // Also test the proxy stats after a key fetch attempt
 
-const WORKER = 'https://dlhd.vynx.workers.dev';
+const WORKER = 'https://dlhd.vynx-3b3.workers.dev';
 const KEY = 'vynx';
 
 async function main() {

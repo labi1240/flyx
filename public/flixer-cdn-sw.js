@@ -1,10 +1,11 @@
 /**
- * Flixer CDN Proxy Service Worker v2
+ * Flixer CDN Proxy Service Worker v3
  *
  * Intercepts requests to Flixer CDN domains (*.workers.dev) and proxies them
- * through the browser's residential IP. Adds CORS headers to responses.
+ * through the browser's residential IP. Strips Referer (CDN blocks non-flixer
+ * referrers) and adds CORS headers to responses.
  */
-const SW_VERSION = 'v2';
+const SW_VERSION = 'v3';
 
 console.log('[Flixer SW] Loading ' + SW_VERSION);
 
@@ -59,11 +60,11 @@ async function proxyFlixerCdn(request) {
   const url = request.url;
   console.log('[Flixer SW] Proxying:', url.substring(0, 100));
 
-  // Forward only the Range header for HLS seeking.
-  // Do NOT forward other headers (Origin, Referer, User-Agent) —
-  // the CDN workers don't care about them and browsers can't set
-  // some of them anyway.
-  const fetchOpts = {};
+  // CDN blocks on non-flixer Referer. Also blocks datacenter IPs.
+  // Browser's residential IP passes, but we must suppress the Referer
+  // so the CDN doesn't see tv.vynx.cc. Setting referrer: '' strips it.
+  // Origin is still sent by the browser but CDN doesn't check Origin.
+  const fetchOpts = { referrer: '' };
   const range = request.headers.get('Range');
   if (range) {
     fetchOpts.headers = { 'Range': range };

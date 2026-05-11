@@ -29,7 +29,7 @@ async function main() {
 
   // Step 1: Test the deployed worker's /play endpoint for a dvalna channel
   // This forces the worker (on CF edge IP) to fetch M3U8 + keys from dvalna.ru
-  const workerBase = 'https://dlhd.vynx.workers.dev';
+  const workerBase = 'https://dlhd.vynx-3b3.workers.dev';
   const apiKey = 'vynx'; // from the routes.ts validateApiKey
 
   const channels = ['44', '35', '51', '130'];

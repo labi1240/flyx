@@ -6,7 +6,7 @@
 const https = require('https');
 const crypto = require('crypto');
 
-const CF_WORKER_URL = 'https://dlhd.vynx.workers.dev';
+const CF_WORKER_URL = 'https://dlhd.vynx-3b3.workers.dev';
 const RPI_PROXY_URL = 'https://rpi-proxy.vynx.cc';
 const RPI_API_KEY = '5f1845926d725bb2a8230a6ed231fce1d03f07782f74a3f683c30ec04d4ac560';
 const HMAC_SECRET = 'd6398a30dd88f3defad36e0a10226679a045f47df9428e9cb4d98e9a6bd364b4';

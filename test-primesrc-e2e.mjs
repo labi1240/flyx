@@ -13,7 +13,7 @@
  *   8. Hit /api/stream/extract?provider=auto to verify primesrc is first in fallback
  */
 
-const CF_WORKER_BASE = process.env.CF_WORKER_BASE || 'https://media-proxy.vynx.workers.dev';
+const CF_WORKER_BASE = process.env.CF_WORKER_BASE || 'https://media-proxy.vynx-3b3.workers.dev';
 const APP_BASE = process.env.APP_BASE || ''; // Leave empty to skip Next.js route tests
 const TMDB_ID = process.env.TMDB_ID || '550'; // Fight Club
 const TYPE = process.env.TYPE || 'movie';

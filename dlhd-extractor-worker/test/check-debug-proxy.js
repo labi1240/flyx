@@ -3,7 +3,7 @@
  */
 
 async function debug() {
-  const res = await fetch('https://dlhd.vynx.workers.dev/debug/proxy', {
+  const res = await fetch('https://dlhd.vynx-3b3.workers.dev/debug/proxy', {
     headers: { 'X-API-Key': 'vynx' }
   });
   

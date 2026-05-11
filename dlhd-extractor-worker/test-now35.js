@@ -2,7 +2,7 @@
 // Tests the full chain: CF Worker → RPI /fetch-socks5 → SOCKS5 proxy → dvalna.ru
 // Also tests the /debug/socks5-pool endpoint on RPI
 
-const WORKER_URL = 'https://dlhd.vynx.workers.dev';
+const WORKER_URL = 'https://dlhd.vynx-3b3.workers.dev';
 const RPI_URL = 'https://rpi-proxy.vynx.cc';
 const API_KEY = 'vynx'; // CF Worker API key
 const RPI_API_KEY = '5f1845926d725bb2a8230a6ed231fce1d03f07782f74a3f683c30ec04d4ac560'; // RPI API key

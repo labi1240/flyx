@@ -8,7 +8,7 @@
  * 4. Verify the decrypted segment is valid MPEG-TS
  */
 
-const WORKER_URL = 'https://dlhd.vynx.workers.dev';
+const WORKER_URL = 'https://dlhd.vynx-3b3.workers.dev';
 const CHANNEL_ID = 51;
 const API_KEY = 'vynx'; // API key for CF Worker
 
@@ -47,7 +47,7 @@ async function testDecryptionE2E() {
   console.log(`Key URL: ${keyUrl.substring(0, 100)}...`);
   
   // Check if key URL is rewritten to CF Worker
-  const keyRewritten = keyUrl.includes('dlhd.vynx.workers.dev') || keyUrl.includes('/dlhdprivate');
+  const keyRewritten = keyUrl.includes('dlhd.vynx-3b3.workers.dev') || keyUrl.includes('/dlhdprivate');
   console.log(`Key URL rewritten: ${keyRewritten ? '✅ YES' : '❌ NO'}`);
   
   // Find first segment URL
@@ -68,7 +68,7 @@ async function testDecryptionE2E() {
   console.log(`Segment URL: ${segmentUrl.substring(0, 100)}...`);
   
   // Check if segment URL is rewritten to CF Worker
-  const segmentRewritten = segmentUrl.includes('dlhd.vynx.workers.dev') || segmentUrl.includes('/dlhdprivate');
+  const segmentRewritten = segmentUrl.includes('dlhd.vynx-3b3.workers.dev') || segmentUrl.includes('/dlhdprivate');
   console.log(`Segment URL rewritten: ${segmentRewritten ? '✅ YES' : '❌ NO'}`);
   
   if (!segmentRewritten) {

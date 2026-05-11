@@ -2,7 +2,7 @@
  * Test key fetch only - verify we get a valid key with PoW
  */
 
-const WORKER_URL = 'https://dlhd.vynx.workers.dev';
+const WORKER_URL = 'https://dlhd.vynx-3b3.workers.dev';
 
 async function testKeyFetch() {
   console.log('='.repeat(60));

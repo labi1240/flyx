@@ -48,7 +48,7 @@ async function main() {
   
   // Get CF worker's computed values
   console.log('1. Fetching CF worker debug output...');
-  const cfDebug = await fetchJson('https://dlhd.vynx.workers.dev/debug-auth/577', {
+  const cfDebug = await fetchJson('https://dlhd.vynx-3b3.workers.dev/debug-auth/577', {
     'X-API-Key': 'vynx',
   });
   

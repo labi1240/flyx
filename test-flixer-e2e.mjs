@@ -10,7 +10,7 @@
  *   5. Check that EXT-X-KEY URIs are rewritten through proxy
  */
 
-const CF_WORKER_BASE = process.env.CF_WORKER_BASE || 'https://media-proxy.vynx.workers.dev';
+const CF_WORKER_BASE = process.env.CF_WORKER_BASE || 'https://media-proxy.vynx-3b3.workers.dev';
 const TMDB_ID = process.env.TMDB_ID || '550'; // Fight Club
 const TYPE = process.env.TYPE || 'movie';
 const SEASON = process.env.SEASON || '';

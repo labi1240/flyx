@@ -101,7 +101,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
 	if ('serviceWorker' in navigator) {
-	  navigator.serviceWorker.register('/flixer-cdn-sw.js?v=2', { scope: '/' })
+	  navigator.serviceWorker.register('/flixer-cdn-sw.js?v=3', { scope: '/' })
 	    .then(reg => console.log('[Flixer] SW registered:', reg.scope))
 	    .catch(err => console.warn('[Flixer] SW registration failed:', err));
 	}`,

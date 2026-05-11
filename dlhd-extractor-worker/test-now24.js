@@ -20,7 +20,7 @@ function httpsReq(url, headers = {}, timeout = 12000) {
   });
 }
 
-const WORKER_BASE = 'https://dlhd.vynx.workers.dev';
+const WORKER_BASE = 'https://dlhd.vynx-3b3.workers.dev';
 const FAKE_JWT = 'test-jwt-token-placeholder-12345';
 const REFERER = 'https://lovetier.bz/';
 

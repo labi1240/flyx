@@ -6,7 +6,7 @@
 const https = require('https');
 
 const RPI_PROXY_URL = 'https://rpi-proxy.vynx.cc';
-const CF_WORKER_URL = 'https://dlhd.vynx.workers.dev';
+const CF_WORKER_URL = 'https://dlhd.vynx-3b3.workers.dev';
 const RPI_API_KEY = '5f1845926d725bb2a8230a6ed231fce1d03f07782f74a3f683c30ec04d4ac560';
 
 async function fetchUrl(url, headers = {}) {
@@ -83,14 +83,14 @@ async function main() {
     // Check key URL
     if (trimmed.includes('URI="')) {
       hasKeyUrl = true;
-      if (trimmed.includes('dlhd.vynx.workers.dev/dlhdprivate')) {
+      if (trimmed.includes('dlhd.vynx-3b3.workers.dev/dlhdprivate')) {
         keyUrlRewritten = true;
       }
     }
     
     // Check segment URLs
     if (trimmed.startsWith('https://') && !trimmed.includes('URI=')) {
-      if (trimmed.includes('dlhd.vynx.workers.dev/dlhdprivate')) {
+      if (trimmed.includes('dlhd.vynx-3b3.workers.dev/dlhdprivate')) {
         segmentUrlsRewritten++;
       } else if (trimmed.includes('dvalna.ru/') && !trimmed.includes('/key/')) {
         rawSegmentUrls++;

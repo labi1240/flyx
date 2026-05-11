@@ -5,7 +5,7 @@
 // 3. /play/44 - full end-to-end: M3U8 + key fetch through proxy
 // 4. Actually fetch a segment to verify decryption works
 
-const WORKER = 'https://dlhd.vynx.workers.dev';
+const WORKER = 'https://dlhd.vynx-3b3.workers.dev';
 const KEY = 'vynx';
 
 async function test(label, url) {

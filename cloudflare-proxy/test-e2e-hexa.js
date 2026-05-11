@@ -7,7 +7,7 @@
 
 const crypto = require('crypto');
 
-const WORKER_URL = 'https://media-proxy.vynx.workers.dev';
+const WORKER_URL = 'https://media-proxy.vynx-3b3.workers.dev';
 const CAP_BASE = 'https://cap.hexa.su/0737428d64';
 const TMDB_ID = '550'; // Fight Club
 const TYPE = 'movie';

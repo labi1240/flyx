@@ -112,7 +112,7 @@ async function main() {
   
   // Test 2: Fetch via CF worker's /dlhdprivate endpoint
   console.log('\n=== Test 2: Via CF worker /dlhdprivate ===');
-  const cfKeyUrl = `https://dlhd.vynx.workers.dev/dlhdprivate?url=${encodeURIComponent(keyUrl)}&jwt=${encodeURIComponent(authToken)}&salt=${encodeURIComponent(channelSalt)}`;
+  const cfKeyUrl = `https://dlhd.vynx-3b3.workers.dev/dlhdprivate?url=${encodeURIComponent(keyUrl)}&jwt=${encodeURIComponent(authToken)}&salt=${encodeURIComponent(channelSalt)}`;
   try {
     const result2 = await new Promise((resolve, reject) => {
       https.get(cfKeyUrl, (res) => {

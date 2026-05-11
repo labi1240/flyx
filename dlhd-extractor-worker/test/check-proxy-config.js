@@ -4,7 +4,7 @@
 
 async function debug() {
   // Hit the root endpoint to see if worker is responding
-  const res = await fetch('https://dlhd.vynx.workers.dev/', {
+  const res = await fetch('https://dlhd.vynx-3b3.workers.dev/', {
     headers: { 'X-API-Key': 'vynx' }
   });
   

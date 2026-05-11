@@ -22,7 +22,7 @@ function httpsReq(url, headers = {}, timeout = 15000) {
   });
 }
 
-const WORKER = 'https://dlhd.vynx.workers.dev';
+const WORKER = 'https://dlhd.vynx-3b3.workers.dev';
 
 async function testPlayEndpoint(ch, label) {
   console.log(`\n--- /play/${ch} (${label}) ---`);

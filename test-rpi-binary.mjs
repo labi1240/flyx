@@ -6,7 +6,7 @@
 
 const RPI_URL = 'https://rpi-proxy.vynx.cc';
 const RPI_KEY = '5f1845926d725bb2a8230a6ed231fce1d03f07782f74a3f683c30ec04d4ac560';
-const CF_WORKER = 'https://media-proxy.vynx.workers.dev';
+const CF_WORKER = 'https://media-proxy.vynx-3b3.workers.dev';
 
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
