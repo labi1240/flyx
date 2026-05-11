@@ -31,7 +31,7 @@ const SYNC_ENABLED_KEY = 'flyx_sync_enabled';
 
 // Default provider settings
 const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
-  providerOrder: ['primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies', 'animekai'],
+  providerOrder: ['primesrc', 'flixer', 'videasy', 'uflix', 'hexa', 'vidsrc', '1movies', 'animekai'],
   disabledProviders: [],
   lastSuccessfulProviders: {},
   animeAudioPreference: 'sub',

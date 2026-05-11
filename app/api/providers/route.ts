@@ -29,6 +29,12 @@ export async function GET() {
         primary: true,
         description: 'Primary streaming source (WASM-based extraction)',
       },
+      videasy: {
+        enabled: true,
+        name: 'Videasy',
+        primary: false,
+        description: 'Backup streaming source (player.videasy.net)',
+      },
       uflix: {
         enabled: false,
         name: 'Uflix',

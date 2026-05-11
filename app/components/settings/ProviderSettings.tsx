@@ -27,6 +27,12 @@ const PROVIDERS: ProviderInfo[] = [
     icon: '📺',
   },
   {
+    id: 'videasy',
+    name: 'Videasy',
+    description: 'Backup source — player.videasy.net',
+    icon: '🎯',
+  },
+  {
     id: 'uflix',
     name: 'Uflix',
     description: 'Secondary provider — 5 embed servers',

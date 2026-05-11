@@ -28,6 +28,7 @@ import { handleIPTVRequest } from './iptv-proxy';
 import { handleDLHDRequest } from './dlhd-proxy';
 import { handleAnimeKaiRequest } from './animekai-proxy';
 import { handleFlixerRequest } from './flixer-proxy';
+import { handleVideasyRequest } from './videasy-proxy';
 import { handleAnalyticsRequest } from './analytics-proxy';
 import { handleTMDBRequest } from './tmdb-proxy';
 import { handleCDNLiveRequest } from './cdn-live-proxy';
@@ -210,6 +211,13 @@ export function buildRouteTable(): RouteEntry[] {
         incrementMetric('flixerRequests');
         logger.info('Routing to Flixer proxy', { path: new URL(request.url).pathname });
         return await handleFlixerRequest(request, env);
+      },
+    },
+    {
+      prefix: '/videasy',
+      handler: async (request, env, _ctx, logger) => {
+        logger.info('Routing to Videasy proxy', { path: new URL(request.url).pathname });
+        return await handleVideasyRequest(request, env, _ctx, logger);
       },
     },
     {

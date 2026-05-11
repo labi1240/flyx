@@ -87,7 +87,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { tmdbId, mediaType, season, episode, forceMode, malId, malTitle } = props;
+  const { tmdbId, mediaType, season, episode, forceMode, malId, malTitle, title: contentTitle } = props;
 
   // Determine if we should use mobile player
   const useMobilePlayer = forceMode === 'mobile' || 
@@ -106,6 +106,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       const availability = {
         primesrc: providersData.providers?.primesrc?.enabled ?? true,
         flixer: providersData.providers?.flixer?.enabled ?? true,
+        videasy: providersData.providers?.videasy?.enabled ?? true,
         uflix: providersData.providers?.uflix?.enabled ?? true,
         hexa: providersData.providers?.hexa?.enabled ?? true,
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
@@ -153,8 +154,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Add any remaining available providers as fallback
       const allProviders = isAnime
-        ? ['hianime', 'animekai', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies']
-        : ['primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies'];
+        ? ['hianime', 'animekai', 'primesrc', 'flixer', 'videasy', 'uflix', 'hexa', 'vidsrc', '1movies']
+        : ['primesrc', 'flixer', 'videasy', 'uflix', 'hexa', 'vidsrc', '1movies'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
@@ -198,6 +199,31 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
                 })),
                 currentIndex: 0,
                 provider: 'flixer',
+              });
+              setIsLoading(false);
+              return;
+            }
+            continue;
+          }
+
+          // VIDEASY: Backup source — browser-direct extraction via CF Worker
+          if (provider === 'videasy') {
+            const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
+            const videasySources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', contentTitle || '', season, episode);
+            if (videasySources.length > 0) {
+              const sources = videasySources;
+              const sourceUrl = sources[0].url;
+
+              setStreamData({
+                url: sourceUrl,
+                sources: sources.map((s: any) => ({
+                  title: s.title || s.quality || 'Source',
+                  url: s.url,
+                  quality: s.quality,
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                })),
+                currentIndex: 0,
+                provider: 'videasy',
               });
               setIsLoading(false);
               return;

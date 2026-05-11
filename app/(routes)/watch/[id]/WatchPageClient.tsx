@@ -153,8 +153,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -426,15 +426,15 @@ function WatchContent() {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      const providerOrder: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc'> = [];
+      const providerOrder: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy'> = [];
       
       // Determine if this is anime content - use malId OR previously detected anime
       const isAnime = !!(malId || isAnimeDetectedRef.current);
       
       const animeOnlyProviders = ['animekai', 'hianime'];
-      const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc'> = isAnime
-        ? ['hianime', 'animekai', 'flixer']
-        : ['flixer'];
+      const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy'> = isAnime
+        ? ['hianime', 'animekai', 'flixer', 'videasy']
+        : ['flixer', 'videasy'];
 
       // For ANIME content: always put HiAnime + AnimeKai first (sub/dub toggle needs them)
       if (isAnime) {
@@ -480,6 +480,16 @@ function WatchContent() {
             const clientSources = await extractFlixerClient(
               contentId,
               mediaType as 'movie' | 'tv',
+              seasonId ? Number(seasonId) : undefined,
+              episodeId ? Number(episodeId) : undefined,
+            );
+            validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+          } else if (provider === 'videasy') {
+            const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
+            const clientSources = await extractVideasyClient(
+              contentId,
+              mediaType as 'movie' | 'tv',
+              title || '',
               seasonId ? Number(seasonId) : undefined,
               episodeId ? Number(episodeId) : undefined,
             );
@@ -576,7 +586,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);
@@ -590,6 +600,16 @@ function WatchContent() {
         const clientSources = await extractFlixerClient(
           contentId,
           mediaType as 'movie' | 'tv',
+          seasonId ? Number(seasonId) : undefined,
+          episodeId ? Number(episodeId) : undefined,
+        );
+        validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+      } else if (provider === 'videasy') {
+        const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
+        const clientSources = await extractVideasyClient(
+          contentId,
+          mediaType as 'movie' | 'tv',
+          title || '',
           seasonId ? Number(seasonId) : undefined,
           episodeId ? Number(episodeId) : undefined,
         );

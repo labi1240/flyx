@@ -744,6 +744,15 @@ async function directExtract(
         }
         throw new Error(result.error || 'PrimeSrc returned no sources');
       }
+      case 'videasy': {
+        if (!request.title) throw new Error('Videasy requires title');
+        const { extractVideasyStreams } = await import('@/app/lib/services/videasy-extractor');
+        const result = await extractVideasyStreams(request.tmdbId, request.mediaType, request.title, request.season, request.episode);
+        if (result.success && result.sources.length > 0) {
+          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? false })), provider: 'videasy' };
+        }
+        throw new Error(result.error || 'Videasy returned no sources');
+      }
       default:
         throw new Error(`Unknown provider: ${providerName}`);
     }
@@ -766,8 +775,8 @@ async function directExtractWithFallback(
   // Priority order for anime vs movie/tv
   // Only Flixer is active for movies/TV until new sources are added
   const providerOrder = isAnime
-    ? ['animekai', 'hianime', 'flixer']
-    : ['flixer'];
+    ? ['animekai', 'hianime', 'flixer', 'videasy']
+    : ['flixer', 'videasy'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
 
@@ -847,6 +856,7 @@ async function handleSourceByName(
 function inferProviderFromSourceName(sourceName: string): string | undefined {
   if (sourceName.includes('AnimeKai')) return 'animekai';
   if (sourceName.includes('Flixer') || sourceName.includes('Hexa')) return 'flixer';
+  if (sourceName.includes('Videasy') || sourceName.includes('videasy')) return 'videasy';
   if (sourceName.includes('MultiEmbed')) return 'multi-embed';
   if (sourceName.includes('Uflix')) return 'uflix';
   return undefined;

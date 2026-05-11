@@ -24,6 +24,7 @@ function safeRegister(name: string, factory: () => any) {
 
 // Register each provider with error isolation
 try { const { FlixerProvider } = require('./flixer'); safeRegister('flixer', () => new FlixerProvider()); } catch (e: any) { console.error('[ProviderRegistry] flixer import failed:', e.message); }
+try { const { VideasyProvider } = require('./videasy'); safeRegister('videasy', () => new VideasyProvider()); } catch (e: any) { console.error('[ProviderRegistry] videasy import failed:', e.message); }
 try { const { UflixProvider } = require('./uflix'); safeRegister('uflix', () => new UflixProvider()); } catch (e: any) { console.error('[ProviderRegistry] uflix import failed:', e.message); }
 try { const { AnimeKaiProvider } = require('./animekai'); safeRegister('animekai', () => new AnimeKaiProvider()); } catch (e: any) { console.error('[ProviderRegistry] animekai import failed:', e.message); }
 try { const { HiAnimeProvider } = require('./hianime'); safeRegister('hianime', () => new HiAnimeProvider()); } catch (e: any) { console.error('[ProviderRegistry] hianime import failed:', e.message); }
