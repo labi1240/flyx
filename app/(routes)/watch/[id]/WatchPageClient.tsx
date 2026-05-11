@@ -501,6 +501,7 @@ function WatchContent() {
               type: mediaType,
               provider,
             });
+            if (title) params.append('title', title);
             if (mediaType === 'tv' && seasonId && episodeId) {
               params.append('season', seasonId.toString());
               params.append('episode', episodeId.toString());

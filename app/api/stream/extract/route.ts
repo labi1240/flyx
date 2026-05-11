@@ -294,6 +294,7 @@ export async function GET(request: NextRequest) {
     // Parse parameters
     const tmdbId = searchParams.get('tmdbId') || '';
     const type = searchParams.get('type') as 'movie' | 'tv';
+    const title = searchParams.get('title') || '';
     const season = searchParams.get('season') ? parseInt(searchParams.get('season')!) : undefined;
     let episode = searchParams.get('episode') ? parseInt(searchParams.get('episode')!) : undefined;
     const originalEpisode = episode;
@@ -411,11 +412,11 @@ export async function GET(request: NextRequest) {
     const extractionRequest: ExtractionRequest = {
       tmdbId,
       mediaType: type,
+      title: title || malTitle || '',
       season,
       episode,
       malId,
-      title: malTitle,
-      malTitle,
+      malTitle: malTitle || title,
       capToken,
     };
 

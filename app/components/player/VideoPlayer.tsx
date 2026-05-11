@@ -662,11 +662,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         provider: providerName,
       });
 
+      if (title) params.append('title', title);
       if (mediaType === 'tv' && season && episode) {
         params.append('season', season.toString());
         params.append('episode', episode.toString());
       }
-      
+
       // Pass MAL info for anime - used by AnimeKai to get correct episode
       if (malId) {
         params.append('malId', malId.toString());
@@ -830,6 +831,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       provider: providerName,
     });
 
+    if (title) params.append('title', title);
     if (mediaType === 'tv' && season && episode) {
       params.append('season', season.toString());
       params.append('episode', episode.toString());
