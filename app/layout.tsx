@@ -97,6 +97,16 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://image.tmdb.org" />
         <link rel="preconnect" href="https://api.themoviedb.org" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://api.themoviedb.org" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/flixer-cdn-sw.js', { scope: '/' })
+    .then(reg => console.log('[Flixer] SW registered:', reg.scope))
+    .catch(err => console.warn('[Flixer] SW registration failed:', err));
+}`,
+          }}
+        />
       </head>
       <body className={inter.className} suppressHydrationWarning>
         {/* Screen reader announcements */}

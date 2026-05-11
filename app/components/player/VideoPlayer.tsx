@@ -118,15 +118,10 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return sourceUrl;
   }
 
-  // Flixer CDN (*.workers.dev) blocks CF Worker IPs but NOT residential IPs.
-  // Residential IPs get 200 + ACAO:* from the CDN, so browsers fetch directly.
-  // Only proxy when the source explicitly requires it (requiresSegmentProxy: true).
-  const needsProxy = requiresProxy ||
-    sourceUrl.includes('frostcomet') ||
-    sourceUrl.includes('thunderleaf') ||
-    sourceUrl.includes('skyember') ||
-    sourceUrl.includes('nightbreeze') ||
-    sourceUrl.includes('wind.');
+  // Flixer CDN content is proxied by the Service Worker (flixer-cdn-sw.js)
+  // which fetches from the browser's residential IP and adds CORS headers.
+  // Only proxy through CF Worker when the extractor explicitly requires it.
+  const needsProxy = requiresProxy;
   if (!needsProxy) return sourceUrl;
 
   if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
