@@ -1081,26 +1081,22 @@ async function extractAllServers(
 
     logger.info(`Extraction done: ${extractedSources.length}/${serversToQuery.length} URLs extracted`);
 
-    // Step 4: Validate the TOP source's m3u8 via RPI probe.
-    // Only validate the first (best health score) source — adds ~1-2s but guarantees
-    // the player gets a working stream on first try. If probe fails, demote it.
+    // Step 4: Validate the TOP source's m3u8 via direct fetch.
+    // Flixer CDN (*.workers.dev) is cross-account — CF Workers can fetch directly.
+    // No RPI needed. URL-token auth only, no IP/origin restrictions.
     let validatedFirst = false;
-    if (extractedSources.length > 0 && env?.RPI_PROXY_URL && env?.RPI_PROXY_KEY) {
+    if (extractedSources.length > 0) {
       const top = extractedSources[0];
       try {
-        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
-        const rpiParams = new URLSearchParams({
-          url: top.url,
-          key: env.RPI_PROXY_KEY,
-          referer: 'https://flixer.su/',
-          origin: 'https://flixer.su',
+        const probeRes = await fetch(top.url, {
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://flixer.su/',
+          },
+          cf: { cacheTtl: 30 }, // Cache m3u8 briefly to reduce CDN load
         });
-        const probeRes = await fetch(`${rpiBase}/flixer/stream?${rpiParams.toString()}`, {
-          signal: AbortSignal.timeout(4000),
-          headers: { 'Range': 'bytes=0-511' },
-        });
-        if (probeRes.ok || probeRes.status === 206) {
+        if (probeRes.ok) {
           const firstBytes = new Uint8Array(await probeRes.arrayBuffer());
           const contentType = probeRes.headers.get('content-type') || '';
           // Valid if it looks like m3u8 (#EXTM3U) or MPEG-TS (0x47 sync byte)
@@ -1113,7 +1109,6 @@ async function extractAllServers(
           } else {
             logger.warn(`Top source ${top.server} probe: unexpected content`);
             recordServerResult(top.server, false);
-            // Demote to end of list
             extractedSources.push(extractedSources.shift()!);
           }
         } else {
@@ -1122,7 +1117,6 @@ async function extractAllServers(
           extractedSources.push(extractedSources.shift()!);
         }
       } catch {
-        // Timeout or network error — don't penalize, RPI might be slow
         logger.debug('Top source probe timed out, skipping validation');
       }
     }
@@ -1721,7 +1715,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
             }, 200);
           }
         }
-        
+
         return jsonResponse({
           success: false,
           error: 'No stream URL found',
@@ -1732,7 +1726,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
       const displayName = SERVER_NAMES[server] || server;
       consecutiveFailures = 0;
       lastSuccessTime = Date.now();
-      
+
       return jsonResponse({
         success: true,
         sources: [{
@@ -1779,12 +1773,12 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
       rpiUrlPrefix: env.RPI_PROXY_URL ? env.RPI_PROXY_URL.substring(0, 40) + '...' : null,
     };
 
+    // CRITICAL: Do NOT send Origin header to Flixer CDN - it returns 403.
     const cdnHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Accept-Encoding': 'identity',
       'Referer': 'https://hexa.su/',
-      'Origin': 'https://hexa.su',
     };
 
     // Test Strategy 1: Direct
@@ -1843,18 +1837,29 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     // searchParams.get() already decodes the URL — do NOT double-decode
     const decodedUrl = targetUrl;
 
+    // CRITICAL: Do NOT send Origin header! Flixer CDN blocks ALL requests
+    // with an Origin header (returns 403). This is the CDN's anti-hotlinking.
+    // The CF Worker strips Origin, fetches from CDN (no Origin header = 200),
+    // and adds ACAO: * on the response back to the browser.
     const cdnHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Accept-Encoding': 'identity',
       'Referer': 'https://flixer.su/',
-      'Origin': 'https://flixer.su',
     };
 
-    // Flixer CDN blocks datacenter IPs — CF Worker direct fetch always gets 403.
-    // RPI /fetch-rust also times out on Flixer CDN segments (TLS issue).
-    // Go straight to RPI /flixer/stream (legacy Node.js) which works reliably.
+    // Strategy 1: Direct fetch (cross-account workers.dev works from CF Workers)
+    try {
+      const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
+      if (directRes.ok) {
+        return handleFlixerStreamResponse(directRes, decodedUrl, url.origin, 'direct', logger);
+      }
+      logger.warn('Flixer stream: direct fetch failed', { status: directRes.status });
+    } catch (e) {
+      logger.error('Flixer stream: direct fetch error', { error: e instanceof Error ? e.message : String(e) });
+    }
 
+    // Strategy 2: RPI proxy fallback (for datacenter IP blocking edge cases)
     if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
       try {
         let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
