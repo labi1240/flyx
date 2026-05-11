@@ -160,9 +160,9 @@ async function getWasmServer(): Promise<void> {
 }
 
 function allocWasmString(str: string): number {
-  const buf = new Uint8Array(wasmMemory!.buffer);
   const byteLen = str.length * 2;
   const ptr = wasmExports.__new(byteLen, 2) as number;
+  const buf = new Uint8Array(wasmMemory!.buffer); // Fresh view after __new (memory may have grown)
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
     buf[ptr + i * 2] = code & 0xff;

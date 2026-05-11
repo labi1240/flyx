@@ -142,9 +142,9 @@ async function getWasm(): Promise<{ exports: WebAssembly.Exports; memory: WebAss
 
 // WASM string helpers (UCS-2 encoding)
 function allocWasmString(str: string, memory: WebAssembly.Memory, exports: WebAssembly.Exports): number {
-  const buf = new Uint8Array(memory.buffer);
   const byteLen = str.length * 2;
   const ptr = (exports as any).__new(byteLen, 2) as number;
+  const buf = new Uint8Array(memory.buffer); // Fresh view after __new (memory may have grown)
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
     buf[ptr + i * 2] = code & 0xff;
