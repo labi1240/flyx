@@ -433,8 +433,8 @@ function WatchContent() {
       
       const animeOnlyProviders = ['animekai', 'hianime'];
       const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy'> = isAnime
-        ? ['hianime', 'animekai', 'flixer', 'videasy']
-        : ['flixer', 'videasy'];
+        ? ['hianime', 'animekai', 'videasy', 'flixer']
+        : ['videasy', 'flixer'];
 
       // For ANIME content: always put HiAnime + AnimeKai first (sub/dub toggle needs them)
       if (isAnime) {

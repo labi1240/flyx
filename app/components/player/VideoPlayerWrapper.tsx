@@ -154,8 +154,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Add any remaining available providers as fallback
       const allProviders = isAnime
-        ? ['hianime', 'animekai', 'primesrc', 'flixer', 'videasy', 'uflix', 'hexa', 'vidsrc', '1movies']
-        : ['primesrc', 'flixer', 'videasy', 'uflix', 'hexa', 'vidsrc', '1movies'];
+        ? ['hianime', 'animekai', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies']
+        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;

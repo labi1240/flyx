@@ -281,8 +281,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     return () => window.removeEventListener(SYNC_DATA_CHANGED_EVENT, handleSyncDataChanged);
   }, []);
   
-  const [provider, setProvider] = useState('flixer'); // Default to Hexa (primary provider)
-  const [menuProvider, setMenuProvider] = useState('flixer');
+  const [provider, setProvider] = useState('videasy'); // Default to Videasy (primary provider)
+  const [menuProvider, setMenuProvider] = useState('videasy');
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [sourcesCache, setSourcesCache] = useState<Record<string, any[]>>({});
   const [loadingProviders, setLoadingProviders] = useState<Record<string, boolean>>({});
@@ -291,8 +291,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [showCastTips, setShowCastTips] = useState(false); // Cast Tips modal
   const castErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
-    flixer: true, // Flixer — primary provider for movies/TV
-    videasy: true, // Videasy — backup source for movies/TV
+    videasy: true, // Videasy — primary provider for movies/TV
+    flixer: true, // Flixer — backup source for movies/TV
     uflix: false,
     hexa: false,
     vidsrc: false,
@@ -975,7 +975,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         ? (isMalDirect
           ? ['hianime', 'animekai']
           : ['hianime', 'animekai', 'flixer'])
-        : ['flixer', 'videasy'];
+        : ['videasy', 'flixer'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -1514,8 +1514,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                     if (provider !== 'hianime' && providerAvailability.hianime) fallbackProviders.push('hianime');
                     if (provider !== 'animekai' && providerAvailability.animekai) fallbackProviders.push('animekai');
                   }
-                  if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
+                  if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
 
                   for (const fallbackProvider of fallbackProviders) {
                     if (triedProvidersRef.current.has(fallbackProvider)) continue;

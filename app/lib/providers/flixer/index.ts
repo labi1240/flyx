@@ -24,7 +24,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class FlixerProvider implements Provider {
   readonly name = 'flixer';
-  readonly priority = 10;
+  readonly priority = 15;
   readonly enabled = FLIXER_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {
