@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
@@ -29,7 +29,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
     sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'flixer') return sourceUrl; // CDN blocks CF Worker IPs — browser fetches directly (SW adds CORS)
+  if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   return sourceUrl;

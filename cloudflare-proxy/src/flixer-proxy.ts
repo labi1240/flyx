@@ -1159,7 +1159,7 @@ async function extractAllServers(
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
-      requiresSegmentProxy: false,
+      requiresSegmentProxy: true,
       status: 'working',
       language: 'en',
       server: src.server,
