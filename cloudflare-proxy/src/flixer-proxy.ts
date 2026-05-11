@@ -954,9 +954,65 @@ async function getSourceFromServer(
  * with a short grace period to collect more. Doesn't wait for all 12 to finish.
  */
 /**
- * Extract the server list from the warm-up response.
- * The warm-up (with bW90aGFmYWth header) returns encrypted data containing
- * which servers are available. We decrypt it to get the list.
+ * Extract {server, url} pairs from ANY decrypted API response.
+ * Flixer warm-up responses already contain source URLs — we just need to
+ * look for them across all known response shapes. This lets us skip
+ * per-server queries for servers that the warm-up already covered.
+ */
+function extractSourcesFromData(data: any): Array<{ server: string; url: string }> {
+  const results: Array<{ server: string; url: string }> = [];
+  const seen = new Set<string>();
+
+  const add = (server: string, url: string) => {
+    if (!server || !url || seen.has(server)) return;
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    seen.add(server);
+    results.push({ server, url: trimmed });
+  };
+
+  // Shape 1: sources array — each entry may have .server + .url/.file/.stream
+  if (Array.isArray(data?.sources)) {
+    for (const s of data.sources) {
+      const url = s?.url || s?.file || s?.stream;
+      if (url && s?.server) add(s.server, url);
+      // Nested sources (e.g. { server: "alpha", sources: [{ url: "..." }] })
+      if (!url && Array.isArray(s?.sources)) {
+        const inner = s.sources[0];
+        const innerUrl = inner?.url || inner?.file;
+        if (innerUrl && s?.server) add(s.server, innerUrl);
+      }
+    }
+  }
+
+  // Shape 2: servers object — keys are server names, values have .url/.file
+  if (data?.servers && typeof data.servers === 'object') {
+    for (const [server, val] of Object.entries(data.servers)) {
+      if (Array.isArray(val)) {
+        const url = (val[0] as any)?.url || (val[0] as any)?.file;
+        if (url) add(server, url);
+      } else if (val && typeof val === 'object') {
+        const v = val as any;
+        const url = v.url || v.file || v.stream;
+        if (url) add(server, url);
+      }
+    }
+  }
+
+  // Shape 3: top-level .url/.file/.stream (single result, unknown server)
+  const topUrl = data?.url || data?.file || data?.stream;
+  if (topUrl && !results.length) {
+    results.push({ server: 'unknown', url: topUrl.trim() });
+  }
+
+  return results;
+}
+
+/**
+ * Warm-up request + decrypt. Returns both the raw server list AND any
+ * source URLs found in the decrypted response. The warm-up (with the
+ * bW90aGFmYWth header) is required to register a session before
+ * per-server queries.
  */
 async function getAvailableServers(
   loader: FlixerWasmLoader,
@@ -973,12 +1029,10 @@ async function getAvailableServers(
 
     let servers: string[] = [];
 
-    // Extract server list from various response formats
     if (data?.sources && Array.isArray(data.sources)) {
       for (const s of data.sources) {
         if (s?.server) servers.push(s.server);
       }
-      // Also check data.servers object
       if (data?.servers && Object.keys(data.servers).length > 0) {
         servers = Object.keys(data.servers);
       }
@@ -990,15 +1044,19 @@ async function getAvailableServers(
     return servers;
   } catch (e) {
     logger.warn(`Warm-up decrypt failed: ${e instanceof Error ? e.message : String(e)}, falling back to all servers`);
-    // Fall back to all known servers
     return Object.keys(SERVER_NAMES);
   }
 }
 
 /**
- * Extract ALL servers using the same simple approach as /flixer/validate.
- * One warm-up, then sequential per-server fetch+decrypt.
- * No overcomplicated batching — just the pattern that works.
+ * Extract ALL servers A-Z using the Flixer.su frontend pattern:
+ *   1. Warm-up → decrypt → extract URLs directly (like flixer.su does)
+ *   2. Only query servers that the warm-up didn't cover
+ *   3. Parallel per-server queries for the remaining gap
+ *
+ * Flixer.su's frontend gets source URLs from the warm-up response itself —
+ * it doesn't re-query every server. We mirror that: extractSourcesFromData
+ * pulls {server, url} pairs from the decrypted warm-up, then we fill gaps.
  */
 async function extractAllServers(
   tmdbId: string,
@@ -1014,83 +1072,84 @@ async function extractAllServers(
   const startTime = Date.now();
 
   try {
-    // Step 1: WASM init
     await ensureWasmInitialized(logger, config);
 
     const apiKey = cachedApiKey!;
     const loader = cachedWasmLoader!;
     const apiPath = buildApiPath(config, type, tmdbId, season, episode);
 
-    // No cap token needed — verified via Puppeteer sniffing of flixer.su.
-    // flixer.su makes ZERO requests to cap.hexa.su.
+    // ── Step 1: Warm-up + extract URLs from it (like flixer.su frontend) ──
+    let warmupSources: Array<{ server: string; url: string }> = [];
 
-    // Step 2: Warm-up (with bw90agfmywth header) — needed to register a session
-    // with the API before per-server queries. We ignore the returned server list
-    // because it's often incomplete and would cause us to miss content.
-    await getAvailableServers(loader, apiKey, apiPath, logger, config);
+    try {
+      const warmupEncrypted = await makeFlixerRequest(apiKey, apiPath, config, { 'bw90agfmywth': '1' });
+      const warmupDecrypted = await loader.processImgData(warmupEncrypted, apiKey);
+      const warmupData = typeof warmupDecrypted === 'string' ? JSON.parse(warmupDecrypted) : warmupDecrypted;
+      warmupSources = extractSourcesFromData(warmupData);
 
-    // Always query ALL 26 servers. The warm-up list is unreliable (often reports
-    // only 2-6 servers when many more actually have the content). Parallel
-    // Promise.allSettled handles failures gracefully, and querying all 26 adds
-    // minimal overhead while ensuring we never miss content on less-common servers.
-    const serversToQuery = Object.keys(SERVER_NAMES);
+      logger.info(
+        `Warm-up: ${warmupSources.length} URLs extracted directly (` +
+        `[${warmupSources.map(s => s.server).join(',')}]); querying remaining servers`
+      );
 
-    logger.info(`Querying all ${serversToQuery.length} servers in parallel for ${type}/${tmdbId}`);
+      for (const src of warmupSources) {
+        if (src.server !== 'unknown') recordServerResult(src.server, true);
+      }
+    } catch (e) {
+      logger.warn(`Warm-up failed: ${e instanceof Error ? e.message : String(e)} — will query all servers`);
+    }
 
-    // Step 3: Extract ALL servers in PARALLEL with health tracking
-    const results = await Promise.allSettled(
-      serversToQuery.map(async (server) => {
-        const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
-          'X-Only-Sources': '1',
-          'X-Server': server,
-        });
+    // ── Step 2: Query servers the warm-up missed ──
+    const warmupServers = new Set(warmupSources.map(s => s.server));
+    const allServers = Object.keys(SERVER_NAMES);
+    const missingServers = allServers.filter(s => !warmupServers.has(s));
 
-        const decrypted = await loader.processImgData(encrypted, apiKey);
-        const parsed = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+    let gapSources: Array<{ server: string; url: string }> = [];
 
-        let url: string | null = null;
-        if (Array.isArray(parsed.sources)) {
-          const source = parsed.sources.find((s: any) => s.server === server) || parsed.sources[0];
-          url = source?.url || source?.file || source?.stream || null;
-        }
-        if (!url) {
-          url = parsed.sources?.file || parsed.sources?.url || parsed.file || parsed.url || parsed.stream || null;
-        }
+    if (missingServers.length > 0) {
+      logger.info(`Querying ${missingServers.length} remaining servers: [${missingServers.join(',')}]`);
 
-        if (url && url.trim()) {
-          recordServerResult(server, true);
-          return { server, url };
-        }
-        recordServerResult(server, false);
-        throw new Error(`${server}: no URL in decrypted data`);
-      })
-    );
+      const results = await Promise.allSettled(
+        missingServers.map(async (server) => {
+          const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
+            'X-Only-Sources': '1',
+            'X-Server': server,
+          });
+          const decrypted = await loader.processImgData(encrypted, apiKey);
+          const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
 
-    const extractedSources: Array<{ server: string; url: string }> = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        extractedSources.push(r.value);
-      } else {
-        logger.debug(r.reason?.message || 'server extraction failed');
+          // Reuse the same extraction logic
+          const sources = extractSourcesFromData(data);
+          if (sources.length > 0) {
+            recordServerResult(server, true);
+            return sources;
+          }
+          recordServerResult(server, false);
+          throw new Error(`${server}: no URL in decrypted data`);
+        })
+      );
+
+      for (const r of results) {
+        if (r.status === 'fulfilled') gapSources.push(...r.value);
       }
     }
 
-    // Sort by health score — servers that worked recently go first
-    extractedSources.sort((a, b) => getServerScore(b.server) - getServerScore(a.server));
+    // ── Step 3: Combine + sort by health score ──
+    const allExtracted = [...warmupSources, ...gapSources];
+    allExtracted.sort((a, b) => getServerScore(b.server) - getServerScore(a.server));
 
-    logger.info(`Extraction done: ${extractedSources.length}/${serversToQuery.length} URLs extracted`);
+    const seen = new Set<string>();
+    const unique = allExtracted.filter(s => seen.has(s.server) ? false : (seen.add(s.server), true));
 
-    // Validation is skipped: Flixer CDN blocks CF Worker egress IPs, so any
-    // probe from here would 403 and incorrectly mark servers as failing.
-    // Validation happens client-side when the browser fetches the CDN directly.
+    logger.info(`Extraction done: ${unique.length} sources (${warmupSources.length} warm-up, ${gapSources.length} gap)`);
 
-    const allSources = extractedSources.map((src) => ({
+    const allSources = unique.map((src) => ({
       quality: 'auto',
       title: `Flixer ${SERVER_NAMES[src.server] || src.server}`,
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
-      requiresSegmentProxy: false, // Browser fetches CDN directly via Service Worker
+      requiresSegmentProxy: false,
       status: 'working',
       language: 'en',
       server: src.server,
@@ -1117,8 +1176,10 @@ async function extractAllServers(
     return jsonResponse({
       success: allSources.length > 0,
       sources: allSources,
-      serverCount: serversToQuery.length,
+      serverCount: allServers.length,
       extractedCount: allSources.length,
+      warmupSources: warmupSources.length,
+      gapSources: gapSources.length,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString(),
     }, 200);
