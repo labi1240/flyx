@@ -1,23 +1,26 @@
 /**
- * Flixer CDN Proxy Service Worker
+ * Flixer CDN Proxy Service Worker v2
  *
- * Intercepts requests to Flixer CDN domains and proxies them through the
- * browser's own IP. The browser's residential IP is NOT blocked by the
- * Flixer CDN (only CF Worker egress IPs are blocked).
- *
- * Adds Access-Control-Allow-Origin: * to responses that lack CORS headers,
- * fixing cross-origin issues for m3u8, segments, and keys.
- *
- * Zero external infrastructure — the user's browser IS the proxy.
+ * Intercepts requests to Flixer CDN domains (*.workers.dev) and proxies them
+ * through the browser's residential IP. Adds CORS headers to responses.
  */
+const SW_VERSION = 'v2';
 
-// Take control immediately — don't wait for next navigation
+console.log('[Flixer SW] Loading ' + SW_VERSION);
+
+// Take control immediately
 self.addEventListener('install', () => {
+  console.log('[Flixer SW] Install — skipWaiting');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  console.log('[Flixer SW] Activate — claiming clients');
+  event.waitUntil(
+    self.clients.claim().then(() => {
+      console.log('[Flixer SW] Clients claimed — SW now in control');
+    })
+  );
 });
 
 const FLIXER_CDN_PATTERNS = [
@@ -53,40 +56,39 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function proxyFlixerCdn(request) {
-  // Build forwarded headers from the original request.
-  // Only forward headers that the CDN needs — do NOT set forbidden
-  // headers (Referer, Origin, etc.) as browsers silently drop them.
-  const fwdHeaders = {};
+  const url = request.url;
+  console.log('[Flixer SW] Proxying:', url.substring(0, 100));
 
-  // Forward Range header for seeking (critical for HLS.js)
+  // Forward only the Range header for HLS seeking.
+  // Do NOT forward other headers (Origin, Referer, User-Agent) —
+  // the CDN workers don't care about them and browsers can't set
+  // some of them anyway.
+  const fetchOpts = {};
   const range = request.headers.get('Range');
-  if (range) fwdHeaders['Range'] = range;
-
-  // Forward the original Accept header
-  const accept = request.headers.get('Accept');
-  if (accept) fwdHeaders['Accept'] = accept;
+  if (range) {
+    fetchOpts.headers = { 'Range': range };
+  }
 
   try {
-    const cdnResponse = await fetch(request.url, { headers: fwdHeaders });
+    const cdnResponse = await fetch(url, fetchOpts);
+
+    console.log('[Flixer SW] CDN response:', cdnResponse.status, url.substring(0, 80));
 
     const headers = new Headers(cdnResponse.headers);
     const status = cdnResponse.status;
 
-    // Add CORS if missing
     if (!headers.has('Access-Control-Allow-Origin')) {
       headers.set('Access-Control-Allow-Origin', '*');
     }
 
-    // Expose headers HLS.js needs for range requests
     headers.set('Access-Control-Expose-Headers',
       'Content-Length, Content-Range, Accept-Ranges, Content-Type');
 
-    // Only set Cache-Control for non-partial responses
     if (status !== 206 && !headers.has('Cache-Control')) {
-      const contentType = headers.get('Content-Type') || '';
-      const isPlaylist = request.url.includes('.m3u8') ||
-        contentType.includes('mpegurl') ||
-        contentType.includes('vnd.apple.mpegurl');
+      const ct = headers.get('Content-Type') || '';
+      const isPlaylist = url.includes('.m3u8') ||
+        ct.includes('mpegurl') ||
+        ct.includes('vnd.apple.mpegurl');
       headers.set('Cache-Control', isPlaylist ? 'public, max-age=5' : 'public, max-age=3600');
     }
 
@@ -96,8 +98,7 @@ async function proxyFlixerCdn(request) {
       headers,
     });
   } catch (err) {
-    console.warn('[Flixer SW] CDN fetch failed, passing through:', err);
-    // Still pass through but this will likely hit CORS
+    console.warn('[Flixer SW] Fetch FAILED:', err.message || err, url.substring(0, 80));
     return fetch(request);
   }
 }
