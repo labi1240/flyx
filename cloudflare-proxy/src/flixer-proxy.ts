@@ -1848,15 +1848,21 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
       'Referer': 'https://flixer.su/',
     };
 
+    const errors: string[] = [];
+
     // Strategy 1: Direct fetch (cross-account workers.dev works from CF Workers)
     try {
       const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
       if (directRes.ok) {
         return handleFlixerStreamResponse(directRes, decodedUrl, url.origin, 'direct', logger);
       }
-      logger.warn('Flixer stream: direct fetch failed', { status: directRes.status });
+      const body = await directRes.text().catch(() => '(unreadable)');
+      errors.push(`direct: HTTP ${directRes.status} — ${body.substring(0, 200)}`);
+      logger.warn('Flixer stream: direct fetch failed', { status: directRes.status, body: body.substring(0, 200) });
     } catch (e) {
-      logger.error('Flixer stream: direct fetch error', { error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`direct: ${msg}`);
+      logger.error('Flixer stream: direct fetch error', { error: msg });
     }
 
     // Strategy 2: RPI proxy fallback (for datacenter IP blocking edge cases)
@@ -1877,13 +1883,92 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
         if (rpiRes.ok) {
           return handleFlixerStreamResponse(rpiRes, decodedUrl, url.origin, 'rpi-legacy', logger);
         }
-        logger.warn('Flixer stream: RPI legacy failed', { status: rpiRes.status });
+        const rpiBody = await rpiRes.text().catch(() => '(unreadable)');
+        errors.push(`rpi: HTTP ${rpiRes.status} — ${rpiBody.substring(0, 200)}`);
+        logger.warn('Flixer stream: RPI legacy failed', { status: rpiRes.status, body: rpiBody.substring(0, 200) });
       } catch (e) {
-        logger.error('Flixer stream: RPI legacy error', { error: e instanceof Error ? e.message : String(e) });
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`rpi: ${msg}`);
+        logger.error('Flixer stream: RPI legacy error', { error: msg });
       }
+    } else {
+      errors.push('rpi: not configured (no RPI_PROXY_URL/RPI_PROXY_KEY)');
     }
 
-    return jsonResponse({ error: 'All proxy strategies failed for Flixer CDN' }, 502);
+    // Also probe the CDN with a root request to verify general connectivity
+    let cdnReachable = 'unknown';
+    try {
+      const cdnHost = new URL(decodedUrl).hostname;
+      const probeRes = await fetch(`https://${cdnHost}/`, { headers: cdnHeaders, signal: AbortSignal.timeout(5000) });
+      cdnReachable = `HTTP ${probeRes.status}`;
+    } catch (e) {
+      cdnReachable = `unreachable: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    return jsonResponse({
+      error: 'All proxy strategies failed for Flixer CDN',
+      cdnHost: new URL(decodedUrl).hostname,
+      cdnReachable,
+      errors,
+    }, 502);
+  }
+
+  // Debug endpoint: test CDN headers to find what triggers 403
+  if (path === '/flixer/debug-cdn') {
+    const testUrl = url.searchParams.get('url');
+    if (!testUrl) return jsonResponse({ error: 'Missing url param' }, 400);
+
+    const cdnHost = new URL(testUrl).hostname;
+    const baseHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+
+    const results: Record<string, string> = {};
+
+    // Test 1: No headers at all
+    try {
+      const r = await fetch(testUrl, { signal: AbortSignal.timeout(8000) });
+      results['no-headers'] = `HTTP ${r.status}`;
+    } catch (e) { results['no-headers'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 2: Just Referer
+    try {
+      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/' }, signal: AbortSignal.timeout(8000) });
+      results['+referer'] = `HTTP ${r.status}`;
+    } catch (e) { results['+referer'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 3: Just Origin
+    try {
+      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Origin': 'https://flixer.su' }, signal: AbortSignal.timeout(8000) });
+      results['+origin'] = `HTTP ${r.status}`;
+    } catch (e) { results['+origin'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 4: Referer but no Origin (current code)
+    try {
+      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/' }, signal: AbortSignal.timeout(8000) });
+      results['+referer-no-origin'] = `HTTP ${r.status}`;
+    } catch (e) { results['+referer-no-origin'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 5: No Referer, no Origin (bare minimum)
+    try {
+      const r = await fetch(testUrl, { headers: baseHeaders, signal: AbortSignal.timeout(8000) });
+      results['bare-minimum'] = `HTTP ${r.status}`;
+    } catch (e) { results['bare-minimum'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 6: Accept-Encoding: identity (current code)
+    try {
+      const r = await fetch(testUrl, { headers: { ...baseHeaders, 'Referer': 'https://flixer.su/', 'Accept-Encoding': 'identity' }, signal: AbortSignal.timeout(8000) });
+      results['+accept-encoding-identity'] = `HTTP ${r.status}`;
+    } catch (e) { results['+accept-encoding-identity'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    // Test 7: CDN root with no headers
+    try {
+      const r = await fetch(`https://${cdnHost}/`, { headers: baseHeaders, signal: AbortSignal.timeout(5000) });
+      results['cdn-root'] = `HTTP ${r.status}`;
+    } catch (e) { results['cdn-root'] = `error: ${e instanceof Error ? e.message : String(e)}`; }
+
+    return jsonResponse({ cdnHost, testUrl, results }, 200);
   }
 
   return jsonResponse({ error: 'Unknown endpoint' }, 404);

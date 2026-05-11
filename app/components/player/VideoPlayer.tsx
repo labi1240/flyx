@@ -101,11 +101,11 @@ interface VideoPlayerProps {
 }
 
 /**
- * Wrap a raw CDN source URL through the appropriate CF Worker stream proxy.
- * 
- * Flixer CDN blocks non-whitelisted origins (only flixer.su/hexa.su allowed)
- * AND blocks datacenter IPs. So we must proxy through CF Worker → RPI.
- * The /flixer/stream route handles Origin/Referer headers and m3u8 rewriting.
+ * Apply CF Worker stream proxy to a source URL when needed.
+ *
+ * Flixer CDN (*.workers.dev) blocks CF Worker IPs (all headers fail with 403).
+ * But residential IPs get 200 + ACAO:* from the CDN. So browsers fetch CDN
+ * content directly — no proxy needed. Only proxy when requiresSegmentProxy: true.
  */
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
@@ -118,9 +118,10 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return sourceUrl;
   }
 
-  // Only proxy if the source says it needs it (or it's a known CDN URL)
+  // Flixer CDN (*.workers.dev) blocks CF Worker IPs but NOT residential IPs.
+  // Residential IPs get 200 + ACAO:* from the CDN, so browsers fetch directly.
+  // Only proxy when the source explicitly requires it (requiresSegmentProxy: true).
   const needsProxy = requiresProxy ||
-    sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
     sourceUrl.includes('thunderleaf') ||
     sourceUrl.includes('skyember') ||

@@ -157,7 +157,7 @@ export async function extractFlixerStreams(
         url: s.url,
         type: (s.type || 'hls') as 'hls' | 'mp4',
         referer: s.referer || 'https://hexa.su/',
-        requiresSegmentProxy: true,
+        requiresSegmentProxy: false, // CDN blocks CF Worker IPs but allows residential IPs directly
         status: 'working' as const,
         language: s.language || 'en',
         server: s.server,
@@ -214,7 +214,7 @@ export async function fetchFlixerSourceByName(
       url: s.url,
       type: (s.type || 'hls') as 'hls' | 'mp4',
       referer: s.referer || 'https://hexa.su/',
-      requiresSegmentProxy: true,
+      requiresSegmentProxy: false,
       status: 'working',
       language: s.language || 'en',
       server: s.server || server,

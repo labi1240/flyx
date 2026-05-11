@@ -82,7 +82,7 @@ export async function extractFlixerClient(
       url: s.url,
       type: (s.type || 'hls') as 'hls' | 'mp4',
       referer: s.referer || 'https://flixer.su/',
-      requiresSegmentProxy: true, // CDN blocks non-whitelisted origins, needs proxy
+      requiresSegmentProxy: false, // CDN blocks CF Worker IPs but allows residential IPs directly
       status: (s.status === 'validated' ? 'working' : s.status || 'working') as 'working' | 'down' | 'unknown',
       language: s.language || 'en',
       server: s.server,
@@ -124,7 +124,7 @@ export async function fetchFlixerSourceClient(
       url: s.url,
       type: (s.type || 'hls') as 'hls' | 'mp4',
       referer: s.referer || 'https://flixer.su/',
-      requiresSegmentProxy: true, // CDN blocks non-whitelisted origins, needs proxy
+      requiresSegmentProxy: false, // CDN blocks CF Worker IPs but allows residential IPs directly
       status: 'working',
       language: s.language || 'en',
       server: s.server || server,

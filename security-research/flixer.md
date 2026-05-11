@@ -33,38 +33,32 @@ A separate browser-direct extractor (`flixer-client-extractor.ts`) is used by Vi
 - PoW solver: `app/lib/services/hexa-cap-solver.ts`
 - Uses FNV-1a PRNG matching @cap.js/server exactly
 
-### 4. IP-Based Restrictions
-- Datacenter IPs are blocked — requests must come from residential IPs
-- The CF Worker has proper IP handling for making API calls
-- The browser-direct client extractor ensures the user's real IP hits hexa.su
+### 4. CDN IP-Based Blocking (anti-CF-Worker)
+- The Flixer CDN (*.workers.dev domains) blocks ALL requests from Cloudflare Worker IP ranges — returns 403
+- ANY header combination from CF Worker IPs fails (tested: no headers, bare minimum, referer-only, origin-free, etc.)
+- **Residential IPs can access the CDN directly** — returns 200 with `Access-Control-Allow-Origin: *`
+- CDN tokens are NOT IP-bound to the requesting IP; they can be fetched from any residential IP
+- **The RPI proxy was masking CF Worker IPs, not stripping headers** — the blocking is purely IP-based
+- **Solution**: Browser fetches CDN content directly (residential IP). CF Worker only handles API extraction.
 
-### 5. Referer/Origin Validation
-- API expects `Referer: https://hexa.su/`
+### 5. Referer Validation
+- API expects `Referer: https://flixer.su/`
 - Standard browser headers required (User-Agent, Accept, etc.)
 
 ## Current Bypass Strategy
 
-### Primary: CF Worker Pattern (flixer-extractor.ts)
+### Primary: CF Worker for API, Browser-Direct for CDN
 
 ```
-Browser/Server → CF Worker /flixer/extract-all → (WASM sign + hexa.su API + decrypt) → parsed sources
+Browser → CF Worker /flixer/extract-all → WASM sign + Flixer API + decrypt → source URLs
+Browser → CDN URL directly (residential IP, no Origin issues) → 200 + ACAO:*
 ```
 
-- Single endpoint handles the full pipeline
-- Works from both browser and server contexts (SSR, API routes)
-- Uses `cfFetch` utility to route through RPI when on CF Pages
-- Also supports `/flixer/extract?server=X` for fetching a specific server
-
-### Secondary: Browser-Direct Pattern (flixer-client-extractor.ts)
-
-```
-Browser → CF Worker /flixer/sign → get HMAC-signed headers
-Browser → hexa.su API directly (user's residential IP) → encrypted response
-Browser → CF Worker /flixer/decrypt → decrypted stream URLs
-```
-
-- Used by VideoPlayer.tsx for client-side extraction
-- Browser makes the actual API call (residential IP visible to hexa.su)
+- CF Worker handles the WASM-signed API calls (only place WASM can run)
+- Browser fetches m3u8 + segments directly from the CDN (residential IP is not blocked)
+- CDN returns `Access-Control-Allow-Origin: *` — CORS works for cross-origin browser requests
+- No RPI needed for CDN access (residential IP)
+- Also supports `/flixer/extract?server=X` for single-server fetches
 
 ## Server Mapping
 
@@ -75,11 +69,11 @@ Flixer uses NATO phonetic alphabet codenames for servers:
 
 ## Known Weaknesses / Failure Modes
 
-1. **WASM module changes** — If hexa.su updates their WASM, the CF Worker's signing/decryption breaks. Need to re-extract the WASM.
+1. **WASM module changes** — If Flixer updates their WASM, the CF Worker's signing/decryption breaks. Need to re-extract the WASM.
 2. **Cap.js difficulty increase** — If they increase PoW difficulty (more challenges or harder target prefix), solve time increases.
-3. **Domain changes** — hexa.su could migrate domains.
+3. **Domain changes** — flixer.su or its CDN domains could change.
 4. **Rate limiting** — No explicit rate limiting observed, but aggressive scraping could trigger blocks.
-5. **CF Worker IP blocking** — If hexa.su starts blocking CF Worker IPs, the primary pattern breaks. Fall back to browser-direct client extractor.
+5. **CDN Origin blocking changes** — CDN currently blocks on Origin header only. If they switch to IP-based blocking, RPI proxy would become necessary again. Currently disabled to save costs.
 
 ## Subtitles
 
@@ -90,8 +84,9 @@ Flixer uses NATO phonetic alphabet codenames for servers:
 
 - [ ] Is the CF Worker `/flixer/extract-all` endpoint returning sources?
 - [ ] Is the CF Worker `/flixer/extract` endpoint working for single-server fetches?
-- [ ] Has the WASM module been updated? (check hexa.su JS bundle)
+- [ ] Has the WASM module been updated? (check flixer.su JS bundle)
 - [ ] Is Cap.js PoW still solvable? (check challenge count/difficulty)
 - [ ] Has the API URL structure changed?
 - [ ] Are the server codenames still the same?
-- [ ] Is `cfFetch` routing correctly through RPI on CF Pages?
+- [ ] Does the CDN now require an IP change (residential proxy) instead of just Origin stripping?
+- [ ] Are CDN domain names still `*.workers.dev` or have they rotated again?
