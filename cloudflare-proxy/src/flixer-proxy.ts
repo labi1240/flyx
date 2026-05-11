@@ -1083,7 +1083,10 @@ async function extractAllServers(
     const loader = cachedWasmLoader!;
     const apiPath = buildApiPath(config, type, tmdbId, season, episode);
 
-    // ── Step 1: Warm-up + extract URLs from it (like flixer.su frontend) ──
+    // ── Step 1: Warm-up + extract bonus URLs from it ──
+    // The warm-up registers a session with the API. We also extract any source
+    // URLs the warm-up response may contain (like flixer.su's frontend does),
+    // but these are BONUS — per-server queries are the authoritative source.
     let warmupSources: Array<{ server: string; url: string }> = [];
 
     try {
@@ -1093,60 +1096,53 @@ async function extractAllServers(
       warmupSources = extractSourcesFromData(warmupData);
 
       logger.info(
-        `Warm-up: ${warmupSources.length} URLs extracted directly (` +
-        `[${warmupSources.map(s => s.server).join(',')}]); querying remaining servers`
+        `Warm-up: ${warmupSources.length} bonus URLs from [` +
+        `${warmupSources.map(s => s.server).join(',')}]`
       );
 
       for (const src of warmupSources) {
         if (src.server !== 'unknown') recordServerResult(src.server, true);
       }
     } catch (e) {
-      logger.warn(`Warm-up failed: ${e instanceof Error ? e.message : String(e)} — will query all servers`);
+      logger.warn(`Warm-up failed: ${e instanceof Error ? e.message : String(e)} — continuing`);
     }
 
-    // ── Step 2: Query servers the warm-up missed ──
-    const warmupServers = new Set(warmupSources.map(s => s.server));
+    // ── Step 2: Query ALL 26 servers A-Z (authoritative) ──
     const allServers = Object.keys(SERVER_NAMES);
-    const missingServers = allServers.filter(s => !warmupServers.has(s));
+    logger.info(`Querying all ${allServers.length} servers in parallel for ${type}/${tmdbId}`);
 
-    let gapSources: Array<{ server: string; url: string }> = [];
+    const results = await Promise.allSettled(
+      allServers.map(async (server) => {
+        const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
+          'X-Only-Sources': '1',
+          'X-Server': server,
+        });
+        const decrypted = await loader.processImgData(encrypted, apiKey);
+        const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+        const sources = extractSourcesFromData(data, server);
+        if (sources.length > 0) {
+          recordServerResult(server, true);
+          return sources;
+        }
+        recordServerResult(server, false);
+        throw new Error(`${server}: no URL in decrypted data`);
+      })
+    );
 
-    if (missingServers.length > 0) {
-      logger.info(`Querying ${missingServers.length} remaining servers: [${missingServers.join(',')}]`);
-
-      const results = await Promise.allSettled(
-        missingServers.map(async (server) => {
-          const encrypted = await makeFlixerRequest(apiKey, apiPath, config, {
-            'X-Only-Sources': '1',
-            'X-Server': server,
-          });
-          const decrypted = await loader.processImgData(encrypted, apiKey);
-          const data = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
-
-          // Reuse the same extraction logic
-          const sources = extractSourcesFromData(data, server);
-          if (sources.length > 0) {
-            recordServerResult(server, true);
-            return sources;
-          }
-          recordServerResult(server, false);
-          throw new Error(`${server}: no URL in decrypted data`);
-        })
-      );
-
-      for (const r of results) {
-        if (r.status === 'fulfilled') gapSources.push(...r.value);
-      }
+    const perServerSources: Array<{ server: string; url: string }> = [];
+    for (const r of results) {
+      if (r.status === 'fulfilled') perServerSources.push(...r.value);
     }
 
-    // ── Step 3: Combine + sort by health score ──
-    const allExtracted = [...warmupSources, ...gapSources];
+    // ── Step 3: Combine — per-server URLs are authoritative, warm-up is fallback ──
+    // Per-server first = wins dedup for same server
+    const allExtracted = [...perServerSources, ...warmupSources];
     allExtracted.sort((a, b) => getServerScore(b.server) - getServerScore(a.server));
 
     const seen = new Set<string>();
     const unique = allExtracted.filter(s => seen.has(s.server) ? false : (seen.add(s.server), true));
 
-    logger.info(`Extraction done: ${unique.length} sources (${warmupSources.length} warm-up, ${gapSources.length} gap)`);
+    logger.info(`Extraction done: ${unique.length} sources (${perServerSources.length} per-server + ${warmupSources.length} warm-up)`);
 
     const allSources = unique.map((src) => ({
       quality: 'auto',
@@ -1183,8 +1179,8 @@ async function extractAllServers(
       sources: allSources,
       serverCount: allServers.length,
       extractedCount: allSources.length,
-      warmupSources: warmupSources.length,
-      gapSources: gapSources.length,
+      warmupBonus: warmupSources.length,
+      perServerCount: perServerSources.length,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString(),
     }, 200);
