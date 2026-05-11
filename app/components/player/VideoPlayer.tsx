@@ -948,6 +948,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         try {
           const data = await res.json();
           setProviderAvailability({
+            videasy: data.providers?.videasy?.enabled ?? true,
             flixer: data.providers?.flixer?.enabled ?? true,
             uflix: false,
             hexa: false,
@@ -4705,6 +4706,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                     .filter(p => tmdbId !== '0' || ['hianime', 'animekai'].includes(p))
                     .map(p => {
                       const displayNames: Record<string, string> = {
+                        videasy: 'Videasy',
                         flixer: 'Flixer',
                         uflix: 'Uflix',
                         hexa: 'Hexa',

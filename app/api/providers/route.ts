@@ -23,17 +23,17 @@ export async function GET() {
         primary: false,
         description: 'Disabled',
       },
-      flixer: {
-        enabled: FLIXER_ENABLED,
-        name: 'Flixer',
-        primary: true,
-        description: 'Primary streaming source (WASM-based extraction)',
-      },
       videasy: {
         enabled: true,
         name: 'Videasy',
+        primary: true,
+        description: 'Primary streaming source (player.videasy.net)',
+      },
+      flixer: {
+        enabled: FLIXER_ENABLED,
+        name: 'Flixer',
         primary: false,
-        description: 'Backup streaming source (player.videasy.net)',
+        description: 'Backup streaming source (WASM-based extraction)',
       },
       uflix: {
         enabled: false,

@@ -126,10 +126,24 @@ async function getWasmServer(): Promise<void> {
     if (typeof process !== 'undefined' && process.versions?.node) {
       const fs = await import('fs');
       const path = await import('path');
-      wasmBuffer = fs.readFileSync(path.join(process.cwd(), 'public', 'videasy-module-patched.wasm')).buffer;
+      const wasmPath = path.join(process.cwd(), 'public', 'videasy-module-patched.wasm');
+      wasmBuffer = fs.readFileSync(wasmPath).buffer;
     } else {
-      const baseUrl = getCfWorkerBaseUrl();
-      wasmBuffer = await fetch(`${baseUrl}/videasy-module-patched.wasm`).then(r => r.arrayBuffer());
+      // CF Pages Worker — try .bin first (bypasses WAF blocking .wasm), then .wasm, then CF Worker
+      const urls = [
+        'https://tv.vynx.cc/videasy.bin',
+        'https://tv.vynx.cc/videasy-module-patched.wasm',
+        `${getCfWorkerBaseUrl()}/videasy-module-patched.wasm`,
+      ];
+      let res: Response | null = null;
+      for (const url of urls) {
+        try {
+          res = await fetch(url);
+          if (res.ok) break;
+        } catch { /* try next */ }
+      }
+      if (!res || !res.ok) throw new Error('Videasy WASM not available from any URL');
+      wasmBuffer = await res.arrayBuffer();
     }
 
     const mod = await WebAssembly.instantiate(wasmBuffer, {

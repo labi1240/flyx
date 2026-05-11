@@ -113,16 +113,28 @@ async function getWasm(): Promise<{ exports: WebAssembly.Exports; memory: WebAss
   if (wasmInitPromise) return wasmInitPromise;
 
   wasmInitPromise = (async () => {
-    const wasmUrl = '/videasy-module-patched.wasm';
-    const mod = await WebAssembly.instantiateStreaming(fetch(wasmUrl), {
-      env: {
-        seed() { return Date.now() * Math.random(); },
-        abort() { throw new Error('WASM abort'); },
-      },
-    });
-    wasmExports = mod.instance.exports;
-    wasmMemory = wasmExports.memory as WebAssembly.Memory;
-    return { exports: wasmExports, memory: wasmMemory };
+    // Try .bin first (bypasses Cloudflare WAF blocking .wasm), fall back to .wasm
+    const urls = ['/videasy.bin', '/videasy-module-patched.wasm'];
+    let result: WebAssembly.WebAssemblyInstantiatedSource | null = null;
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          result = await WebAssembly.instantiate(buf, {
+            env: {
+              seed() { return Date.now() * Math.random(); },
+              abort() { throw new Error('WASM abort'); },
+            },
+          });
+          break;
+        }
+      } catch { /* try next URL */ }
+    }
+    if (!result) throw new Error('Failed to load Videasy WASM from all URLs');
+    wasmExports = result.instance.exports;
+    wasmMemory = result.instance.exports.memory as WebAssembly.Memory;
+    return { exports: wasmExports!, memory: wasmMemory! };
   })();
 
   return wasmInitPromise;
