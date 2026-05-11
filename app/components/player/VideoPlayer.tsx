@@ -118,10 +118,18 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return sourceUrl;
   }
 
-  // Flixer CDN content is proxied by the Service Worker (flixer-cdn-sw.js)
-  // which fetches from the browser's residential IP and adds CORS headers.
-  // Only proxy through CF Worker when the extractor explicitly requires it.
-  const needsProxy = requiresProxy;
+  // Flixer CDN (*.workers.dev) is handled by the Service Worker which
+  // fetches from the browser's residential IP + adds CORS. Do NOT proxy
+  // Flixer through CF Worker (its IP is blocked by Flixer CDN).
+  // Other providers (DLHD, IPTV, etc.) still need CF Worker proxy for CORS.
+  const isFlixerCdn = providerName === 'flixer' && sourceUrl.includes('.workers.dev');
+  const needsProxy = (!isFlixerCdn && requiresProxy) ||
+    (!isFlixerCdn && sourceUrl.includes('.workers.dev')) ||
+    (!isFlixerCdn && sourceUrl.includes('frostcomet')) ||
+    (!isFlixerCdn && sourceUrl.includes('thunderleaf')) ||
+    (!isFlixerCdn && sourceUrl.includes('skyember')) ||
+    (!isFlixerCdn && sourceUrl.includes('nightbreeze')) ||
+    (!isFlixerCdn && sourceUrl.includes('wind.'));
   if (!needsProxy) return sourceUrl;
 
   if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);

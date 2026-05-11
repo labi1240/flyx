@@ -11,7 +11,6 @@
  * Zero external infrastructure — the user's browser IS the proxy.
  */
 
-// Domains that are Flixer CDNs (need proxying + CORS fix)
 const FLIXER_CDN_PATTERNS = [
   /frostcomet\./,
   /thunderleaf\./,
@@ -19,7 +18,6 @@ const FLIXER_CDN_PATTERNS = [
   /nightbreeze\./,
 ];
 
-// Our own infrastructure — NEVER intercept
 const OWN_DOMAINS = [
   /vynx-3b3\.workers\.dev/,
   /vynx\.cc/,
@@ -31,11 +29,8 @@ const OWN_DOMAINS = [
 ];
 
 function isFlixerCdn(url: string): boolean {
-  // Never intercept our own services
   if (OWN_DOMAINS.some(p => p.test(url))) return false;
-  // Flixer-specific CDN patterns
   if (FLIXER_CDN_PATTERNS.some(p => p.test(url))) return true;
-  // Catch-all: any *.workers.dev NOT matching our domains is likely a Flixer CDN
   if (/\.workers\.dev\//.test(url)) return true;
   return false;
 }
@@ -45,39 +40,52 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   if (!isFlixerCdn(url)) return;
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(proxyFlixerCdn(url));
+  event.respondWith(proxyFlixerCdn(event.request));
 });
 
-async function proxyFlixerCdn(url: string): Promise<Response> {
-  const cdnHeaders: Record<string, string> = {
+async function proxyFlixerCdn(request: Request): Promise<Response> {
+  // Forward critical request headers for proper HLS seeking
+  const fwdHeaders: Record<string, string> = {
     'User-Agent': navigator.userAgent,
     'Accept': '*/*',
     'Referer': 'https://flixer.su/',
   };
 
+  // Forward Range header for seeking (critical for HLS.js timeline scrubbing)
+  const range = request.headers.get('Range');
+  if (range) fwdHeaders['Range'] = range;
+
   try {
-    const cdnResponse = await fetch(url, { headers: cdnHeaders });
+    const cdnResponse = await fetch(request.url, { headers: fwdHeaders });
 
     const headers = new Headers(cdnResponse.headers);
+    const status = cdnResponse.status;
+
+    // Add CORS if missing (but don't modify 206 Partial Content in weird ways)
     if (!headers.has('Access-Control-Allow-Origin')) {
       headers.set('Access-Control-Allow-Origin', '*');
     }
-    headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
 
-    const isPlaylist = url.includes('.m3u8') ||
-      (headers.get('Content-Type') || '').includes('mpegurl');
-    if (!headers.has('Cache-Control')) {
+    // Expose headers HLS.js needs for range requests
+    headers.set('Access-Control-Expose-Headers',
+      'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+
+    // Only set Cache-Control for non-partial responses
+    if (status !== 206 && !headers.has('Cache-Control')) {
+      const isPlaylist = request.url.includes('.m3u8') ||
+        (headers.get('Content-Type') || '').includes('mpegurl');
       headers.set('Cache-Control', isPlaylist ? 'public, max-age=5' : 'public, max-age=3600');
     }
 
+    // CRITICAL: preserve 206 status for byte-range responses
+    // HLS.js seeking requires 206 Partial Content, not 200
     return new Response(cdnResponse.body, {
-      status: cdnResponse.status,
+      status,
       statusText: cdnResponse.statusText,
       headers,
     });
   } catch (err) {
     console.warn('[Flixer SW] CDN fetch failed, passing through:', err);
-    // Let the browser try directly as fallback
-    return fetch(url, { headers: cdnHeaders });
+    return fetch(request);
   }
 }
