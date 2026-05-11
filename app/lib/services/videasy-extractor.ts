@@ -25,7 +25,7 @@ function getCfWorkerBaseUrl(): string {
 // ============================================================================
 function md5bytes(data: Uint8Array): Uint8Array {
   const len = data.length;
-  const totalLen = len + 1 + ((len + 8) % 64 < 56 ? 56 - (len + 8) % 64 : 120 - (len + 8) % 64) + 8;
+  const totalLen = len + 1 + ((len + 1) % 64 < 56 ? 56 - (len + 1) % 64 : 120 - (len + 1) % 64) + 8;
   const words = new Uint8Array(totalLen);
   words.set(data, 0);
   words[len] = 0x80;

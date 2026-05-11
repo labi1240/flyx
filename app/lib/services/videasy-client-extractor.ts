@@ -17,7 +17,7 @@ function md5bytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
   const bitLen = data.length * 8;
   const lo = bitLen & 0xffffffff;
   const hi = (bitLen / 0x100000000) | 0;
-  const padLen = ((data.length + 8) % 64 < 56) ? (56 - (data.length + 8) % 64) : (120 - (data.length + 8) % 64);
+  const padLen = ((data.length + 1) % 64 < 56) ? (56 - (data.length + 1) % 64) : (120 - (data.length + 1) % 64);
   const totalLen = data.length + 1 + padLen + 8;
   words[totalLen - 8] = lo & 0xff; words[totalLen - 7] = (lo >>> 8) & 0xff;
   words[totalLen - 6] = (lo >>> 16) & 0xff; words[totalLen - 5] = (lo >>> 24) & 0xff;
