@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
