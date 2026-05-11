@@ -29,7 +29,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
     sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
+  if (providerName === 'flixer') return sourceUrl; // CDN blocks CF Worker IPs — browser fetches directly (SW adds CORS)
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   return sourceUrl;
