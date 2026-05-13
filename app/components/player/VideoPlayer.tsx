@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
-import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import { useAnalytics } from '../analytics/AnalyticsProvider';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
 import { trackWatchStart, trackWatchProgress, trackWatchPause, trackWatchComplete } from '@/lib/utils/live-activity';
@@ -113,7 +113,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
-      sourceUrl.includes('/vidsrc/') ||
+      sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
       sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/')) {
     return sourceUrl;
   }
@@ -135,6 +135,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
+  if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
   // For other providers, return as-is (they handle their own proxying)
   return sourceUrl;
 }

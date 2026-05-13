@@ -252,7 +252,7 @@ export async function extractVideasyStreams(
         url: s.url,
         type: (s.type || 'hls') as 'hls' | 'mp4',
         referer: s.referer || 'https://player.videasy.net/',
-        requiresSegmentProxy: false,
+        requiresSegmentProxy: true, // CDN requires Referer: player.videasy.net — must proxy
         status: 'working' as const,
         language: s.language || s.lang || 'en',
         server: s.server || 'videasy',

@@ -610,6 +610,19 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
   return `${baseUrl}/viprow/segment?url=${encodeURIComponent(segmentUrl)}`;
 }
 
+// ─── Videasy Proxy ─────────────────────────────────────────────
+
+/**
+ * Get Videasy stream proxy URL — routes through CF Worker /stream.
+ * Videasy CDN (yoru.midwesteagle.com) requires Referer: https://player.videasy.net/
+ * on every segment request. The browser cannot set this header, so all HLS traffic
+ * goes through the CF Worker which adds the required Referer/Origin.
+ */
+export function getVideasyStreamProxyUrl(url: string): string {
+  const baseUrl = getFlixerProxyBaseUrl();
+  return `${baseUrl}/stream?url=${encodeURIComponent(url)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.net/')}`;
+}
+
 // ─── PrimeSrc Proxy ─────────────────────────────────────────────
 
 function getPrimeSrcProxyBaseUrl(): string {
