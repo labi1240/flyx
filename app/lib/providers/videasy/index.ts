@@ -2,9 +2,7 @@
  * Videasy Provider Module
  *
  * Wraps the Videasy source extraction pipeline behind the unified Provider interface.
- * Serves as a backup source when Flixer fails.
- *
- * Priority 20 (Flixer is 10) — Videasy only runs when Flixer is unavailable.
+ * Primary streaming provider — zero-auth, direct HLS, 4K support.
  */
 
 import type {
@@ -24,7 +22,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class VideasyProvider implements Provider {
   readonly name = 'videasy';
-  readonly priority = 20; // Lower priority than Flixer (10) — used as backup
+  readonly priority = 1; // Primary provider — zero-auth, no captcha needed
   readonly enabled = VIDEASY_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {

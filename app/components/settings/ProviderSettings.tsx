@@ -15,22 +15,22 @@ interface ProviderInfo {
 
 const PROVIDERS: ProviderInfo[] = [
   {
-    id: 'primesrc',
-    name: 'PrimeSrc',
-    description: 'Primary provider — CF Worker, no RPI needed',
-    icon: '⚡',
+    id: 'videasy',
+    name: 'Videasy',
+    description: 'Primary provider — zero-auth, direct HLS, 4K support',
+    icon: '🎯',
   },
   {
     id: 'flixer',
     name: 'Flixer',
-    description: 'WASM-based extraction, fast',
+    description: 'Backup source — WASM-based extraction with captcha',
     icon: '📺',
   },
   {
-    id: 'videasy',
-    name: 'Videasy',
-    description: 'Backup source — player.videasy.net',
-    icon: '🎯',
+    id: 'primesrc',
+    name: 'PrimeSrc',
+    description: 'CF Worker provider, no RPI needed',
+    icon: '⚡',
   },
   {
     id: 'uflix',

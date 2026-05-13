@@ -291,8 +291,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [showCastTips, setShowCastTips] = useState(false); // Cast Tips modal
   const castErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
-    videasy: true, // Videasy — primary provider for movies/TV
-    flixer: true, // Flixer — backup source for movies/TV
+    videasy: true, // Videasy — primary provider for movies/TV (zero-auth, direct HLS)
+    flixer: false, // Flixer — backup source (requires captcha)
     uflix: false,
     hexa: false,
     vidsrc: false,
