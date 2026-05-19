@@ -11,7 +11,7 @@ import { getSavedVolume, getSavedMuteState, saveVolumeSettings } from '@/lib/uti
 import styles from './MobileVideoPlayer.module.css';
 
 type AudioPreference = 'sub' | 'dub';
-type Provider = 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'animekai' | 'hianime' | 'primesrc';
+type Provider = 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'animekai' | 'hianime' | 'primesrc' | 'miruro' | 'moviebox';
 
 interface SubtitleTrack {
   id: string;
@@ -76,6 +76,8 @@ const PROVIDER_NAMES: Record<Provider, string> = {
   '1movies': '1movies',
   animekai: 'AnimeKai',
   hianime: 'HiAnime',
+  miruro: 'Miruro',
+  moviebox: 'MovieBox',
 };
 
 // ── SVG Icon Components ─────────────────────────────────────────────────

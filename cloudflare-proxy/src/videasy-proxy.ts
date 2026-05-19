@@ -11,6 +11,7 @@
  */
 
 import { createLogger } from './logger';
+import { CORS_HEADERS } from './cors';
 
 const VIDEOASY_API = 'https://api.videasy.net';
 
@@ -69,7 +70,7 @@ export async function handleVideasyRequest(
   if (path === '/videasy/health') {
     return new Response(JSON.stringify({ status: 'ok' }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     });
   }
 
@@ -85,7 +86,7 @@ export async function handleVideasyRequest(
         error: 'Missing required parameters: tmdbId, title',
       }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     }
 
@@ -109,7 +110,7 @@ export async function handleVideasyRequest(
           error: err.message || err.error || 'Videasy API returned an error',
         }), {
           status: 502,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
         });
       }
 
@@ -120,7 +121,7 @@ export async function handleVideasyRequest(
         provider: 'videasy',
       }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     } catch (error) {
       logger.error('Videasy extract error', error as Error);
@@ -129,13 +130,13 @@ export async function handleVideasyRequest(
         error: error instanceof Error ? error.message : String(error),
       }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     }
   }
 
   return new Response(JSON.stringify({ error: 'Unknown Videasy endpoint' }), {
     status: 404,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
 }

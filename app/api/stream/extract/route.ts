@@ -251,7 +251,7 @@ function getValidProviderNames(): string[] {
       ...registry.getAllEnabled().map((p: any) => p.name),
       // Include disabled providers too — they can be explicitly requested
       'flixer', 'uflix', 'animekai', 'hianime', 'vidsrc', 'primesrc', 'multi-embed',
-      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv',
+      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'moviebox',
     ])
   );
   return ['auto', ...registeredNames, ...Object.keys(PROVIDER_ALIASES)];
@@ -395,7 +395,7 @@ export async function GET(request: NextRequest) {
 
     // GUARD: Reject TMDB-dependent providers when tmdbId=0 (MAL-direct anime)
     // These providers (flixer, vidlink, vidsrc, etc.) need a real TMDB ID to work
-    const tmdbDependentProviders = ['flixer', 'uflix', 'vidsrc', 'multi-embed', 'hexa', '1movies', 'primesrc'];
+    const tmdbDependentProviders = ['flixer', 'uflix', 'vidsrc', 'multi-embed', 'hexa', '1movies', 'primesrc', 'moviebox'];
     if (tmdbId === '0' && tmdbDependentProviders.includes(providerParam)) {
       return NextResponse.json(
         { error: `${providerParam} requires a real TMDB ID (tmdbId=0 is MAL-direct anime)`, success: false },
@@ -729,6 +729,27 @@ async function directExtract(
         }
         throw new Error(result.error || 'HiAnime returned no sources');
       }
+      case 'miruro': {
+        const { extractMiruroStreams } = await import('@/app/lib/services/miruro-extractor');
+        if (!request.malId && !request.malTitle) throw new Error('Miruro requires malId or malTitle');
+        const result = await extractMiruroStreams(
+          request.malId || 0,
+          request.malTitle || request.title || '',
+          request.episode,
+        );
+        if (result.success && result.sources.length > 0) {
+          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? true })), provider: 'miruro' };
+        }
+        throw new Error(result.error || 'Miruro returned no sources');
+      }
+      case 'moviebox': {
+        const { extractMovieBoxStreams } = await import('@/app/lib/services/moviebox-extractor');
+        const result = await extractMovieBoxStreams(request.tmdbId, request.mediaType, request.season, request.episode);
+        if (result.success && result.sources.length > 0) {
+          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? false })), provider: 'moviebox' };
+        }
+        throw new Error(result.error || 'MovieBox returned no sources');
+      }
       case 'multi-embed': {
         const { extractMultiEmbedStreams } = await import('@/app/lib/services/multi-embed-extractor');
         const result = await extractMultiEmbedStreams(request.tmdbId, request.mediaType, request.season, request.episode);
@@ -776,8 +797,8 @@ async function directExtractWithFallback(
   // Priority order for anime vs movie/tv
   // Only Flixer is active for movies/TV until new sources are added
   const providerOrder = isAnime
-    ? ['animekai', 'hianime', 'videasy', 'flixer']
-    : ['videasy', 'flixer'];
+    ? ['animekai', 'hianime', 'miruro', 'videasy', 'flixer']
+    : ['videasy', 'flixer', 'moviebox'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
 
@@ -858,7 +879,10 @@ function inferProviderFromSourceName(sourceName: string): string | undefined {
   if (sourceName.includes('AnimeKai')) return 'animekai';
   if (sourceName.includes('Flixer') || sourceName.includes('Hexa')) return 'flixer';
   if (sourceName.includes('Videasy') || sourceName.includes('videasy')) return 'videasy';
+  if (sourceName.includes('Miruro') || sourceName.includes('miruro')) return 'miruro';
+  if (sourceName.includes('MovieBox') || sourceName.includes('moviebox')) return 'moviebox';
   if (sourceName.includes('MultiEmbed')) return 'multi-embed';
+  if (sourceName.includes('NTV') || sourceName.includes('ntv')) return 'ntv';
   if (sourceName.includes('Uflix')) return 'uflix';
   return undefined;
 }

@@ -193,6 +193,14 @@ export default function LiveTVRefactored() {
                 <span className={styles.sourceTabLabel}>PPV.to</span>
                 <span className={styles.sourceTabCount}>{stats.ppv.events}</span>
               </button>
+              <button
+                onClick={() => handleProviderChange('ntv')}
+                className={`${styles.sourceTab} ${selectedProvider === 'ntv' ? styles.active : ''}`}
+              >
+                <span className={styles.sourceTabIcon}>🛰️</span>
+                <span className={styles.sourceTabLabel}>NTV</span>
+                <span className={styles.sourceTabCount}>{stats.ntv.events}</span>
+              </button>
             </div>
 
             {/* Filters */}
@@ -202,7 +210,7 @@ export default function LiveTVRefactored() {
                 className={`${styles.filterPill} ${showLiveOnly ? styles.active : ''}`}
               >
                 <span className={styles.liveDot} />
-                Live Now ({selectedProvider === 'ppv' ? stats.ppv.live : stats.dlhd.live})
+                Live Now ({selectedProvider === 'ppv' ? stats.ppv.live : selectedProvider === 'ntv' ? stats.ntv.live : stats.dlhd.live})
               </button>
               
               <button
@@ -281,6 +289,14 @@ export default function LiveTVRefactored() {
                 <span className={styles.sourceTabIcon}>🌐</span>
                 <span className={styles.sourceTabLabel}>CDN Live</span>
                 <span className={styles.sourceTabCount}>{stats.cdnlive.channels}</span>
+              </button>
+              <button
+                onClick={() => setSelectedProvider('ntv')}
+                className={`${styles.sourceTab} ${selectedProvider === 'ntv' ? styles.active : ''}`}
+              >
+                <span className={styles.sourceTabIcon}>🛰️</span>
+                <span className={styles.sourceTabLabel}>NTV</span>
+                <span className={styles.sourceTabCount}>{stats.ntv.channels}</span>
               </button>
             </div>
 
@@ -371,6 +387,8 @@ function EventCard({ event, onPlay }: EventCardProps) {
     switch (event.source) {
       case 'dlhd': return { label: 'DLHD', color: 'blue' };
       case 'cdnlive': return { label: 'CDN', color: 'green' };
+      case 'ppv': return { label: 'PPV', color: 'purple' };
+      case 'ntv': return { label: 'NTV', color: 'orange' };
       default: return { label: 'LIVE', color: 'gray' };
     }
   };

@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 // TYPES
 // ============================================================================
 
-export type Provider = 'dlhd' | 'cdnlive' | 'ppv';
+export type Provider = 'dlhd' | 'cdnlive' | 'ppv' | 'ntv';
 export type ContentType = 'events' | 'channels';
 
 export interface LiveEvent {
@@ -61,6 +61,7 @@ export interface ProviderStats {
   dlhd: { events: number; channels: number; live: number };
   cdnlive: { channels: number };
   ppv: { events: number; live: number };
+  ntv: { events: number; channels: number; live: number };
 }
 
 // ============================================================================
@@ -167,6 +168,12 @@ export function useLiveTVData() {
   const [ppvEvents, setPpvEvents] = useState<LiveEvent[]>([]);
   const [ppvLoading, setPpvLoading] = useState(true);
   const [ppvError, setPpvError] = useState<string | null>(null);
+
+  // NTV State - Live TV + Sports aggregator
+  const [ntvEvents, setNtvEvents] = useState<LiveEvent[]>([]);
+  const [ntvChannels, setNtvChannels] = useState<TVChannel[]>([]);
+  const [ntvLoading, setNtvLoading] = useState(true);
+  const [ntvError, setNtvError] = useState<string | null>(null);
 
   // DLHD Fetcher
   const fetchDLHD = useCallback(async () => {
@@ -337,34 +344,143 @@ export function useLiveTVData() {
     }
   }, []);
 
+  // NTV Fetcher — Live TV & Sports from ntv.cx
+  const fetchNTV = useCallback(async () => {
+    setNtvLoading(true);
+    setNtvError(null);
+
+    try {
+      const [channelsResult, matchesResult] = await Promise.allSettled([
+        fetch('/api/livetv/ntv-channels').then(r => r.json()),
+        fetch('/api/livetv/ntv-matches?server=kobra&type=both').then(r => r.json()),
+      ]);
+
+      // Parse channels
+      const channels: TVChannel[] = [];
+      if (channelsResult.status === 'fulfilled') {
+        const channelsJson = channelsResult.value;
+        const rawChannels = channelsJson.channels || channelsJson.data || channelsJson || [];
+        if (Array.isArray(rawChannels)) {
+          for (const ch of rawChannels) {
+            channels.push({
+              id: `ntv-${ch.channel_id || ch.channelId}`,
+              name: ch.channel_name || ch.channelName || ch.name,
+              category: categorizeChannel(ch.channel_name || ch.channelName || ch.name),
+              country: ch.channel_code || ch.country || '',
+              viewers: ch.viewers || 0,
+              source: 'ntv' as const,
+              channelId: ch.channel_id || ch.channelId || ch.id,
+            });
+          }
+        }
+      } else {
+        console.error('[LiveTV] NTV channels fetch failed:', channelsResult.reason);
+      }
+
+      // Parse matches
+      const events: LiveEvent[] = [];
+      if (matchesResult.status === 'fulfilled') {
+        const matchesJson = matchesResult.value;
+        if (matchesJson.success && matchesJson.live) {
+          for (const match of matchesJson.live) {
+            events.push({
+              id: `ntv-${match.id}`,
+              title: match.title,
+              sport: match.category,
+              teams: match.teams ? {
+                home: match.teams.home?.name || 'Home',
+                away: match.teams.away?.name || 'Away',
+              } : undefined,
+              time: match.date ? new Date(match.date).toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', hour12: true,
+              }) : '',
+              isoTime: match.date ? new Date(match.date).toISOString() : undefined,
+              isLive: match.live === true,
+              source: 'ntv' as const,
+              poster: match.poster,
+              channels: (match.sources || []).map((s: any) => ({
+                name: `${s.source?.toUpperCase() || 'Stream'} ${s.id ? `(${s.id})` : ''}`,
+                channelId: s.id || s.channelId || '',
+                href: `/api/livetv/ntv-stream?t=${encodeURIComponent(s.id || '')}`,
+              })),
+            });
+          }
+        }
+        // Also include upcoming matches
+        if (matchesJson.upcoming && Array.isArray(matchesJson.upcoming)) {
+          for (const match of matchesJson.upcoming) {
+            events.push({
+              id: `ntv-${match.id}`,
+              title: match.title,
+              sport: match.category,
+              teams: match.teams ? {
+                home: match.teams.home?.name || 'Home',
+                away: match.teams.away?.name || 'Away',
+              } : undefined,
+              time: match.date ? new Date(match.date).toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', hour12: true,
+              }) : '',
+              isoTime: match.date ? new Date(match.date).toISOString() : undefined,
+              isLive: false,
+              source: 'ntv' as const,
+              poster: match.poster,
+              startsAt: match.date,
+              channels: (match.sources || []).map((s: any) => ({
+                name: s.source?.toUpperCase() || 'Stream',
+                channelId: s.id || '',
+                href: '',
+              })),
+            });
+          }
+        }
+      } else {
+        console.error('[LiveTV] NTV matches fetch failed:', matchesResult.reason);
+      }
+
+      setNtvEvents(events);
+      setNtvChannels(channels);
+
+      if (channelsResult.status === 'rejected' && matchesResult.status === 'rejected') {
+        setNtvError('Failed to load NTV data');
+      }
+    } catch (error) {
+      setNtvError(error instanceof Error ? error.message : 'Failed to load NTV');
+    } finally {
+      setNtvLoading(false);
+    }
+  }, []);
+
   // Initial Load
   useEffect(() => {
     fetchDLHD();
     fetchCDNLive();
     fetchPPV();
-  }, [fetchDLHD, fetchCDNLive, fetchPPV]);
+    fetchNTV();
+  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV]);
 
-  // All Events (DLHD + VIPRow)
+  // All Events (DLHD + PPV + NTV)
   const allEvents = useMemo(() => {
-    return [...dlhdEvents, ...ppvEvents];
-  }, [dlhdEvents, ppvEvents]);
+    return [...dlhdEvents, ...ppvEvents, ...ntvEvents];
+  }, [dlhdEvents, ppvEvents, ntvEvents]);
 
-  // All Channels (DLHD + CDN Live)
+  // All Channels (DLHD + CDN Live + NTV)
   const allChannels = useMemo(() => {
-    return [...dlhdChannels, ...cdnChannels];
-  }, [dlhdChannels, cdnChannels]);
+    return [...dlhdChannels, ...cdnChannels, ...ntvChannels];
+  }, [dlhdChannels, cdnChannels, ntvChannels]);
 
   // Filtered Events
   const filteredEvents = useMemo(() => {
     let events = allEvents;
-    
+
     // Filter by provider
     if (selectedProvider === 'ppv') {
       events = ppvEvents;
     } else if (selectedProvider === 'dlhd') {
       events = dlhdEvents;
+    } else if (selectedProvider === 'ntv') {
+      events = ntvEvents;
     }
-    
+
     // Filter by search
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -376,21 +492,23 @@ export function useLiveTVData() {
         event.teams?.away.toLowerCase().includes(query)
       );
     }
-    
+
     return events;
-  }, [allEvents, ppvEvents, dlhdEvents, selectedProvider, searchQuery]);
+  }, [allEvents, ppvEvents, dlhdEvents, ntvEvents, selectedProvider, searchQuery]);
 
   // Filtered Channels
   const filteredChannels = useMemo(() => {
     let channels = allChannels;
-    
+
     // Filter by provider
     if (selectedProvider === 'cdnlive') {
       channels = cdnChannels;
     } else if (selectedProvider === 'dlhd') {
       channels = dlhdChannels;
+    } else if (selectedProvider === 'ntv') {
+      channels = ntvChannels;
     }
-    
+
     // Filter by search
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -401,9 +519,9 @@ export function useLiveTVData() {
         channel.countryName?.toLowerCase().includes(query)
       );
     }
-    
+
     return channels;
-  }, [allChannels, cdnChannels, dlhdChannels, selectedProvider, searchQuery]);
+  }, [allChannels, cdnChannels, dlhdChannels, ntvChannels, selectedProvider, searchQuery]);
 
   // Event Categories
   const eventCategories = useMemo(() => {
@@ -456,32 +574,44 @@ export function useLiveTVData() {
       events: ppvEvents.length,
       live: ppvEvents.filter(e => e.isLive).length,
     },
-  }), [dlhdEvents, dlhdChannels, cdnChannels, ppvEvents]);
+    ntv: {
+      events: ntvEvents.length,
+      channels: ntvChannels.length,
+      live: ntvEvents.filter(e => e.isLive).length,
+    },
+  }), [dlhdEvents, dlhdChannels, cdnChannels, ppvEvents, ntvEvents, ntvChannels]);
 
   // Loading state
   const loading = useMemo(() => {
     if (contentType === 'events') {
       if (selectedProvider === 'ppv') return ppvLoading;
+      if (selectedProvider === 'ntv') return ntvLoading;
       return dlhdLoading;
     }
-    return selectedProvider === 'cdnlive' ? cdnLoading : dlhdLoading;
-  }, [contentType, selectedProvider, dlhdLoading, cdnLoading, ppvLoading]);
+    if (selectedProvider === 'cdnlive') return cdnLoading;
+    if (selectedProvider === 'ntv') return ntvLoading;
+    return dlhdLoading;
+  }, [contentType, selectedProvider, dlhdLoading, cdnLoading, ppvLoading, ntvLoading]);
 
   // Error state
   const error = useMemo(() => {
     if (contentType === 'events') {
       if (selectedProvider === 'ppv') return ppvError;
+      if (selectedProvider === 'ntv') return ntvError;
       return dlhdError;
     }
-    return selectedProvider === 'cdnlive' ? cdnError : dlhdError;
-  }, [contentType, selectedProvider, dlhdError, cdnError, ppvError]);
+    if (selectedProvider === 'cdnlive') return cdnError;
+    if (selectedProvider === 'ntv') return ntvError;
+    return dlhdError;
+  }, [contentType, selectedProvider, dlhdError, cdnError, ppvError, ntvError]);
 
   // Refresh
   const refresh = useCallback(() => {
     fetchDLHD();
     fetchCDNLive();
     fetchPPV();
-  }, [fetchDLHD, fetchCDNLive, fetchPPV]);
+    fetchNTV();
+  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV]);
 
   return {
     // Content type toggle

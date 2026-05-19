@@ -63,6 +63,26 @@ const PROVIDERS: ProviderInfo[] = [
     icon: '🎌',
     isAnimeOnly: true,
   },
+  {
+    id: 'hianime',
+    name: 'HiAnime',
+    description: 'Anime sub+dub provider — MegaCloud extraction',
+    icon: '🍥',
+    isAnimeOnly: true,
+  },
+  {
+    id: 'miruro',
+    name: 'Miruro',
+    description: 'Anime sub+dub provider — 6 servers, AniList metadata',
+    icon: '🌸',
+    isAnimeOnly: true,
+  },
+  {
+    id: 'moviebox',
+    name: 'MovieBox',
+    description: 'Movies/TV provider — Nuxt 3 backend, multi-quality HLS',
+    icon: '🎞️',
+  },
 ];
 
 export default function ProviderSettings() {

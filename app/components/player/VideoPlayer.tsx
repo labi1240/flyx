@@ -114,7 +114,8 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
-      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/')) {
+      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
+      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/')) {
     return sourceUrl;
   }
 
@@ -292,14 +293,16 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [showCastTips, setShowCastTips] = useState(false); // Cast Tips modal
   const castErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
-    videasy: true, // Videasy — primary provider for movies/TV (zero-auth, direct HLS)
-    flixer: false, // Flixer — backup source (requires captcha)
+    videasy: true, // Primary provider — zero-auth, direct HLS, 4K support
+    flixer: true, // Backup provider — WASM-based extraction
     uflix: false,
     hexa: false,
     vidsrc: false,
     '1movies': false,
     animekai: true, // Anime-specific provider - auto-selected for anime content
     hianime: true, // HiAnime - primary anime provider (MegaCloud extraction)
+    miruro: true, // Miruro - anime sub+dub provider (6 providers, uwucdn.top CDN)
+    moviebox: true, // MovieBox - movies/TV/anime (h5-api.aoneroom.com, session-gated)
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
@@ -569,7 +572,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Fetch sources for a specific provider
   const fetchSources = async (providerName: string, force: boolean = false): Promise<any[] | null> => {
     // GUARD: Don't fetch TMDB-dependent providers when tmdbId is 0 (MAL-direct anime)
-    if (tmdbId === '0' && !['hianime', 'animekai'].includes(providerName)) {
+    if (tmdbId === '0' && !['hianime', 'animekai', 'miruro'].includes(providerName)) {
       console.log(`[VideoPlayer] Skipping ${providerName} fetch — tmdbId=0 (MAL-direct)`);
       return null;
     }
@@ -605,6 +608,21 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
 
     try {
+      // Videasy: browser-direct extraction via CF Worker (primary provider)
+      if (providerName === 'videasy') {
+        console.log(`[VideoPlayer] Videasy: browser-direct extraction`);
+        const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
+        const sources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+        if (sources.length > 0) {
+          setSourcesCache(prev => ({ ...prev, videasy: sources }));
+          if (providerName === provider) {
+            setAvailableSources(sources);
+          }
+          return sources;
+        }
+        throw new Error('No Videasy sources available');
+      }
+
       // HEXA: Browser-direct extraction — browser calls hexa.su directly so
       // hexa sees the user's residential IP (no captcha needed). Same pattern as DLHD.
       if (providerName === 'flixer') {
@@ -622,7 +640,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       }
 
       // ANIME PROVIDERS: Use dedicated /api/anime/stream when malId is available
-      if (malId && (providerName === 'animekai' || providerName === 'hianime')) {
+      if (malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
         const params = new URLSearchParams({
           malId: malId.toString(),
           provider: providerName,
@@ -1520,6 +1538,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   }
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
                   if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
+                  if (provider !== 'moviebox' && providerAvailability.moviebox) fallbackProviders.push('moviebox');
 
                   for (const fallbackProvider of fallbackProviders) {
                     if (triedProvidersRef.current.has(fallbackProvider)) continue;
@@ -4706,7 +4725,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 <div className={styles.tabsContainer} data-server-tabs="true">
                   {providerTabOrder
                     .filter(p => providerAvailability[p])
-                    .filter(p => tmdbId !== '0' || ['hianime', 'animekai'].includes(p))
+                    .filter(p => tmdbId !== '0' || ['hianime', 'animekai', 'miruro'].includes(p))
                     .map(p => {
                       const displayNames: Record<string, string> = {
                         videasy: 'Videasy',
@@ -4717,6 +4736,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                         '1movies': '1movies',
                         hianime: 'HiAnime',
                         animekai: 'AnimeKai',
+                        miruro: 'Miruro',
+                        moviebox: 'MovieBox',
                       };
                       return (
                         <button
@@ -4745,7 +4766,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                       const allSources = sourcesCache[menuProvider]
                         .map((s: any, i: number) => s != null ? { ...s, _origIdx: i } : null)
                         .filter((s: any) => s != null);
-                      const isAnimeProvider = menuProvider === 'animekai' || menuProvider === 'hianime';
+                      const isAnimeProvider = menuProvider === 'animekai' || menuProvider === 'hianime' || menuProvider === 'miruro';
                       
                       if (isAnimeProvider) {
                         // Filter by dub/sub preference for anime providers

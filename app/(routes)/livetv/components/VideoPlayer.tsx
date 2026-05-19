@@ -98,6 +98,12 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         }
         return null; // PPV requires the CF Worker proxy
       }
+
+      // NTV: stream URL resolved via /api/livetv/ntv-stream?t={token}
+      if (event.source === 'ntv' && event.channels.length > 0) {
+        const ch = event.channels[selectedChannelIndex] || event.channels[0];
+        return ch.href || `/api/livetv/ntv-stream?t=${encodeURIComponent(ch.channelId)}`;
+      }
     }
 
     return null;

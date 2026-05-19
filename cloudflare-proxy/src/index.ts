@@ -37,6 +37,9 @@ import { handleVIPRowRequest } from './viprow-proxy';
 import { handleVidSrcRequest } from './vidsrc-proxy';
 import { handleHiAnimeRequest } from './hianime-proxy';
 import { handlePrimeSrcRequest } from './primesrc-proxy';
+import { handleNTVRequest } from './ntv-proxy';
+import { handleMiruroRequest } from './miruro-proxy';
+import { handleMovieBoxRequest } from './moviebox-proxy';
 import { runHealthChecks } from './hexa-monitor';
 import { createLogger, type LogLevel } from './logger';
 import { incrementMetric } from './metrics';
@@ -272,6 +275,30 @@ export function buildRouteTable(): RouteEntry[] {
         incrementMetric('hianimeRequests');
         logger.info('Routing to HiAnime proxy', { path: new URL(request.url).pathname });
         return await handleHiAnimeRequest(request, env);
+      },
+    },
+    {
+      prefix: '/miruro',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('miruroRequests');
+        logger.info('Routing to Miruro proxy', { path: new URL(request.url).pathname });
+        return await handleMiruroRequest(request, env);
+      },
+    },
+    {
+      prefix: '/moviebox',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('movieboxRequests');
+        logger.info('Routing to MovieBox proxy', { path: new URL(request.url).pathname });
+        return await handleMovieBoxRequest(request, env);
+      },
+    },
+    {
+      prefix: '/ntv',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('ntvRequests');
+        logger.info('Routing to NTV proxy', { path: new URL(request.url).pathname });
+        return await handleNTVRequest(request, env);
       },
     },
     {

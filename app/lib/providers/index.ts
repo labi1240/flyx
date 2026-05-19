@@ -28,6 +28,7 @@ try { const { VideasyProvider } = require('./videasy'); safeRegister('videasy', 
 try { const { UflixProvider } = require('./uflix'); safeRegister('uflix', () => new UflixProvider()); } catch (e: any) { console.error('[ProviderRegistry] uflix import failed:', e.message); }
 try { const { AnimeKaiProvider } = require('./animekai'); safeRegister('animekai', () => new AnimeKaiProvider()); } catch (e: any) { console.error('[ProviderRegistry] animekai import failed:', e.message); }
 try { const { HiAnimeProvider } = require('./hianime'); safeRegister('hianime', () => new HiAnimeProvider()); } catch (e: any) { console.error('[ProviderRegistry] hianime import failed:', e.message); }
+try { const { MiruroProvider } = require('./miruro'); safeRegister('miruro', () => new MiruroProvider()); } catch (e: any) { console.error('[ProviderRegistry] miruro import failed:', e.message); }
 try { const { VidSrcProvider } = require('./vidsrc'); safeRegister('vidsrc', () => new VidSrcProvider()); } catch (e: any) { console.error('[ProviderRegistry] vidsrc import failed:', e.message); }
 try { const { PrimeSrcProvider } = require('./primesrc'); safeRegister('primesrc', () => new PrimeSrcProvider()); } catch (e: any) { console.error('[ProviderRegistry] primesrc import failed:', e.message); }
 try { const { MultiEmbedProvider } = require('./multi-embed'); safeRegister('multi-embed', () => new MultiEmbedProvider()); } catch (e: any) { console.error('[ProviderRegistry] multi-embed import failed:', e.message); }
@@ -36,6 +37,8 @@ try { const { VIPRowProvider } = require('./viprow'); safeRegister('viprow', () 
 try { const { PPVProvider } = require('./ppv'); safeRegister('ppv', () => new PPVProvider()); } catch (e: any) { console.error('[ProviderRegistry] ppv import failed:', e.message); }
 try { const { CDNLiveProvider } = require('./cdn-live'); safeRegister('cdn-live', () => new CDNLiveProvider()); } catch (e: any) { console.error('[ProviderRegistry] cdn-live import failed:', e.message); }
 try { const { IPTVProvider } = require('./iptv'); safeRegister('iptv', () => new IPTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] iptv import failed:', e.message); }
+try { const { NTVProvider } = require('./ntv'); safeRegister('ntv', () => new NTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] ntv import failed:', e.message); }
+try { const { MovieBoxProvider } = require('./moviebox'); safeRegister('moviebox', () => new MovieBoxProvider()); } catch (e: any) { console.error('[ProviderRegistry] moviebox import failed:', e.message); }
 
 console.log(`[ProviderRegistry] Loaded ${registry.getAllEnabled().length} providers: ${registry.getAllEnabled().map(p => p.name).join(', ')}`);
 

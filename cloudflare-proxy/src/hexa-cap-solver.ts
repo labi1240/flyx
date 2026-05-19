@@ -17,7 +17,7 @@
  * Token is cached in KV with 2.5hr TTL (token lasts 3hr).
  */
 
-const CAP_BASE = 'https://cap.hexa.su/0737428d64';
+const CAP_BASE = 'https://cap.hexa.su/15d2cf0395';
 const CAP_TOKEN_KV_KEY = 'cap_token';
 const CAP_TOKEN_EXPIRES_KV_KEY = 'cap_token_expires';
 const CAP_TOKEN_TTL_SECONDS = 2.5 * 60 * 60; // 2.5 hours (token lasts 3hr)
@@ -68,6 +68,7 @@ async function sha256hex(str: string): Promise<string> {
 interface ChallengeResponse {
   challenge: { c: number; s: number; d: number };
   token: string;
+  instrumentation?: string;
 }
 
 interface RedeemResponse {
@@ -114,7 +115,8 @@ export async function solveCapChallenge(): Promise<{ token: string; expires: num
     throw new Error(`Cap challenge request failed: HTTP ${challengeRes.status}`);
   }
 
-  const { challenge, token: challengeToken } = await challengeRes.json() as ChallengeResponse;
+  const challengeData = await challengeRes.json() as ChallengeResponse & { instrumentation?: string };
+  const { challenge, token: challengeToken, instrumentation: capInstrumentation } = challengeData;
   const { c: count, s: saltSize, d: difficulty } = challenge;
 
   // Step 2: Generate challenge pairs using FULL JWT token as PRNG seed
@@ -136,10 +138,12 @@ export async function solveCapChallenge(): Promise<{ token: string; expires: num
   }
 
   // Step 4: Redeem solutions for cap token
+  const redeemBody: Record<string, any> = { token: challengeToken, solutions };
+  if (capInstrumentation) redeemBody.instrumentation = capInstrumentation;
   const redeemRes = await fetch(`${CAP_BASE}/redeem`, {
     method: 'POST',
     headers: FETCH_HEADERS,
-    body: JSON.stringify({ token: challengeToken, solutions }),
+    body: JSON.stringify(redeemBody),
     signal: AbortSignal.timeout(10_000),
   });
 

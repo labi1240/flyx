@@ -11,10 +11,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractAnimeKaiStreams } from '@/app/lib/services/animekai-extractor';
 import { extractHiAnimeStreams } from '@/app/lib/services/hianime-extractor';
+import { extractMiruroStreams } from '@/app/lib/services/miruro-extractor';
 import { malService } from '@/lib/services/mal';
 import { getAnimeKaiProxyUrl } from '@/app/lib/proxy-config';
 
-type Provider = 'hianime' | 'animekai';
+type Provider = 'hianime' | 'animekai' | 'miruro';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -67,6 +68,9 @@ export async function GET(request: NextRequest) {
       const sources = result.sources.map(source => {
         if (requestedProvider === 'animekai') {
           return { ...source, url: getAnimeKaiProxyUrl(source.url), title: `${source.title || 'AnimeKai'} [AnimeKai]` };
+        }
+        if (requestedProvider === 'miruro') {
+          return { ...source, title: `${source.title || 'Miruro'} [Miruro]` };
         }
         return { ...source, title: `${source.title || 'HiAnime'} [HiAnime]` };
       });
@@ -157,6 +161,22 @@ async function extractFromProvider(
     return {
       ...result,
       sources: result.sources.map(s => ({ ...s, title: s.title ?? '' })),
+    };
+  }
+
+  if (provider === 'miruro') {
+    // Miruro uses AniList IDs — try to use malId directly (MAL→AniList mapping)
+    const result = await extractMiruroStreams(
+      malId,
+      title,
+      isMovie ? undefined : (episode || 1),
+      'sub',
+    );
+    return {
+      success: result.success,
+      sources: result.sources.map(s => ({ ...s, title: s.title ?? '' })),
+      subtitles: result.subtitles,
+      error: result.error,
     };
   }
 

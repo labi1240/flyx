@@ -450,7 +450,7 @@ function isAllowedOrigin(origin: string | null, referer: string | null): boolean
     return ALLOWED_ORIGINS.some(allowed => {
       // Handle localhost
       if (allowed.includes('localhost')) return o.includes('localhost');
-      
+
       // Handle domain suffix patterns (e.g., '.pages.dev', '.workers.dev')
       if (allowed.startsWith('.')) {
         try {
@@ -458,7 +458,7 @@ function isAllowedOrigin(origin: string | null, referer: string | null): boolean
           return originHost.endsWith(allowed);
         } catch { return false; }
       }
-      
+
       // Handle full URLs
       try {
         const allowedHost = new URL(allowed).hostname;
@@ -474,6 +474,8 @@ function isAllowedOrigin(origin: string | null, referer: string | null): boolean
       return checkOrigin(new URL(referer).origin);
     } catch { return false; }
   }
+  // Allow headerless requests (VLC, mpv, FFmpeg) — browsers always send Origin for cross-origin fetch/XHR
+  if (!origin && !referer) return true;
   return false;
 }
 
