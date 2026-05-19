@@ -6,6 +6,7 @@ cdn-live-extractor
 proxy-relay
 # dependencies
 /node_modules
+bun.lockb
 /.pnp
 .pnp.js
 .next
