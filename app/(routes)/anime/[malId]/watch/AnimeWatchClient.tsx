@@ -17,6 +17,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
+      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
       sourceUrl.includes('/stream/')) {
     return sourceUrl;
   }
@@ -156,7 +157,7 @@ export default function AnimeWatchClient() {
   }, []);
 
   // Fetch stream for mobile player
-  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: 'hianime' | 'animekai') => {
+  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: 'hianime' | 'animekai' | 'miruro') => {
     if (!malId) return;
     
     setMobileLoading(true);
@@ -201,7 +202,7 @@ export default function AnimeWatchClient() {
           
           setMobileSources(sources);
           setCurrentProvider(activeProvider);
-          setAvailableProviders(['hianime', 'animekai']);
+          setAvailableProviders(['hianime', 'animekai', 'miruro']);
           
           // Find source matching audio preference
           let selectedIndex = 0;
@@ -245,7 +246,7 @@ export default function AnimeWatchClient() {
     setMobileResumeTime(currentTime);
     setAudioPref(newPref);
     saveProviderSettings({ animeAudioPreference: newPref });
-    fetchMobileStream(newPref, currentProvider as 'hianime' | 'animekai' | undefined);
+    fetchMobileStream(newPref, currentProvider as 'hianime' | 'animekai' | 'miruro' | undefined);
   }, [fetchMobileStream, currentProvider]);
 
   // Handle provider change - supports hianime and animekai
@@ -253,8 +254,8 @@ export default function AnimeWatchClient() {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     
-    const provider = _provider as 'hianime' | 'animekai';
-    
+    const provider = _provider;
+
     const params = new URLSearchParams({
       malId: malId.toString(),
       provider,

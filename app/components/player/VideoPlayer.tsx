@@ -995,9 +995,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
       const defaultOrder: string[] = isAnime
         ? (isMalDirect
-          ? ['hianime', 'animekai']
-          : ['hianime', 'animekai', 'flixer'])
-        : ['videasy', 'flixer'];
+          ? ['hianime', 'animekai', 'miruro']
+          : ['hianime', 'animekai', 'miruro', 'flixer'])
+        : ['videasy', 'flixer', 'moviebox'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -1027,8 +1027,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       // Helper: build API URL for a provider
       const buildApiUrl = (providerName: string): string | null => {
-        if (isMalDirect && !['hianime', 'animekai'].includes(providerName)) return null;
-        if (isAnime && malId && (providerName === 'animekai' || providerName === 'hianime')) {
+        if (isMalDirect && !['hianime', 'animekai', 'miruro'].includes(providerName)) return null;
+        if (isAnime && malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
           const params = new URLSearchParams({ malId: malId.toString(), provider: providerName });
           if (mediaType === 'tv' && episode) params.append('episode', episode.toString());
           return `/api/anime/stream?${params}`;
@@ -1103,7 +1103,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         let selectedSource = sources[workingIdx >= 0 ? workingIdx : 0];
         let selectedIndex = workingIdx >= 0 ? workingIdx : 0;
 
-        if (isAnime && (providerName === 'animekai' || providerName === 'hianime')) {
+        if (isAnime && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
           const audioPref = userProviderSettings.animeAudioPreference || 'sub';
           const matchIdx = sources.findIndex((s: any) =>
             s.title && sourceMatchesAudioPreference(s.title, audioPref)
