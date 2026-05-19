@@ -145,13 +145,30 @@ export async function extractMiruroSources(
 }
 
 /**
+ * Resolve MAL ID to AniList ID.
+ * Miruro uses AniList IDs internally — MAL IDs are different (e.g. JJK: MAL=40748, AniList=113415).
+ */
+async function resolveAnilistId(malId: number): Promise<number | null> {
+  try {
+    const { getAnimeByMalId } = await import('./anilist');
+    const media = await getAnimeByMalId(malId);
+    return media?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Full Miruro extraction pipeline:
- * 1. Get episodes for anilistId → find provider with requested language
- * 2. Get target episode ID
- * 3. Get sources → return StreamSource[]
+ * 1. Resolve malId→AniList ID (Miruro uses AniList IDs, not MAL IDs)
+ * 2. Get episodes for the AniList ID → find provider with requested language
+ * 3. Get target episode ID
+ * 4. Get sources → return StreamSource[]
+ *
+ * @param malId - MyAnimeList ID (will be auto-converted to AniList ID internally)
  */
 export async function extractMiruroStreams(
-  anilistId: number,
+  malId: number,
   title: string,
   episode?: number,
   language: 'sub' | 'dub' = 'sub',
@@ -159,6 +176,17 @@ export async function extractMiruroStreams(
   const startTime = Date.now();
 
   try {
+    // Step 0: Resolve MAL ID → AniList ID
+    const anilistId = await resolveAnilistId(malId);
+    if (!anilistId) {
+      return {
+        success: false,
+        sources: [],
+        error: `Could not resolve MAL ID ${malId} to AniList ID`,
+      };
+    }
+    console.log(`[Miruro] Resolved MAL ${malId} → AniList ${anilistId}`);
+
     // Step 1: Get episodes
     const episodesData = await extractMiruroEpisodes(anilistId);
 

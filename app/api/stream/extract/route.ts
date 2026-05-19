@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ExtractionRequest } from '@/app/lib/providers/types';
 import { isAnimeContent } from '@/app/lib/services/animekai-extractor';
+import { AllProvidersFailedError } from '@/app/lib/stream-errors';
 import { performanceMonitor } from '@/app/lib/utils/performance-monitor';
 import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
 
@@ -551,20 +552,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-
-// ============================================================================
-// CUSTOM ERROR FOR AGGREGATED FAILURES
-// ============================================================================
-export class AllProvidersFailedError extends Error {
-  attempts: { provider: string; error: string }[];
-
-  constructor(attempts: { provider: string; error: string }[]) {
-    const msg = 'All providers failed';
-    super(msg);
-    this.name = 'AllProvidersFailedError';
-    this.attempts = attempts;
-  }
-}
 
 // ============================================================================
 // EXTRACTION HELPERS

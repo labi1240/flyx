@@ -787,8 +787,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Helper function to fetch from a specific provider
   // No pre-flight validation - let HLS.js handle it with automatic fallback
   const fetchFromProvider = async (providerName: string): Promise<{ sources: any[], provider: string } | null> => {
-    // For anime with malId, use the dedicated anime stream API (supports hianime + animekai)
-    if (malId && (providerName === 'animekai' || providerName === 'hianime')) {
+    // For anime with malId, use the dedicated anime stream API (supports hianime + animekai + miruro)
+    if (malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
       console.log(`[VideoPlayer] Using /api/anime/stream for malId=${malId}, provider=${providerName}`);
       
       const params = new URLSearchParams({
@@ -901,9 +901,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
   // Debug: Log sub/dub toggle visibility conditions
   useEffect(() => {
-    console.log(`[VideoPlayer] Sub/Dub toggle conditions: isAnimeContent=${isAnimeContent}, provider=${provider}, shouldShow=${isAnimeContent && (provider === 'animekai' || provider === 'hianime')}`);
-    if (isAnimeContent && provider !== 'animekai' && provider !== 'hianime') {
-      console.warn(`[VideoPlayer] ⚠️ Anime content detected but provider is "${provider}" not "animekai" - toggle will NOT show!`);
+    console.log(`[VideoPlayer] Sub/Dub toggle conditions: isAnimeContent=${isAnimeContent}, provider=${provider}, shouldShow=${isAnimeContent && (provider === 'animekai' || provider === 'hianime' || provider === 'miruro')}`);
+    if (isAnimeContent && provider !== 'animekai' && provider !== 'hianime' && provider !== 'miruro') {
+      console.warn(`[VideoPlayer] ⚠️ Anime content detected but provider is "${provider}" not an anime provider - toggle will NOT show!`);
     }
   }, [isAnimeContent, provider]);
 
@@ -968,16 +968,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       fetch('/api/providers').then(async res => {
         try {
           const data = await res.json();
-          setProviderAvailability({
-            videasy: data.providers?.videasy?.enabled ?? true,
-            flixer: data.providers?.flixer?.enabled ?? true,
-            uflix: false,
-            hexa: false,
-            vidsrc: false,
-            '1movies': false,
-            animekai: data.providers?.animekai?.enabled ?? true,
-            hianime: data.providers?.hianime?.enabled ?? true,
-          });
+          setProviderAvailability(prev => ({
+            ...prev,
+            videasy: data.providers?.videasy?.enabled ?? prev.videasy ?? true,
+            flixer: data.providers?.flixer?.enabled ?? prev.flixer ?? true,
+            uflix: data.providers?.uflix?.enabled ?? false,
+            hexa: data.providers?.['multi-embed']?.enabled ?? false,
+            vidsrc: data.providers?.vidsrc?.enabled ?? false,
+            '1movies': data.providers?.['1movies']?.enabled ?? false,
+            animekai: data.providers?.animekai?.enabled ?? prev.animekai ?? true,
+            hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
+            miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
+            moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
+          }));
         } catch {}
       }).catch(() => {});
 
@@ -996,7 +999,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const defaultOrder: string[] = isAnime
         ? (isMalDirect
           ? ['hianime', 'animekai', 'miruro']
-          : ['hianime', 'animekai', 'miruro', 'flixer'])
+          : ['hianime', 'animekai', 'miruro', 'flixer', 'moviebox'])
         : ['videasy', 'flixer', 'moviebox'];
 
       const priorityOrder: string[] = [];
@@ -1126,7 +1129,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         if (selectedSource.skipIntro) setSkipIntro(selectedSource.skipIntro);
         if (selectedSource.skipOutro) setSkipOutro(selectedSource.skipOutro);
 
-        if (isAnime && selectedSource.title && (providerName === 'animekai' || providerName === 'hianime')) {
+        if (isAnime && selectedSource.title && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
           const actualPref = sourceMatchesAudioPreference(selectedSource.title, 'dub') ? 'dub' : 'sub';
           const savedPref = userProviderSettings.animeAudioPreference || 'sub';
           if (actualPref !== savedPref) setAnimeAudioPref(actualPref as AnimeAudioPreference);
@@ -1531,10 +1534,11 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   console.log(`[VideoPlayer] All ${provider} sources exhausted, trying other providers...`);
                   
                   const fallbackProviders: string[] = [];
-                  // For anime providers, try the other anime provider first
-                  if ((provider === 'animekai' || provider === 'hianime') && isAnimeContent) {
+                  // For anime providers, try the other anime providers first
+                  if ((provider === 'animekai' || provider === 'hianime' || provider === 'miruro') && isAnimeContent) {
                     if (provider !== 'hianime' && providerAvailability.hianime) fallbackProviders.push('hianime');
                     if (provider !== 'animekai' && providerAvailability.animekai) fallbackProviders.push('animekai');
+                    if (provider !== 'miruro' && providerAvailability.miruro) fallbackProviders.push('miruro');
                   }
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
                   if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
@@ -4549,9 +4553,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         }}>
           {/* Dub/Sub toggle - show for anime content when anime sources exist */}
           {isAnimeContent && (
-            provider === 'animekai' || provider === 'hianime' ||
+            provider === 'animekai' || provider === 'hianime' || provider === 'miruro' ||
             (sourcesCache['animekai'] && sourcesCache['animekai'].length > 0) ||
-            (sourcesCache['hianime'] && sourcesCache['hianime'].length > 0)
+            (sourcesCache['hianime'] && sourcesCache['hianime'].length > 0) ||
+            (sourcesCache['miruro'] && sourcesCache['miruro'].length > 0)
           ) && (
             <button 
               data-player-top-control="subdub"
@@ -4581,8 +4586,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 // The sub/dub toggle should NOT jump between provider tabs —
                 // each provider tab (AnimeKai, HiAnime) has its own sub+dub sources,
                 // and the toggle just filters which ones are shown/played.
-                const currentAnimeProvider = (provider === 'animekai' || provider === 'hianime') ? provider : 
-                  (sourcesCache['animekai']?.length ? 'animekai' : sourcesCache['hianime']?.length ? 'hianime' : provider);
+                const currentAnimeProvider = (provider === 'animekai' || provider === 'hianime' || provider === 'miruro') ? provider :
+                  (sourcesCache['animekai']?.length ? 'animekai' : sourcesCache['hianime']?.length ? 'hianime' : sourcesCache['miruro']?.length ? 'miruro' : provider);
                 const sources = sourcesCache[currentAnimeProvider] || availableSources;
                 const matchingSource = sources.find((s: any) => 
                   s.title && sourceMatchesAudioPreference(s.title, newPref)

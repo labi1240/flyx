@@ -7,8 +7,10 @@ export const metadata: Metadata = {
   description: 'Browse and stream the best anime on FlyX - powered by MyAnimeList',
 };
 
-// Revalidate every hour
-export const revalidate = 3600;
+// Must be dynamic — Cloudflare Pages doesn't support ISR.
+// Pre-rendering this page at build time caches failures permanently.
+// Force-dynamic ensures fresh AniList data on every request.
+export const dynamic = 'force-dynamic';
 
 interface AnimeData {
   airing: { items: MALAnimeListItem[]; total: number };
@@ -62,13 +64,8 @@ async function getAnimeData(): Promise<AnimeData | null> {
 export default async function AnimePage() {
   const data = await getAnimeData();
 
-  if (!data) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-white">Failed to load anime. Please try again later.</p>
-      </div>
-    );
-  }
-
-  return <AnimePageClient {...data} />;
+  // Pass data even if null — AnimePageClient handles the loading/retry state.
+  // SSR failures on CF edge (e.g. AniList rate-limiting datacenter IPs) are
+  // recoverable because the client fetches from the user's browser IP.
+  return <AnimePageClient data={data} />;
 }

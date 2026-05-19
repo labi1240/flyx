@@ -79,6 +79,19 @@ export async function GET() {
         animeOnly: true,
         description: 'Primary anime provider (MegaCloud extraction)',
       },
+      miruro: {
+        enabled: true,
+        name: 'Miruro',
+        primary: false,
+        animeOnly: true,
+        description: 'Multi-provider anime source (6 providers, uwucdn.top CDN, sub+dub)',
+      },
+      moviebox: {
+        enabled: true,
+        name: 'MovieBox',
+        primary: false,
+        description: 'Movies/TV/anime (h5-api.aoneroom.com)',
+      },
     },
   });
 }

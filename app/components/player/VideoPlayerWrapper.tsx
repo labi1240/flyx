@@ -113,6 +113,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
         '1movies': providersData.providers?.['1movies']?.enabled ?? true,
         animekai: providersData.providers?.animekai?.enabled ?? true,
         hianime: providersData.providers?.hianime?.enabled ?? true,
+        miruro: providersData.providers?.miruro?.enabled ?? true,
+        moviebox: providersData.providers?.moviebox?.enabled ?? true,
       };
 
       // Check if anime content
@@ -131,7 +133,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      const animeOnlyProviders = ['animekai', 'hianime'];
+      const animeOnlyProviders = ['animekai', 'hianime', 'miruro'];
 
       const providerOrder: string[] = [];
 
@@ -141,6 +143,9 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       }
       if (isAnime && availability.hianime && !disabledProviders.has('hianime')) {
         providerOrder.push('hianime');
+      }
+      if (isAnime && availability.miruro && !disabledProviders.has('miruro')) {
+        providerOrder.push('miruro');
       }
 
       // Add providers from user's preferred order
@@ -154,8 +159,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Add any remaining available providers as fallback
       const allProviders = isAnime
-        ? ['hianime', 'animekai', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies']
-        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies'];
+        ? ['hianime', 'animekai', 'miruro', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies', 'moviebox']
+        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies', 'moviebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
@@ -232,7 +237,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
           }
 
           // ANIME PROVIDERS: Use dedicated /api/anime/stream when malId is available
-          if (malId && (provider === 'animekai' || provider === 'hianime')) {
+          if (malId && (provider === 'animekai' || provider === 'hianime' || provider === 'miruro')) {
             const animeParams = new URLSearchParams({
               malId: malId.toString(),
               provider,
