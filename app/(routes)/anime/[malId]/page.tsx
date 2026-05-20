@@ -53,31 +53,31 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function AnimeDetailsPage({ params }: Props) {
   const { malId: malIdStr } = await params;
   const malId = parseInt(malIdStr);
-  
+
   if (isNaN(malId) || malId <= 0) {
     console.warn(`[AnimeDetailsPage] Invalid MAL ID: ${malIdStr}`);
     notFound();
   }
 
   try {
-    // Only call getSeriesSeasons - it internally fetches the anime data
-    // This avoids duplicate API calls (getById is called inside getSeriesSeasons)
     const seriesData = await malService.getSeriesSeasons(malId);
 
-    if (!seriesData) {
-      console.warn(`[AnimeDetailsPage] No data found for MAL ID: ${malId}`);
-      notFound();
+    if (seriesData) {
+      return (
+        <AnimeDetailsClient
+          anime={seriesData.mainEntry}
+          allSeasons={seriesData.allSeasons}
+          totalEpisodes={seriesData.totalEpisodes}
+        />
+      );
     }
 
-    return (
-      <AnimeDetailsClient 
-        anime={seriesData.mainEntry} 
-        allSeasons={seriesData.allSeasons} 
-        totalEpisodes={seriesData.totalEpisodes}
-      />
-    );
+    console.warn(`[AnimeDetailsPage] No data from edge for MAL ID: ${malId}, falling back to client`);
   } catch (error) {
     console.error(`[AnimeDetailsPage] Error fetching MAL data for ${malId}:`, error);
-    notFound();
   }
+
+  // Server fetch failed — pass the malId to the client so it can fetch
+  // from the browser (bypasses CF edge IP blocks)
+  return <AnimeDetailsClient malId={malId} />;
 }

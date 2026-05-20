@@ -37,16 +37,300 @@ interface EpisodeData {
 }
 
 interface Props {
-  anime: MALAnime;
-  allSeasons: MALSeason[];
-  totalEpisodes: number;
+  malId?: number;
+  anime?: MALAnime | null;
+  allSeasons?: MALSeason[];
+  totalEpisodes?: number;
 }
 
-export default function AnimeDetailsClient({ anime, allSeasons, totalEpisodes }: Props) {
+// Client-side AniList fetch for when the server can't reach AniList from CF edge.
+// Same 2-tier pattern as the browse page: proxy first (same-domain, no ad blocker),
+// then direct (residential IP, bypasses CF edge block).
+async function fetchAnimeDetailClient(malId: number): Promise<{ anime: MALAnime; allSeasons: MALSeason[]; totalEpisodes: number } | null> {
+  const data = await fetchAnimeDetail('/api/anilist/graphql', malId);
+  if (data) return data;
+  return fetchAnimeDetail('https://graphql.anilist.co', malId);
+}
+
+const ANIME_DETAIL_QUERY = `
+  query ($malId: Int) {
+    Media(idMal: $malId, type: ANIME) {
+      id idMal
+      title { romaji english native }
+      type format status episodes duration
+      averageScore meanScore popularity
+      description(asHtml: false)
+      season seasonYear
+      startDate { year month day }
+      endDate { year month day }
+      coverImage { extraLarge large medium }
+      bannerImage
+      genres
+      studios(isMain: true) { nodes { id name } }
+      relations {
+        edges {
+          relationType
+          node { id idMal type format title { romaji english } }
+        }
+      }
+    }
+  }
+`;
+
+interface RawMediaDetail {
+  id: number;
+  idMal: number | null;
+  title: { romaji: string | null; english: string | null; native: string | null };
+  format: string | null;
+  status: string | null;
+  episodes: number | null;
+  duration: number | null;
+  averageScore: number | null;
+  meanScore: number | null;
+  popularity: number | null;
+  description: string | null;
+  season: string | null;
+  seasonYear: number | null;
+  startDate: { year: number | null; month: number | null; day: number | null } | null;
+  endDate: { year: number | null; month: number | null; day: number | null } | null;
+  coverImage: { extraLarge: string | null; large: string | null; medium: string | null };
+  bannerImage: string | null;
+  genres: string[];
+  studios: { nodes: Array<{ id: number; name: string }> } | null;
+  relations: {
+    edges: Array<{
+      relationType: string;
+      node: {
+        id: number;
+        idMal: number | null;
+        type: string;
+        format: string | null;
+        title: { romaji: string | null; english: string | null };
+      };
+    }>;
+  } | null;
+}
+
+const FMT: Record<string, string> = {
+  TV: 'TV', TV_SHORT: 'TV', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music',
+};
+const STS: Record<string, string> = {
+  FINISHED: 'Finished Airing', RELEASING: 'Currently Airing', NOT_YET_RELEASED: 'Not yet aired',
+  CANCELLED: 'Cancelled', HIATUS: 'Hiatus',
+};
+const SSN: Record<string, string> = {
+  WINTER: 'winter', SPRING: 'spring', SUMMER: 'summer', FALL: 'fall',
+};
+
+function mapRawToMALAnime(m: RawMediaDetail): MALAnime | null {
+  if (!m.idMal) return null;
+  const coverLarge = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+  const coverSmall = m.coverImage?.medium || m.coverImage?.large || '';
+  const score100 = m.averageScore ?? m.meanScore;
+  const score = score100 != null ? Math.round(score100) / 10 : null;
+  const synopsis = m.description
+    ?.replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim() ?? null;
+
+  const fuzzyToISO = (d: { year: number | null; month: number | null; day: number | null } | null) => {
+    if (!d || !d.year) return null;
+    return `${String(d.year).padStart(4, '0')}-${String(d.month || 1).padStart(2, '0')}-${String(d.day || 1).padStart(2, '0')}T00:00:00+00:00`;
+  };
+  const fuzzyToString = (d: { year: number | null; month: number | null; day: number | null } | null) => {
+    if (!d || !d.year) return '';
+    return d.month ? `${d.month}/${d.day || 1}/${d.year}` : String(d.year);
+  };
+  const airedFrom = fuzzyToISO(m.startDate);
+  const airedTo = fuzzyToISO(m.endDate);
+  const airedStrFrom = fuzzyToString(m.startDate);
+  const airedStrTo = fuzzyToString(m.endDate);
+  const airedString = airedStrFrom && airedStrTo ? `${airedStrFrom} to ${airedStrTo}`
+    : airedStrFrom ? `${airedStrFrom} to ?` : airedStrTo ? `? to ${airedStrTo}` : '';
+
+  return {
+    mal_id: m.idMal,
+    title: m.title?.romaji || m.title?.english || m.title?.native || 'Unknown',
+    title_english: m.title?.english ?? null,
+    title_japanese: m.title?.native ?? null,
+    type: m.format ? (FMT[m.format] ?? 'Unknown') : 'Unknown',
+    episodes: m.episodes ?? null,
+    status: m.status ? (STS[m.status] ?? 'Unknown') : 'Unknown',
+    score,
+    scored_by: null,
+    rank: null,
+    popularity: m.popularity ?? null,
+    members: m.popularity ?? null,
+    synopsis,
+    season: m.season ? (SSN[m.season] ?? null) : null,
+    year: m.seasonYear || m.startDate?.year || null,
+    images: {
+      jpg: { image_url: coverSmall, large_image_url: coverLarge },
+      webp: { image_url: coverSmall, large_image_url: coverLarge },
+    },
+    aired: {
+      from: airedFrom,
+      to: airedTo,
+      string: airedString,
+    },
+    genres: (m.genres || []).map((g, i) => ({ mal_id: i, name: g })),
+    studios: (m.studios?.nodes || []).map(s => ({ mal_id: s.id, name: s.name })),
+  };
+}
+
+function buildSeasons(main: RawMediaDetail, relatedEdges: NonNullable<RawMediaDetail['relations']>['edges']): MALSeason[] {
+  const seasons: MALSeason[] = [];
+
+  // Start with the main entry
+  if (main.idMal) {
+    seasons.push({
+      malId: main.idMal,
+      title: main.title?.romaji || main.title?.english || 'Unknown',
+      titleEnglish: main.title?.english || main.title?.romaji || null,
+      imageUrl: main.coverImage?.extraLarge || main.coverImage?.large || '',
+      episodes: main.episodes ?? null,
+      score: main.averageScore != null ? Math.round(main.averageScore) / 10 : null,
+      status: main.status ? (STS[main.status] ?? 'Unknown') : 'Unknown',
+      type: main.format ? (FMT[main.format] ?? 'TV') : 'TV',
+      aired: '',
+      synopsis: null,
+      members: null,
+      seasonOrder: 1,
+      year: main.seasonYear ?? main.startDate?.year ?? undefined,
+    } as MALSeason);
+  }
+
+  // Add related entries that are sequels/prequels
+  const relevantTypes = new Set(['SEQUEL', 'PREQUEL', 'SIDE_STORY', 'ALTERNATIVE', 'SPIN_OFF']);
+  let order = 2;
+  for (const edge of relatedEdges) {
+    if (!edge.node.idMal) continue;
+    if (!relevantTypes.has(edge.relationType) && edge.node.type !== 'ANIME') continue;
+    if (seasons.some(s => s.malId === edge.node.idMal)) continue;
+
+    seasons.push({
+      malId: edge.node.idMal,
+      title: edge.node.title?.romaji || edge.node.title?.english || 'Unknown',
+      titleEnglish: edge.node.title?.english || edge.node.title?.romaji || null,
+      imageUrl: '',
+      episodes: null,
+      score: null,
+      status: 'Unknown',
+      type: edge.node.format ? (FMT[edge.node.format] ?? 'TV') : 'TV',
+      aired: '',
+      synopsis: null,
+      members: null,
+      seasonOrder: order++,
+    } as MALSeason);
+  }
+
+  if (seasons.length === 0) {
+    seasons.push({
+      malId: main.idMal ?? 0, title: 'Unknown', titleEnglish: null,
+      imageUrl: '', episodes: null, score: null, status: 'Unknown',
+      type: 'TV', aired: '', synopsis: null, members: null, seasonOrder: 1,
+    } as MALSeason);
+  }
+  return seasons;
+}
+
+async function fetchAnimeDetail(endpoint: string, malId: number): Promise<{ anime: MALAnime; allSeasons: MALSeason[]; totalEpisodes: number } | null> {
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: ANIME_DETAIL_QUERY, variables: { malId } }),
+      signal: endpoint.startsWith('/') ? undefined : AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const media = json?.data?.Media as RawMediaDetail | null;
+    if (!media || !media.idMal) return null;
+
+    const anime = mapRawToMALAnime(media);
+    if (!anime) return null;
+
+    const allSeasons = buildSeasons(media, media.relations?.edges || []);
+    const totalEpisodes = allSeasons.reduce((sum, s) => sum + (s.episodes || 0), 0);
+
+    return { anime, allSeasons, totalEpisodes };
+  } catch {
+    return null;
+  }
+}
+
+export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons: ssrSeasons, totalEpisodes: ssrTotalEpisodes }: Props) {
   const router = useRouter();
+  const [anime, setAnime] = useState<MALAnime | null>(ssrAnime || null);
+  const [allSeasons, setAllSeasons] = useState<MALSeason[]>(ssrSeasons || []);
+  const [totalEpisodes, setTotalEpisodes] = useState(ssrTotalEpisodes || 0);
+  const [loading, setLoading] = useState(!ssrAnime && !!malId);
+  const [error, setError] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState(0);
   const [episodes, setEpisodes] = useState<EpisodeData[]>([]);
-  
+
+  // Client-side fallback when SSR fails (AniList blocks CF edge IPs)
+  useEffect(() => {
+    if (ssrAnime || !malId) return;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(false);
+      try {
+        const data = await fetchAnimeDetailClient(malId!);
+        if (cancelled) return;
+        if (data) {
+          setAnime(data.anime);
+          setAllSeasons(data.allSeasons);
+          setTotalEpisodes(data.totalEpisodes);
+        } else {
+          setError(true);
+        }
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [ssrAnime, malId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0812] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-2 border-fuchsia-500/30 border-t-fuchsia-400 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading anime details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !anime) {
+    return (
+      <div className="min-h-screen bg-[#0a0812] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white text-lg mb-2">Failed to load anime details</p>
+          <p className="text-gray-500 text-sm mb-4">Please check your connection and try again.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const currentSeason = allSeasons[selectedSeason] || allSeasons[0];
   const isMovie = anime.type === 'Movie';
 
