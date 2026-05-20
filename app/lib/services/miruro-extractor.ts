@@ -7,7 +7,6 @@
  */
 
 import type { StreamSource, SubtitleTrack } from '../providers/types';
-import { cfFetch } from '../utils/cf-fetch';
 
 interface MiruroEpisode {
   id: string;
@@ -149,11 +148,27 @@ export async function extractMiruroSources(
  * Resolve MAL ID to AniList ID.
  * Miruro uses AniList IDs internally — MAL IDs are different (e.g. JJK: MAL=40748, AniList=113415).
  */
+const ARM_API = 'https://arm.haglund.dev/api/v2/ids';
+
 async function resolveAnilistId(malId: number): Promise<number | null> {
+  // Strategy 1: ARM API (community ID mapping, doesn't block CF edge IPs)
+  // Try multiple source identifiers — ARM may use "mal" or "myanimelist"
+  for (const source of ['mal', 'myanimelist']) {
+    try {
+      const res = await fetch(`${ARM_API}?source=${source}&id=${malId}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json() as { anilist?: number; mal?: number };
+        if (data.anilist) return data.anilist;
+      }
+    } catch { /* try next */ }
+  }
+
+  // Strategy 2: Direct AniList GraphQL (works in local dev, blocked on CF edge)
   try {
-    // Use cfFetch to route through RPI — direct AniList calls from CF edge are blocked
     const query = `query ($malId: Int) { Media(idMal: $malId, type: ANIME) { id } }`;
-    const res = await cfFetch('https://graphql.anilist.co', {
+    const res = await fetch('https://graphql.anilist.co', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -163,13 +178,15 @@ async function resolveAnilistId(malId: number): Promise<number | null> {
         Referer: 'https://anilist.co/',
       },
       body: JSON.stringify({ query, variables: { malId } }),
+      signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return null;
-    const data = await res.json() as { data?: { Media?: { id: number } | null } };
-    return data?.data?.Media?.id ?? null;
-  } catch {
-    return null;
-  }
+    if (res.ok) {
+      const data = await res.json() as { data?: { Media?: { id: number } | null } };
+      return data?.data?.Media?.id ?? null;
+    }
+  } catch { /* fall through */ }
+
+  return null;
 }
 
 /**

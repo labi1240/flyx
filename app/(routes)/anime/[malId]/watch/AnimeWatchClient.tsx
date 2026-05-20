@@ -177,7 +177,13 @@ export default function AnimeWatchClient() {
         malId: malId.toString(),
         provider: useProvider,
       });
-      
+
+      // Pass title and type so the API doesn't need AniList (blocked on CF edge)
+      if (anime) {
+        params.set('title', anime.title_english || anime.title);
+        params.set('type', anime.type === 'Movie' ? 'movie' : 'tv');
+      }
+
       // Only add episode for non-movies
       if (anime && anime.type !== 'Movie') {
         params.set('episode', episode.toString());
@@ -260,7 +266,13 @@ export default function AnimeWatchClient() {
       malId: malId.toString(),
       provider,
     });
-    
+
+    // Pass title and type so the API doesn't need AniList (blocked on CF edge)
+    if (anime) {
+      params.set('title', anime.title_english || anime.title);
+      params.set('type', anime.type === 'Movie' ? 'movie' : 'tv');
+    }
+
     // Only add episode for non-movies
     if (anime && anime.type !== 'Movie') {
       params.set('episode', episode.toString());
