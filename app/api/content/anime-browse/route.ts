@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest) {
                        topRated.items.length > 0 || movies.items.length > 0;
 
     if (!hasAnyData) {
-      return NextResponse.json({ success: false, error: 'All categories returned empty' }, { status: 502 });
+      return NextResponse.json({ success: false, error: 'AniList unreachable from edge' });
     }
 
     return NextResponse.json({

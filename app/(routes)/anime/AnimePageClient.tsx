@@ -27,11 +27,11 @@ interface AnimePageClientProps {
   data: AnimeData | null;
 }
 
-// Direct browser-side AniList fetch — bypasses Cloudflare edge IP blocks.
-// AniList may block datacenter IP ranges (CF Workers) but residential
-// browser IPs almost always work. This is the last-resort fallback.
+// Browser-side AniList fetch routed through our own domain so ad blockers
+// don't intercept requests to graphql.anilist.co (commonly on blocklists).
+// The /api/anilist/graphql proxy forwards to AniList from the edge.
 async function fetchAniListDirect(): Promise<AnimeData | null> {
-  const ANILIST_URL = 'https://graphql.anilist.co';
+  const PROXY_URL = '/api/anilist/graphql';
 
   const QUERY = `
     query ($page: Int, $perPage: Int, $sort: [MediaSort], $status: MediaStatus, $format: MediaFormat, $genre: String) {
@@ -126,14 +126,14 @@ async function fetchAniListDirect(): Promise<AnimeData | null> {
 
   async function fetchCategory(variables: Record<string, unknown>): Promise<CategoryData> {
     try {
-      const res = await fetch(ANILIST_URL, {
+      const res = await fetch(PROXY_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: QUERY, variables }),
-        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return { items: [], total: 0 };
       const json = await res.json();
+      // Proxy returns the raw AniList response: { data: { Page: ... } }
       const media = json?.data?.Page?.media as RawMedia[] | undefined;
       const total: number = json?.data?.Page?.pageInfo?.total ?? 0;
       if (!media?.length) return { items: [], total: 0 };
