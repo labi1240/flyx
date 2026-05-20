@@ -27,113 +27,126 @@ interface AnimePageClientProps {
   data: AnimeData | null;
 }
 
-// Browser-side AniList fetch routed through our own domain so ad blockers
-// don't intercept requests to graphql.anilist.co (commonly on blocklists).
-// The /api/anilist/graphql proxy forwards to AniList from the edge.
+// 4-tier fallback for fetching anime browse data:
+//   1. SSR on CF edge (handled by page.tsx — if it returns null, we fall through)
+//   2. /api/content/anime-browse (CF edge, uses malListingsService)
+//   3. /api/anilist/graphql proxy (CF edge but same-domain — no ad blocker)
+//   4. Direct graphql.anilist.co from browser (residential IP, bypasses CF edge block)
+// Tiers 2-3 may fail if AniList blocks CF edge IPs. Tier 4 may fail if
+// the user has an ad blocker. Between them, one should always work.
 async function fetchAniListDirect(): Promise<AnimeData | null> {
-  const PROXY_URL = '/api/anilist/graphql';
+  // Try proxy first (same domain, avoids ad blockers)
+  const viaProxy = await fetchAnimeData('/api/anilist/graphql');
+  if (viaProxy) return viaProxy;
 
-  const QUERY = `
-    query ($page: Int, $perPage: Int, $sort: [MediaSort], $status: MediaStatus, $format: MediaFormat, $genre: String) {
-      Page(page: $page, perPage: $perPage) {
-        pageInfo { total }
-        media(type: ANIME, sort: $sort, status: $status, format: $format, genre: $genre) {
-          id idMal
-          title { romaji english native }
-          format status episodes
-          averageScore meanScore popularity
-          description(asHtml: false)
-          season seasonYear
-          startDate { year month day }
-          coverImage { extraLarge large medium }
-          genres
-          studios(isMain: true) { nodes { id name } }
-        }
+  // Try direct AniList call (residential IP, bypasses CF edge block)
+  return fetchAnimeData('https://graphql.anilist.co');
+}
+
+const ANILIST_LISTING_QUERY = `
+  query ($page: Int, $perPage: Int, $sort: [MediaSort], $status: MediaStatus, $format: MediaFormat, $genre: String) {
+    Page(page: $page, perPage: $perPage) {
+      pageInfo { total }
+      media(type: ANIME, sort: $sort, status: $status, format: $format, genre: $genre) {
+        id idMal
+        title { romaji english native }
+        format status episodes
+        averageScore meanScore popularity
+        description(asHtml: false)
+        season seasonYear
+        startDate { year month day }
+        coverImage { extraLarge large medium }
+        genres
+        studios(isMain: true) { nodes { id name } }
       }
     }
-  `;
-
-  interface RawMedia {
-    id: number;
-    idMal: number | null;
-    title: { romaji: string | null; english: string | null; native: string | null };
-    format: string | null;
-    status: string | null;
-    episodes: number | null;
-    averageScore: number | null;
-    meanScore: number | null;
-    popularity: number | null;
-    description: string | null;
-    season: string | null;
-    seasonYear: number | null;
-    startDate: { year: number | null } | null;
-    coverImage: { extraLarge: string | null; large: string | null; medium: string | null };
-    genres: string[];
-    studios: { nodes: Array<{ id: number; name: string }> } | null;
   }
+`;
 
-  const FORMAT_MAP: Record<string, string> = {
-    TV: 'TV', TV_SHORT: 'TV', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music',
-  };
-  const STATUS_MAP: Record<string, string> = {
-    FINISHED: 'Finished Airing', RELEASING: 'Currently Airing', NOT_YET_RELEASED: 'Not yet aired',
-    CANCELLED: 'Cancelled', HIATUS: 'Hiatus',
-  };
-  const SEASON_MAP: Record<string, string> = {
-    WINTER: 'winter', SPRING: 'spring', SUMMER: 'summer', FALL: 'fall',
-  };
+interface RawMedia {
+  id: number;
+  idMal: number | null;
+  title: { romaji: string | null; english: string | null; native: string | null };
+  format: string | null;
+  status: string | null;
+  episodes: number | null;
+  averageScore: number | null;
+  meanScore: number | null;
+  popularity: number | null;
+  description: string | null;
+  season: string | null;
+  seasonYear: number | null;
+  startDate: { year: number | null } | null;
+  coverImage: { extraLarge: string | null; large: string | null; medium: string | null };
+  genres: string[];
+  studios: { nodes: Array<{ id: number; name: string }> } | null;
+}
 
-  function mapMedia(m: RawMedia): MALAnimeListItem | null {
-    if (!m.idMal) return null;
-    const coverLarge = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
-    const coverSmall = m.coverImage?.medium || m.coverImage?.large || '';
-    const score100 = m.averageScore ?? m.meanScore;
-    const score = score100 != null ? Math.round(score100) / 10 : null;
-    const synopsis = m.description
-      ?.replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/?[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .trim() ?? null;
+const FORMAT_MAP: Record<string, string> = {
+  TV: 'TV', TV_SHORT: 'TV', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music',
+};
+const STATUS_MAP: Record<string, string> = {
+  FINISHED: 'Finished Airing', RELEASING: 'Currently Airing', NOT_YET_RELEASED: 'Not yet aired',
+  CANCELLED: 'Cancelled', HIATUS: 'Hiatus',
+};
+const SEASON_MAP: Record<string, string> = {
+  WINTER: 'winter', SPRING: 'spring', SUMMER: 'summer', FALL: 'fall',
+};
 
-    return {
-      mal_id: m.idMal,
-      title: m.title?.romaji || m.title?.english || m.title?.native || 'Unknown',
-      title_english: m.title?.english ?? null,
-      title_japanese: m.title?.native ?? null,
-      type: m.format ? (FORMAT_MAP[m.format] ?? 'Unknown') : 'Unknown',
-      episodes: m.episodes ?? null,
-      status: m.status ? (STATUS_MAP[m.status] ?? 'Unknown') : 'Unknown',
-      airing: m.status === 'RELEASING',
-      score,
-      members: m.popularity ?? null,
-      rank: null,
-      popularity: m.popularity ?? null,
-      synopsis,
-      year: m.seasonYear || m.startDate?.year || null,
-      season: m.season ? (SEASON_MAP[m.season] ?? null) : null,
-      images: {
-        jpg: { image_url: coverSmall, large_image_url: coverLarge },
-        webp: { image_url: coverSmall, large_image_url: coverLarge },
-      },
-      genres: (m.genres || []).map((g, i) => ({ mal_id: i, name: g })),
-      studios: (m.studios?.nodes || []).map(s => ({ mal_id: s.id, name: s.name })),
-    };
-  }
+function mapMedia(m: RawMedia): MALAnimeListItem | null {
+  if (!m.idMal) return null;
+  const coverLarge = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+  const coverSmall = m.coverImage?.medium || m.coverImage?.large || '';
+  const score100 = m.averageScore ?? m.meanScore;
+  const score = score100 != null ? Math.round(score100) / 10 : null;
+  const synopsis = m.description
+    ?.replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim() ?? null;
+
+  return {
+    mal_id: m.idMal,
+    title: m.title?.romaji || m.title?.english || m.title?.native || 'Unknown',
+    title_english: m.title?.english ?? null,
+    title_japanese: m.title?.native ?? null,
+    type: m.format ? (FORMAT_MAP[m.format] ?? 'Unknown') : 'Unknown',
+    episodes: m.episodes ?? null,
+    status: m.status ? (STATUS_MAP[m.status] ?? 'Unknown') : 'Unknown',
+    airing: m.status === 'RELEASING',
+    score,
+    members: m.popularity ?? null,
+    rank: null,
+    popularity: m.popularity ?? null,
+    synopsis,
+    year: m.seasonYear || m.startDate?.year || null,
+    season: m.season ? (SEASON_MAP[m.season] ?? null) : null,
+    images: {
+      jpg: { image_url: coverSmall, large_image_url: coverLarge },
+      webp: { image_url: coverSmall, large_image_url: coverLarge },
+    },
+    genres: (m.genres || []).map((g, i) => ({ mal_id: i, name: g })),
+    studios: (m.studios?.nodes || []).map(s => ({ mal_id: s.id, name: s.name })),
+  };
+}
+
+async function fetchAnimeData(endpoint: string): Promise<AnimeData | null> {
+  const isProxy = endpoint.startsWith('/');
 
   async function fetchCategory(variables: Record<string, unknown>): Promise<CategoryData> {
     try {
-      const res = await fetch(PROXY_URL, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: QUERY, variables }),
+        body: JSON.stringify({ query: ANILIST_LISTING_QUERY, variables }),
+        signal: isProxy ? undefined : AbortSignal.timeout(10000),
       });
       if (!res.ok) return { items: [], total: 0 };
       const json = await res.json();
-      // Proxy returns the raw AniList response: { data: { Page: ... } }
       const media = json?.data?.Page?.media as RawMedia[] | undefined;
       const total: number = json?.data?.Page?.pageInfo?.total ?? 0;
       if (!media?.length) return { items: [], total: 0 };
