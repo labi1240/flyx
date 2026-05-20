@@ -7,6 +7,7 @@
  */
 
 import type { StreamSource, SubtitleTrack } from '../providers/types';
+import { cfFetch } from '../utils/cf-fetch';
 
 interface MiruroEpisode {
   id: string;
@@ -150,9 +151,22 @@ export async function extractMiruroSources(
  */
 async function resolveAnilistId(malId: number): Promise<number | null> {
   try {
-    const { getAnimeByMalId } = await import('./anilist');
-    const media = await getAnimeByMalId(malId);
-    return media?.id ?? null;
+    // Use cfFetch to route through RPI — direct AniList calls from CF edge are blocked
+    const query = `query ($malId: Int) { Media(idMal: $malId, type: ANIME) { id } }`;
+    const res = await cfFetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Origin: 'https://anilist.co',
+        Referer: 'https://anilist.co/',
+      },
+      body: JSON.stringify({ query, variables: { malId } }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { data?: { Media?: { id: number } | null } };
+    return data?.data?.Media?.id ?? null;
   } catch {
     return null;
   }
