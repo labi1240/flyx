@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
     const malId = searchParams.get('malId') ? parseInt(searchParams.get('malId')!) : undefined;
     const episode = searchParams.get('episode') ? parseInt(searchParams.get('episode')!) : undefined;
     const requestedProvider = (searchParams.get('provider') as Provider) || 'hianime';
+    // Client can pass these directly so we don't need AniList at all
+    const titleParam = searchParams.get('title') || undefined;
+    const typeParam = searchParams.get('type') || undefined;
 
     if (!malId) {
       return NextResponse.json(
@@ -36,31 +39,41 @@ export async function GET(request: NextRequest) {
 
     console.log(`[ANIME-STREAM] Request: MAL ID ${malId}, Episode ${episode || 'N/A (movie)'}, Provider ${requestedProvider}`);
 
-    // Get MAL anime info
-    const anime = await malService.getById(malId);
-    if (!anime) {
-      return NextResponse.json(
-        { error: 'Anime not found on MAL' },
-        { status: 404 }
-      );
+    // Use client-provided title/type if available (avoids AniList dependency).
+    // Only fall back to AniList lookup when the client doesn't pass title.
+    let title = titleParam || null;
+    let isMovie = typeParam === 'movie' || typeParam === 'Movie';
+    let animeType = typeParam || 'TV';
+    let animeRecord: { type: string; mal_id: number; title_english: string | null; title: string; episodes: number | null } | null = null;
+
+    if (!title) {
+      const anime = await malService.getById(malId);
+      if (!anime) {
+        return NextResponse.json(
+          { error: 'Anime not found on MAL and no title provided' },
+          { status: 404 }
+        );
+      }
+      animeRecord = anime;
+      title = anime.title_english || anime.title;
+      isMovie = anime.type === 'Movie';
+      animeType = anime.type;
     }
 
-    const isMovie = anime.type === 'Movie';
-    const title = anime.title_english || anime.title;
-    console.log(`[ANIME-STREAM] Found anime: ${title} (type: ${anime.type}, episodes: ${anime.episodes})`);
+    console.log(`[ANIME-STREAM] Title: ${title} (type: ${animeType}, isMovie: ${isMovie})`);
 
     // Extract from the REQUESTED provider ONLY — no fallback.
     // The VideoPlayer fires both providers in parallel via Promise.any,
     // so cross-provider fallback here would cause duplicate/misattributed sources.
     console.log(`[ANIME-STREAM] Extracting from ${requestedProvider} (no fallback)...`);
     
-    const result = await extractFromProvider(requestedProvider, malId, title, anime, isMovie, episode)
+    const result = await extractFromProvider(requestedProvider, malId, title, animeRecord || { type: animeType }, isMovie, episode)
       .catch((err) => {
         console.log(`[ANIME-STREAM] ❌ ${requestedProvider} threw:`, err?.message);
         return null;
       });
 
-    const providerLabel = requestedProvider === 'hianime' ? 'HiAnime' : 'AnimeKai';
+    const providerLabel = requestedProvider === 'hianime' ? 'HiAnime' : requestedProvider === 'miruro' ? 'Miruro' : 'AnimeKai';
 
     if (result?.success && result.sources.length > 0) {
       console.log(`[ANIME-STREAM] ✅ ${providerLabel}: ${result.sources.length} sources`);
@@ -85,11 +98,11 @@ export async function GET(request: NextRequest) {
         provider: requestedProvider,
         providers: [requestedProvider],
         anime: {
-          malId: anime.mal_id,
-          title: anime.title,
-          titleEnglish: anime.title_english,
-          episodes: anime.episodes,
-          type: anime.type,
+          malId,
+          title: title!,
+          titleEnglish: title!,
+          episodes: animeRecord?.episodes ?? null,
+          type: animeType,
         },
         executionTime,
       });

@@ -645,6 +645,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           malId: malId.toString(),
           provider: providerName,
         });
+        if (title) params.append('title', title);
+        params.append('type', mediaType);
         if (mediaType === 'tv' && episode) {
           params.append('episode', episode.toString());
         }
@@ -795,8 +797,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         malId: malId.toString(),
         provider: providerName,
       });
-      
-      // Only add episode for TV shows
+      // Pass title/type so the API doesn't need AniList
+      if (title) params.append('title', title);
+      params.append('type', mediaType);
       if (mediaType === 'tv' && episode) {
         params.append('episode', episode.toString());
       }
@@ -1032,7 +1035,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const buildApiUrl = (providerName: string): string | null => {
         if (isMalDirect && !['hianime', 'animekai', 'miruro'].includes(providerName)) return null;
         if (isAnime && malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-          const params = new URLSearchParams({ malId: malId.toString(), provider: providerName });
+          const params = new URLSearchParams({ malId: malId.toString(), provider: providerName, type: mediaType });
+          if (title) params.append('title', title);
           if (mediaType === 'tv' && episode) params.append('episode', episode.toString());
           return `/api/anime/stream?${params}`;
         }

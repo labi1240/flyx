@@ -242,6 +242,9 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
               malId: malId.toString(),
               provider,
             });
+            // Pass title/type so the API doesn't need AniList
+            if (contentTitle) animeParams.append('title', contentTitle);
+            animeParams.append('type', mediaType);
             if (mediaType === 'tv' && episode) {
               animeParams.append('episode', episode.toString());
             }
