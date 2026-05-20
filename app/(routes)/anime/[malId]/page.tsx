@@ -3,8 +3,9 @@ import { notFound } from 'next/navigation';
 import { malService } from '@/lib/services/mal';
 import AnimeDetailsClient from './AnimeDetailsClient';
 
-// Anime data is mostly static - revalidate daily
-export const revalidate = 86400; // 24 hours
+// Must be dynamic — Cloudflare Pages doesn't support ISR.
+// Pre-rendering at build time caches failures permanently.
+export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ malId: string }>; // Next.js 13+ async params
