@@ -303,6 +303,62 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
     return () => { cancelled = true; };
   }, [ssrAnime, malId]);
 
+  // Generate episodes from the season's episode count — no API call needed.
+  // Enhanced with Jikan episode details (titles, air dates, filler flags) in the background.
+  // MUST be before any conditional returns to avoid React hooks order errors.
+  useEffect(() => {
+    const currentSeason = allSeasons[selectedSeason] || allSeasons[0];
+    const isMovie = anime?.type === 'Movie';
+    if (!anime || !currentSeason || isMovie) return;
+
+    const epCount = currentSeason.episodes || 0;
+    if (epCount === 0) {
+      setEpisodes([]);
+      return;
+    }
+
+    const generated: EpisodeData[] = Array.from({ length: epCount }, (_, i) => ({
+      number: i + 1,
+      title: `Episode ${i + 1}`,
+      titleJapanese: null,
+      aired: null,
+      score: null,
+      filler: false,
+      recap: false,
+    }));
+    setEpisodes(generated);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        let allJikanEps: EpisodeData[] = [];
+        let page = 1;
+        let hasNextPage = true;
+
+        while (hasNextPage && !cancelled) {
+          const response = await fetch(`/api/content/mal-episodes?malId=${currentSeason.malId}&page=${page}`);
+          if (!response.ok || cancelled) break;
+          const data = await response.json();
+          if (cancelled || !data.success || !data.data?.episodes?.length) break;
+
+          allJikanEps = allJikanEps.concat(data.data.episodes);
+          hasNextPage = data.data.hasNextPage;
+          page++;
+
+          const merged = generated.map(ep => {
+            const detail = allJikanEps.find((j: EpisodeData) => j.number === ep.number);
+            return detail ? { ...ep, ...detail } : ep;
+          });
+          if (!cancelled) setEpisodes(merged);
+        }
+      } catch {
+        // Jikan enhancement failed — that's fine
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [anime, allSeasons, selectedSeason]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0812] flex items-center justify-center">
@@ -333,64 +389,6 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
 
   const currentSeason = allSeasons[selectedSeason] || allSeasons[0];
   const isMovie = anime.type === 'Movie';
-
-  // Generate episodes directly from the season's episode count — no API call needed.
-  // We already have the count from MAL data passed as server props.
-  // Then try to enhance with Jikan episode details (titles, air dates, filler flags) in the background.
-  useEffect(() => {
-    if (!currentSeason || isMovie) return;
-    
-    const epCount = currentSeason.episodes || 0;
-    if (epCount === 0) {
-      setEpisodes([]);
-      return;
-    }
-
-    // Immediately generate episode list from count
-    const generated: EpisodeData[] = Array.from({ length: epCount }, (_, i) => ({
-      number: i + 1,
-      title: `Episode ${i + 1}`,
-      titleJapanese: null,
-      aired: null,
-      score: null,
-      filler: false,
-      recap: false,
-    }));
-    setEpisodes(generated);
-
-    // Try to enhance with Jikan details in the background (non-blocking)
-    let cancelled = false;
-    (async () => {
-      try {
-        // Fetch all pages of episode details
-        let allJikanEps: EpisodeData[] = [];
-        let page = 1;
-        let hasNextPage = true;
-
-        while (hasNextPage && !cancelled) {
-          const response = await fetch(`/api/content/mal-episodes?malId=${currentSeason.malId}&page=${page}`);
-          if (!response.ok || cancelled) break;
-          const data = await response.json();
-          if (cancelled || !data.success || !data.data?.episodes?.length) break;
-
-          allJikanEps = allJikanEps.concat(data.data.episodes);
-          hasNextPage = data.data.hasNextPage;
-          page++;
-
-          // Merge what we have so far for progressive updates
-          const merged = generated.map(ep => {
-            const detail = allJikanEps.find((j: EpisodeData) => j.number === ep.number);
-            return detail ? { ...ep, ...detail } : ep;
-          });
-          if (!cancelled) setEpisodes(merged);
-        }
-      } catch {
-        // Jikan enhancement failed — that's fine, we already have the basic list
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [currentSeason, isMovie]);
 
   const handleBack = () => {
     router.push('/anime');
