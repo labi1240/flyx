@@ -1883,11 +1883,26 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
 
     const errors: string[] = [];
 
-    // Strategy 1: RPI residential proxy (primary — Flixer CDN blocks CF Worker IPs)
-    // origin=__skip__ is CRITICAL: the Flixer CDN returns 403 ":3" for any request
-    // with an Origin header. The RPI stream-proxy already supports this special value
-    // to omit the Origin header entirely.
-    let triedRpi = false;
+    // Strategy 1: CF direct fetch (no Origin header — Flixer CDN blocks Origin)
+    // Try CF direct FIRST. Flixer CDN blocks Origin header (returns 403 ":3"),
+    // but CF Workers can strip the Origin header. The CDN may still block by
+    // IP range, but we try direct first for speed.
+    try {
+      const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
+      if (directRes.ok) {
+        logger.info('Flixer stream: CF direct succeeded');
+        return handleFlixerStreamResponse(directRes, decodedUrl, url.origin, 'cf-direct', logger);
+      }
+      const body = await directRes.text().catch(() => '(unreadable)');
+      errors.push(`direct: HTTP ${directRes.status} — ${body.substring(0, 200)}`);
+      logger.warn('Flixer stream: CF direct failed', { status: directRes.status, body: body.substring(0, 200) });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`direct: ${msg}`);
+      logger.warn('Flixer stream: CF direct fetch error', { error: msg });
+    }
+
+    // Strategy 2: RPI residential proxy fallback
     if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
       try {
         let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
@@ -1897,57 +1912,30 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
           url: decodedUrl,
           key: env.RPI_PROXY_KEY,
           referer: 'https://flixer.su/',
-          origin: '__skip__', // Flixer CDN blocks Origin header → must omit
+          origin: '__skip__',
         });
         const rpiUrl = `${rpiBase}/flixer/stream?${rpiParams.toString()}`;
 
         const rpiRes = await fetch(rpiUrl, { signal: AbortSignal.timeout(15000) });
         if (rpiRes.ok) {
+          logger.info('Flixer stream: RPI fallback succeeded');
           return handleFlixerStreamResponse(rpiRes, decodedUrl, url.origin, 'rpi', logger);
         }
         const rpiBody = await rpiRes.text().catch(() => '(unreadable)');
         errors.push(`rpi: HTTP ${rpiRes.status} — ${rpiBody.substring(0, 200)}`);
-        logger.warn('Flixer stream: RPI fetch failed', { status: rpiRes.status, body: rpiBody.substring(0, 200) });
+        logger.warn('Flixer stream: RPI fallback failed', { status: rpiRes.status, body: rpiBody.substring(0, 200) });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`rpi: ${msg}`);
-        logger.error('Flixer stream: RPI fetch error', { error: msg });
+        logger.warn('Flixer stream: RPI fallback error', { error: msg });
       }
-      triedRpi = true;
     } else {
       errors.push('rpi: not configured (no RPI_PROXY_URL/RPI_PROXY_KEY)');
-    }
-
-    // Strategy 2: Direct fetch (fallback — usually blocked by CDN IP filtering)
-    // Only useful when RPI is down and user has a non-CF IP (rare).
-    try {
-      const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
-      if (directRes.ok) {
-        return handleFlixerStreamResponse(directRes, decodedUrl, url.origin, 'direct', logger);
-      }
-      const body = await directRes.text().catch(() => '(unreadable)');
-      errors.push(`direct: HTTP ${directRes.status} — ${body.substring(0, 200)}`);
-      logger.warn('Flixer stream: direct fetch failed', { status: directRes.status, body: body.substring(0, 200) });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`direct: ${msg}`);
-      logger.error('Flixer stream: direct fetch error', { error: msg });
-    }
-
-    // Also probe the CDN with a root request to verify general connectivity
-    let cdnReachable = 'unknown';
-    try {
-      const cdnHost = new URL(decodedUrl).hostname;
-      const probeRes = await fetch(`https://${cdnHost}/`, { headers: cdnHeaders, signal: AbortSignal.timeout(5000) });
-      cdnReachable = `HTTP ${probeRes.status}`;
-    } catch (e) {
-      cdnReachable = `unreachable: ${e instanceof Error ? e.message : String(e)}`;
     }
 
     return jsonResponse({
       error: 'All proxy strategies failed for Flixer CDN',
       cdnHost: new URL(decodedUrl).hostname,
-      cdnReachable,
       errors,
     }, 502);
   }

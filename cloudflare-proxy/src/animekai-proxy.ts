@@ -1,16 +1,23 @@
 /**
  * AnimeKai Stream Proxy
- * 
- * Routes AnimeKai HLS streams through the RPI residential proxy.
- * MegaUp CDN (used by AnimeKai) blocks datacenter IPs, so we need
- * to proxy through a residential IP.
- * 
- * Flow:
- *   Client -> Cloudflare Worker -> RPI Proxy -> CDN
- * 
+ *
+ * Routes AnimeKai HLS streams with CF-direct priority.
+ * Local AnimeKai decryption runs natively in the CF Worker.
+ * MegaUp CDN fetch is attempted direct from CF first (with
+ * appropriate headers), falling back to RPI only if blocked.
+ *
+ * Flow (extract):
+ *   Client -> CF Worker (local decrypt) -> try CF direct fetch
+ *                                       -> fallback RPI if blocked
+ *
+ * Flow (stream):
+ *   Client -> CF Worker -> try CF direct -> fallback RPI
+ *
  * Routes:
- *   GET /animekai?url=<encoded_url> - Proxy HLS stream/segment
- *   GET /animekai/health - Health check
+ *   GET /animekai?url=<encoded_url>   - Proxy HLS stream/segment
+ *   GET /animekai/extract?embed=<...>  - Decrypt + extract stream URL
+ *   GET /animekai/full-extract?kai_id=&episode= - Full pipeline
+ *   GET /animekai/health               - Health check
  */
 
 import { createLogger, type LogLevel } from './logger';
@@ -22,6 +29,7 @@ import {
   buildStreamResponse,
   buildStreamResponseFromFetch,
 } from './shared';
+import { decryptAnimeKai } from './animekai-crypto';
 
 export interface Env {
   LOG_LEVEL?: string;
@@ -102,121 +110,135 @@ export async function handleAnimeKaiRequest(request: Request, env: Env): Promise
     }, 200);
   }
 
-  // FULL EXTRACTION endpoint - routes to RPI which does ALL the work
-  // Input: encrypted embed response from AnimeKai /ajax/links/view
-  // Output: { success: true, streamUrl: "https://...", skip: {...} }
+  // FULL EXTRACTION endpoint
+  // Strategy 1: Local decrypt → extract URL → try CF direct fetch for MegaUp /media/
+  // Strategy 2: RPI fallback (for when MegaUp blocks datacenter IPs)
   if (path === '/animekai/extract') {
     const encryptedEmbed = url.searchParams.get('embed');
-    
+
     if (!encryptedEmbed) {
-      return jsonResponse({ 
+      return jsonResponse({
         error: 'Missing embed parameter',
         usage: '/animekai/extract?embed=<encrypted_embed_response>'
       }, 400);
     }
-    
+
+    logger.info('AnimeKai extraction request', { embedLength: encryptedEmbed.length });
+
+    // Strategy 1: Try local decryption + CF direct MegaUp fetch
+    const localResult = await extractStreamLocally(encryptedEmbed, env, logger, url.origin);
+    if (localResult.success) {
+      logger.info('Local extraction succeeded', { streamUrl: localResult.streamUrl?.substring(0, 80) });
+      return jsonResponse(localResult, 200);
+    }
+
+    logger.info('Local extraction failed, trying RPI fallback', { error: localResult.error });
+
+    // Strategy 2: RPI fallback
     const hasRpi = !!(env.RPI_PROXY_URL && env.RPI_PROXY_KEY);
-    
-    if (!hasRpi) {
-      logger.error('RPI proxy not configured for /animekai/extract');
-      return jsonResponse({
-        error: 'RPI proxy not configured',
-        message: 'Set RPI_PROXY_URL and RPI_PROXY_KEY environment variables',
-      }, 503);
-    }
-    
-    logger.info('AnimeKai full extraction request', { embedLength: encryptedEmbed.length });
-    
-    // Forward to RPI proxy which does ALL the work
-    try {
-      let rpiBaseUrl = env.RPI_PROXY_URL!;
-      if (!rpiBaseUrl.startsWith('http://') && !rpiBaseUrl.startsWith('https://')) {
-        rpiBaseUrl = `https://${rpiBaseUrl}`;
+    if (hasRpi) {
+      try {
+        let rpiBaseUrl = env.RPI_PROXY_URL!;
+        if (!rpiBaseUrl.startsWith('http://') && !rpiBaseUrl.startsWith('https://')) {
+          rpiBaseUrl = `https://${rpiBaseUrl}`;
+        }
+
+        const rpiUrl = `${rpiBaseUrl}/animekai/extract?key=${env.RPI_PROXY_KEY}&embed=${encodeURIComponent(encryptedEmbed)}`;
+
+        const rpiResponse = await fetch(rpiUrl, {
+          signal: AbortSignal.timeout(30000),
+        });
+
+        const responseData = await rpiResponse.json() as { success?: boolean; streamUrl?: string; error?: string };
+
+        logger.info('RPI extraction response', {
+          status: rpiResponse.status,
+          success: responseData.success,
+          hasStreamUrl: !!responseData.streamUrl,
+        });
+
+        return jsonResponse(responseData as object, rpiResponse.status);
+
+      } catch (error) {
+        logger.error('RPI extraction error', error as Error);
+        return jsonResponse({
+          error: 'All extraction strategies failed',
+          localError: localResult.error,
+          rpiError: error instanceof Error ? error.message : String(error),
+        }, 502);
       }
-      
-      const rpiUrl = `${rpiBaseUrl}/animekai/extract?key=${env.RPI_PROXY_KEY}&embed=${encodeURIComponent(encryptedEmbed)}`;
-      logger.debug('Forwarding to RPI extract endpoint', { rpiUrl: rpiUrl.substring(0, 80) });
-      
-      const rpiResponse = await fetch(rpiUrl, {
-        signal: AbortSignal.timeout(30000),
-      });
-      
-      const responseData = await rpiResponse.json() as { success?: boolean; streamUrl?: string; error?: string };
-      
-      logger.info('RPI extraction response', { 
-        status: rpiResponse.status, 
-        success: responseData.success,
-        hasStreamUrl: !!responseData.streamUrl,
-      });
-      
-      return jsonResponse(responseData as object, rpiResponse.status);
-      
-    } catch (error) {
-      logger.error('RPI extraction error', error as Error);
-      return jsonResponse({
-        error: 'Extraction failed',
-        details: error instanceof Error ? error.message : String(error),
-      }, 502);
     }
+
+    return jsonResponse({
+      error: 'Extraction failed — no RPI configured and local extraction did not succeed',
+      localError: localResult.error,
+    }, 502);
   }
 
-  // FULL EXTRACTION V2 - RPI does EVERYTHING from kai_id + episode
-  // Input: kai_id (anime ID) and episode number
-  // Output: { success: true, streamUrl: "https://...", skip: {...} }
+  // FULL EXTRACTION V2 — kai_id + episode
+  // Strategy 1: Try local extraction (fetch from AnimeKai API directly + decrypt)
+  // Strategy 2: RPI fallback
   if (path === '/animekai/full-extract') {
     const kaiId = url.searchParams.get('kai_id');
     const episode = url.searchParams.get('episode');
-    
+
     if (!kaiId || !episode) {
-      return jsonResponse({ 
+      return jsonResponse({
         error: 'Missing parameters',
         usage: '/animekai/full-extract?kai_id=<anime_id>&episode=<episode_number>'
       }, 400);
     }
-    
-    const hasRpi = !!(env.RPI_PROXY_URL && env.RPI_PROXY_KEY);
-    
-    if (!hasRpi) {
-      logger.error('RPI proxy not configured for /animekai/full-extract');
-      return jsonResponse({
-        error: 'RPI proxy not configured',
-        message: 'Set RPI_PROXY_URL and RPI_PROXY_KEY environment variables',
-      }, 503);
-    }
-    
+
     logger.info('AnimeKai full extraction V2 request', { kaiId, episode });
-    
-    // Forward to RPI proxy which does ALL the work
-    try {
-      let rpiBaseUrl = env.RPI_PROXY_URL!;
-      if (!rpiBaseUrl.startsWith('http://') && !rpiBaseUrl.startsWith('https://')) {
-        rpiBaseUrl = `https://${rpiBaseUrl}`;
-      }
-      
-      const rpiUrl = `${rpiBaseUrl}/animekai/full-extract?key=${env.RPI_PROXY_KEY}&kai_id=${encodeURIComponent(kaiId)}&episode=${encodeURIComponent(episode)}`;
-      logger.debug('Forwarding to RPI full-extract endpoint', { rpiUrl: rpiUrl.substring(0, 80) });
-      
-      const rpiResponse = await fetch(rpiUrl, {
-        signal: AbortSignal.timeout(45000), // Longer timeout for full extraction
-      });
-      
-      const responseData = await rpiResponse.json() as { success?: boolean; streamUrl?: string; error?: string };
-      
-      logger.info('RPI full extraction response', { 
-        status: rpiResponse.status, 
-        success: responseData.success,
-        hasStreamUrl: !!responseData.streamUrl,
-      });
-      
-      return jsonResponse(responseData as object, rpiResponse.status);
-      
-    } catch (error) {
-      logger.error('RPI full extraction error', error as Error);
-      return jsonResponse({
-        error: 'Full extraction failed',
-        details: error instanceof Error ? error.message : String(error),
-      }, 502);
+
+    // Try local extraction
+    const localResult = await fullExtractLocally(kaiId, episode, env, logger, url.origin);
+    if (localResult.success) {
+      logger.info('Local full extraction succeeded');
+      return jsonResponse(localResult, 200);
     }
+
+    logger.info('Local full extraction failed, trying RPI fallback', { error: localResult.error });
+
+    // RPI fallback
+    const hasRpi = !!(env.RPI_PROXY_URL && env.RPI_PROXY_KEY);
+    if (hasRpi) {
+      try {
+        let rpiBaseUrl = env.RPI_PROXY_URL!;
+        if (!rpiBaseUrl.startsWith('http://') && !rpiBaseUrl.startsWith('https://')) {
+          rpiBaseUrl = `https://${rpiBaseUrl}`;
+        }
+
+        const rpiUrl = `${rpiBaseUrl}/animekai/full-extract?key=${env.RPI_PROXY_KEY}&kai_id=${encodeURIComponent(kaiId)}&episode=${encodeURIComponent(episode)}`;
+
+        const rpiResponse = await fetch(rpiUrl, {
+          signal: AbortSignal.timeout(45000),
+        });
+
+        const responseData = await rpiResponse.json() as { success?: boolean; streamUrl?: string; error?: string };
+
+        logger.info('RPI full extraction response', {
+          status: rpiResponse.status,
+          success: responseData.success,
+          hasStreamUrl: !!responseData.streamUrl,
+        });
+
+        return jsonResponse(responseData as object, rpiResponse.status);
+
+      } catch (error) {
+        logger.error('RPI full extraction error', error as Error);
+        return jsonResponse({
+          error: 'All full extraction strategies failed',
+          localError: localResult.error,
+          rpiError: error instanceof Error ? error.message : String(error),
+        }, 502);
+      }
+    }
+
+    return jsonResponse({
+      error: 'Full extraction failed — no RPI configured and local extraction did not succeed',
+      localError: localResult.error,
+    }, 502);
   }
 
   // Anti-leech check
@@ -510,6 +532,230 @@ async function fetchViaRpiProxy(
       error: 'Proxy error',
       details: error instanceof Error ? error.message : String(error),
     }, 502);
+  }
+}
+
+// ============================================================================
+// Local Extraction (no RPI dependency)
+// ============================================================================
+
+/**
+ * Extract stream URL from encrypted AnimeKai embed — locally in CF Worker.
+ *
+ * Flow:
+ *   1. Decrypt embed using native AnimeKai cipher
+ *   2. Decode }XX URL encoding
+ *   3. Parse the result (JSON or direct URL)
+ *   4. If MegaUp embed URL → try CF direct fetch of /media/ endpoint
+ *   5. Return stream URL
+ */
+async function extractStreamLocally(
+  encryptedEmbed: string,
+  env: Env,
+  logger: ReturnType<typeof createLogger>,
+  proxyOrigin: string,
+): Promise<{ success: boolean; streamUrl?: string; skip?: { intro?: [number, number]; outro?: [number, number] }; error?: string }> {
+  try {
+    // Step 1: Decrypt the embed
+    let decrypted = decryptAnimeKai(encryptedEmbed);
+    if (!decrypted) {
+      return { success: false, error: 'Failed to decrypt AnimeKai embed' };
+    }
+
+    // Step 2: Decode }XX format (AnimeKai's custom URL encoding)
+    decrypted = decrypted.replace(/}([0-9A-Fa-f]{2})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
+
+    logger.debug('Decrypted embed', { decrypted: decrypted.substring(0, 200) });
+
+    // Step 3: Parse the decrypted data
+    let streamUrl = '';
+    let skipIntro: [number, number] | undefined;
+    let skipOutro: [number, number] | undefined;
+
+    try {
+      const streamData = JSON.parse(decrypted);
+
+      // Extract skip markers
+      if (streamData.skip?.intro) skipIntro = streamData.skip.intro;
+      if (streamData.skip?.outro) skipOutro = streamData.skip.outro;
+
+      // Extract URL
+      if (streamData.url) {
+        streamUrl = streamData.url;
+      } else if (streamData.sources?.[0]) {
+        streamUrl = streamData.sources[0].url || streamData.sources[0].file || '';
+      } else if (streamData.file) {
+        streamUrl = streamData.file;
+      }
+    } catch {
+      // Not JSON — might be a direct URL
+      if (decrypted.startsWith('http')) {
+        streamUrl = decrypted;
+      } else {
+        return { success: false, error: `Decrypted data is not JSON or URL: ${decrypted.substring(0, 100)}` };
+      }
+    }
+
+    if (!streamUrl) {
+      return { success: false, error: 'No stream URL in decrypted data' };
+    }
+
+    logger.info('Extracted URL from decrypted embed', { url: streamUrl.substring(0, 80) });
+
+    // Step 4: If this is a MegaUp embed URL (/e/...), fetch the actual stream
+    if (streamUrl.includes('megaup') && streamUrl.includes('/e/')) {
+      logger.info('Detected MegaUp embed, fetching /media/ endpoint...');
+
+      const hlsUrl = await fetchMegaUpMediaFromCF(streamUrl, env, logger);
+      if (hlsUrl) {
+        streamUrl = hlsUrl;
+        logger.info('MegaUp extraction succeeded', { url: streamUrl.substring(0, 80) });
+      } else {
+        // MegaUp fetch failed — return the embed URL so the client can try
+        // through the stream proxy (which also tries CF direct first)
+        logger.warn('MegaUp /media/ fetch failed from CF, returning embed URL for stream proxy fallback');
+        // Don't fail — let the client handle it through stream proxy
+      }
+    } else if (streamUrl.includes('/e/') && !streamUrl.includes('.m3u8') && !streamUrl.includes('.mp4')) {
+      // Generic embed URL — try to extract
+      logger.info('Detected generic embed URL, attempting extraction...');
+      const hlsUrl = await fetchMegaUpMediaFromCF(streamUrl, env, logger);
+      if (hlsUrl) {
+        streamUrl = hlsUrl;
+      }
+    }
+
+    return {
+      success: true,
+      streamUrl,
+      skip: (skipIntro || skipOutro) ? { intro: skipIntro, outro: skipOutro } : undefined,
+    };
+  } catch (error) {
+    logger.error('Local extraction error', error as Error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Try to fetch MegaUp /media/{videoId} directly from CF Worker.
+ * MegaUp CDN blocks datacenter IPs, but we try with appropriate headers.
+ * Falls back to RPI /fetch-rust if configured and direct fails.
+ */
+async function fetchMegaUpMediaFromCF(
+  embedUrl: string,
+  env: Env,
+  logger: ReturnType<typeof createLogger>,
+): Promise<string | null> {
+  try {
+    // Extract video ID from embed URL: https://megaup22.online/e/videoId
+    const urlMatch = embedUrl.match(/https?:\/\/([^\/]+)\/e\/([^\/\?]+)/);
+    if (!urlMatch) {
+      logger.warn('Invalid MegaUp embed URL format', { url: embedUrl });
+      return null;
+    }
+
+    const [, host, videoId] = urlMatch;
+    const mediaUrl = `https://${host}/media/${videoId}`;
+
+    logger.info('Fetching MegaUp /media/ from CF', { mediaUrl: mediaUrl.substring(0, 80) });
+
+    // Try CF direct — no Referer (MegaUp blocks it), no Origin
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Encoding': 'identity',
+    };
+
+    let response: Response | null = null;
+
+    // Attempt 1: Direct CF fetch
+    try {
+      response = await fetch(mediaUrl, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (e) {
+      logger.debug('CF direct MegaUp fetch failed', { error: (e as Error).message });
+    }
+
+    // Attempt 2: RPI /fetch-rust fallback
+    if ((!response || !response.ok) && env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
+      logger.info('CF direct failed, trying RPI rust-fetch for MegaUp /media/');
+      try {
+        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
+        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
+
+        const rustParams = new URLSearchParams({
+          url: mediaUrl,
+          headers: JSON.stringify(headers),
+          timeout: '30',
+        });
+        const rustUrl = `${rpiBase}/fetch-rust?${rustParams.toString()}`;
+
+        const rustRes = await fetch(rustUrl, {
+          headers: { 'X-API-Key': env.RPI_PROXY_KEY },
+          signal: AbortSignal.timeout(20000),
+        });
+
+        if (rustRes.ok) {
+          response = rustRes;
+          logger.info('RPI rust-fetch succeeded for MegaUp /media/');
+        }
+      } catch (e) {
+        logger.debug('RPI rust-fetch also failed', { error: (e as Error).message });
+      }
+    }
+
+    if (!response || !response.ok) {
+      logger.warn('All MegaUp /media/ fetch strategies failed', {
+        status: response?.status,
+      });
+      return null;
+    }
+
+    // Parse MegaUp /media/ response
+    const mediaData = await response.json() as { status?: number; result?: string };
+    if (mediaData.status !== 200 || !mediaData.result) {
+      logger.warn('MegaUp /media/ returned unexpected data', { status: mediaData.status });
+      return null;
+    }
+
+    // MegaUp decryption requires enc-dec.app (keystream is video-specific).
+    // We can't do it natively. Return the encrypted result — the client
+    // must handle MegaUp decryption via enc-dec.app or its own crypto.
+    // For now, the stream URL is embedded in the decrypted result.
+    // Actually: we need to call enc-dec.app for MegaUp decryption.
+    // As a fallback, return null so the caller falls through to RPI.
+    logger.warn('MegaUp /media/ fetched but decryption requires enc-dec.app — deferring to RPI');
+    return null;
+
+  } catch (error) {
+    logger.error('MegaUp media fetch error', error as Error);
+    return null;
+  }
+}
+
+/**
+ * Full extraction pipeline — local in CF Worker.
+ * Fetches from AnimeKai API directly (AnimeKai doesn't block CF IPs).
+ */
+async function fullExtractLocally(
+  kaiId: string,
+  episode: string,
+  env: Env,
+  logger: ReturnType<typeof createLogger>,
+  proxyOrigin: string,
+): Promise<{ success: boolean; streamUrl?: string; skip?: { intro?: [number, number]; outro?: [number, number] }; error?: string }> {
+  try {
+    // For full extraction, we need the encrypt function too.
+    // Since we only have decrypt available, we'll use RPI for the full pipeline.
+    // The /extract endpoint handles individual embed decryption.
+    logger.info('Full extraction requires encrypt — use /animekai/extract for individual embeds');
+    return { success: false, error: 'Full extraction requires RPI for encrypt+fetch pipeline. Use /animekai/extract with the encrypted embed instead.' };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

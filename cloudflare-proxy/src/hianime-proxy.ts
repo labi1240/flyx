@@ -291,25 +291,28 @@ function setRpiConfig(env: Env): void {
 }
 
 /**
- * Fetch a URL, routing through RPI proxy if available.
- * Falls back to direct fetch if RPI is not configured or fails.
+ * Fetch a URL — CF direct first, RPI proxy fallback.
  *
- * Passes custom headers (UA, Referer, Origin) as query params to the RPI
- * proxy's /hianime/stream endpoint, overriding its default megacloud.blog
- * headers. Without these overrides, HiAnime serves a "goodbye" page instead
- * of actual content.
+ * Strategy 1: Direct CF fetch (fastest, no RPI dependency)
+ * Strategy 2: RPI proxy fallback (handles datacenter IP blocking)
  */
 async function rpiFetch(url: string, headers: Record<string, string> = {}): Promise<Response> {
+  // Strategy 1: Try CF direct first
+  try {
+    const directRes = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    if (directRes.ok) return directRes;
+    console.log(`[rpiFetch] Direct fetch returned ${directRes.status}, trying RPI fallback`);
+  } catch (e) {
+    console.log(`[rpiFetch] Direct fetch error: ${(e as Error).message}, trying RPI fallback`);
+  }
+
+  // Strategy 2: RPI proxy fallback
   if (_rpiConfig) {
     try {
       const rpiParams = new URLSearchParams({
         url,
         key: _rpiConfig.key,
       });
-      // Pass UA but DON'T override Referer/Origin for HiAnime scraping.
-      // The default megacloud.blog Referer/Origin from the stream config works
-      // for fetching HiAnime pages. Overriding to aniwatchtv.to causes rejection
-      // (the server detects non-browser IPs sending same-origin headers).
       if (headers['User-Agent']) rpiParams.set('ua', headers['User-Agent']);
 
       const rpiUrl = `${_rpiConfig.baseUrl}/hianime/stream?${rpiParams.toString()}`;
@@ -317,14 +320,16 @@ async function rpiFetch(url: string, headers: Record<string, string> = {}): Prom
       const res = await fetch(rpiUrl, { signal: AbortSignal.timeout(20000) });
       console.log(`[rpiFetch] RPI response: ${res.status} ${res.headers.get('content-type')}`);
       if (res.ok) return res;
-      console.log(`[rpiFetch] RPI returned ${res.status}, falling back to direct`);
+      console.log(`[rpiFetch] RPI returned ${res.status}`);
     } catch (e) {
-      console.log(`[rpiFetch] RPI error: ${(e as Error).message}, falling back to direct`);
+      console.log(`[rpiFetch] RPI error: ${(e as Error).message}`);
     }
   } else {
-    console.log(`[rpiFetch] No RPI config, using direct fetch for: ${url.substring(0, 80)}`);
+    console.log(`[rpiFetch] No RPI config for: ${url.substring(0, 80)}`);
   }
-  // Direct fetch fallback
+
+  // Both strategies failed — do one more direct attempt with longer timeout
+  console.log(`[rpiFetch] Final direct attempt: ${url.substring(0, 80)}`);
   return fetch(url, { headers, signal: AbortSignal.timeout(15000) });
 }
 
