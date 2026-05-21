@@ -13,7 +13,7 @@
 const { createHash } = require('crypto');
 const { execSync } = require('child_process');
 
-const CAP_BASE = 'https://cap.hexa.su/0737428d64';
+const CAP_BASE = 'https://cap.hexa.su/15d2cf0395';
 const KV_NAMESPACE_ID = 'ef441bca9b6148e098689a9334fd6288';
 
 function prng(seed, length) {

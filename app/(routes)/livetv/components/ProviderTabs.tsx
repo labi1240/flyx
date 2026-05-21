@@ -6,7 +6,7 @@
 import { memo } from 'react';
 import styles from '../LiveTV.module.css';
 
-export type Provider = 'dlhd' | 'cdnlive' | 'ppv';
+export type Provider = 'dlhd' | 'cdnlive' | 'ppv' | 'ufreetv' | 'globetv';
 
 interface ProviderTabsProps {
   selectedProvider: Provider;
@@ -15,6 +15,8 @@ interface ProviderTabsProps {
     dlhd: { events: number; channels: number };
     cdnlive: { channels: number };
     ppv: { events: number; live: number };
+    ufreetv?: { channels: number };
+    globetv?: { channels: number };
   };
   loading?: boolean;
 }
@@ -43,6 +45,18 @@ const PROVIDERS: Array<{
     description: 'Live Events & PPV',
     icon: '🏟️'
   },
+  {
+    id: 'ufreetv',
+    label: 'uFreeTV',
+    description: 'Free Live TV Channels',
+    icon: '📡'
+  },
+  {
+    id: 'globetv',
+    label: 'GlobeTV',
+    description: 'Global TV Channels',
+    icon: '🌍'
+  },
 ];
 
 export const ProviderTabs = memo(function ProviderTabs({
@@ -59,6 +73,10 @@ export const ProviderTabs = memo(function ProviderTabs({
         return stats.cdnlive.channels;
       case 'ppv':
         return stats.ppv.events;
+      case 'ufreetv':
+        return stats.ufreetv?.channels || 0;
+      case 'globetv':
+        return stats.globetv?.channels || 0;
       default:
         return 0;
     }

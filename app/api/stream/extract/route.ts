@@ -16,7 +16,7 @@ import type { ExtractionRequest } from '@/app/lib/providers/types';
 import { isAnimeContent } from '@/app/lib/services/animekai-extractor';
 import { AllProvidersFailedError } from '@/app/lib/stream-errors';
 import { performanceMonitor } from '@/app/lib/utils/performance-monitor';
-import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
+import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, getBingeBoxStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
 
 // Lazy-load registry to prevent module-load crashes on CF Pages runtime.
 // If any provider import fails (e.g., Node.js APIs), the whole module would crash
@@ -120,10 +120,16 @@ function maybeProxyUrl(source: any, provider: string): string {
     const is1moviesCdn = is1moviesCdnUrl(source.url);
     const is1movies = provider === '1movies';
     const isPrimeSrc = provider === 'primesrc';
+    const isBingeBox = provider === 'bingebox';
     const isFlixer = provider === 'flixer';
     const isUflix = provider === 'uflix';
     const isMultiEmbed = provider === 'multi-embed' || provider === 'multiembed' || provider === 'hexa';
     const isVidSrc = provider === 'vidsrc';
+
+    // BingeBox: HLS streams proxied through /bingebox/stream on CF Worker
+    if (isBingeBox) {
+      return getBingeBoxStreamProxyUrl(source.url);
+    }
 
     // PrimeSrc: streams proxied through /primesrc/stream on CF Worker (no RPI needed)
     if (isPrimeSrc) {
@@ -252,7 +258,7 @@ function getValidProviderNames(): string[] {
       ...registry.getAllEnabled().map((p: any) => p.name),
       // Include disabled providers too — they can be explicitly requested
       'flixer', 'uflix', 'animekai', 'hianime', 'vidsrc', 'primesrc', 'multi-embed',
-      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'moviebox',
+      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'moviebox', 'bingebox', 'ufreetv', 'globetv',
     ])
   );
   return ['auto', ...registeredNames, ...Object.keys(PROVIDER_ALIASES)];
@@ -396,7 +402,7 @@ export async function GET(request: NextRequest) {
 
     // GUARD: Reject TMDB-dependent providers when tmdbId=0 (MAL-direct anime)
     // These providers (flixer, vidlink, vidsrc, etc.) need a real TMDB ID to work
-    const tmdbDependentProviders = ['flixer', 'uflix', 'vidsrc', 'multi-embed', 'hexa', '1movies', 'primesrc', 'moviebox'];
+    const tmdbDependentProviders = ['flixer', 'uflix', 'vidsrc', 'multi-embed', 'hexa', '1movies', 'primesrc', 'moviebox', 'bingebox'];
     if (tmdbId === '0' && tmdbDependentProviders.includes(providerParam)) {
       return NextResponse.json(
         { error: `${providerParam} requires a real TMDB ID (tmdbId=0 is MAL-direct anime)`, success: false },
@@ -737,6 +743,21 @@ async function directExtract(
         }
         throw new Error(result.error || 'MovieBox returned no sources');
       }
+      case 'bingebox': {
+        const { extractBingeBoxStreams } = await import('@/app/lib/services/bingebox-extractor');
+        const result = await extractBingeBoxStreams(
+          request.tmdbId,
+          request.mediaType,
+          request.title || request.malTitle || '',
+          undefined,
+          request.season,
+          request.episode,
+        );
+        if (result.success && result.sources.length > 0) {
+          return { sources: result.sources, provider: 'bingebox' };
+        }
+        throw new Error(result.error || 'BingeBox returned no sources');
+      }
       case 'multi-embed': {
         const { extractMultiEmbedStreams } = await import('@/app/lib/services/multi-embed-extractor');
         const result = await extractMultiEmbedStreams(request.tmdbId, request.mediaType, request.season, request.episode);
@@ -868,6 +889,8 @@ function inferProviderFromSourceName(sourceName: string): string | undefined {
   if (sourceName.includes('Videasy') || sourceName.includes('videasy')) return 'videasy';
   if (sourceName.includes('Miruro') || sourceName.includes('miruro')) return 'miruro';
   if (sourceName.includes('MovieBox') || sourceName.includes('moviebox')) return 'moviebox';
+  if (sourceName.includes('BingeBox') || sourceName.includes('bingebox')) return 'bingebox';
+  if (sourceName.includes('GlobeTV') || sourceName.includes('globetv')) return 'globetv';
   if (sourceName.includes('MultiEmbed')) return 'multi-embed';
   if (sourceName.includes('NTV') || sourceName.includes('ntv')) return 'ntv';
   if (sourceName.includes('Uflix')) return 'uflix';

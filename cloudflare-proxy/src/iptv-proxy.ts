@@ -13,6 +13,7 @@
  */
 
 import { createLogger, type LogLevel } from './logger';
+import { headersToObject } from './shared';
 
 export interface Env {
   LOG_LEVEL?: string;
@@ -905,7 +906,7 @@ async function handleStreamProxy(request: Request, url: URL, env: Env, logger: a
           MAC: mac,
           viaToken: !!streamToken,
           errorBody: errorBody.substring(0, 500),
-          responseHeaders: Object.fromEntries(response.headers.entries()),
+          responseHeaders: headersToObject(response.headers),
         });
         throw new Error(`Direct blocked/expired with ${response.status}`);
       }

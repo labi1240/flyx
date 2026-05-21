@@ -298,6 +298,22 @@ export default function LiveTVRefactored() {
                 <span className={styles.sourceTabLabel}>NTV</span>
                 <span className={styles.sourceTabCount}>{stats.ntv.channels}</span>
               </button>
+              <button
+                onClick={() => setSelectedProvider('ufreetv')}
+                className={`${styles.sourceTab} ${selectedProvider === 'ufreetv' ? styles.active : ''}`}
+              >
+                <span className={styles.sourceTabIcon}>📡</span>
+                <span className={styles.sourceTabLabel}>uFreeTV</span>
+                <span className={styles.sourceTabCount}>{stats.ufreetv?.channels || 0}</span>
+              </button>
+              <button
+                onClick={() => setSelectedProvider('globetv')}
+                className={`${styles.sourceTab} ${selectedProvider === 'globetv' ? styles.active : ''}`}
+              >
+                <span className={styles.sourceTabIcon}>🌍</span>
+                <span className={styles.sourceTabLabel}>GlobeTV</span>
+                <span className={styles.sourceTabCount}>{stats.globetv?.channels || 0}</span>
+              </button>
             </div>
 
             {/* Category Filters */}

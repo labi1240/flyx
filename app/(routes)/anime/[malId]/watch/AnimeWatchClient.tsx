@@ -112,8 +112,8 @@ export default function AnimeWatchClient() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0);
   
   // Provider state
-  const [currentProvider, setCurrentProvider] = useState<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Audio preference for anime
@@ -256,7 +256,7 @@ export default function AnimeWatchClient() {
   }, [fetchMobileStream, currentProvider]);
 
   // Handle provider change - supports hianime and animekai
-  const handleProviderChange = useCallback(async (_provider: 'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (_provider: 'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     

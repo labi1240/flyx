@@ -295,14 +295,17 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
     videasy: true, // Primary provider — zero-auth, direct HLS, 4K support
     flixer: true, // Backup provider — WASM-based extraction
-    uflix: false,
-    hexa: false,
-    vidsrc: false,
-    '1movies': false,
+    primesrc: true,
+    uflix: true,
+    hexa: true,
+    vidsrc: true,
+    'multi-embed': true,
+    '1movies': true,
     animekai: true, // Anime-specific provider - auto-selected for anime content
     hianime: true, // HiAnime - primary anime provider (MegaCloud extraction)
     miruro: true, // Miruro - anime sub+dub provider (6 providers, uwucdn.top CDN)
     moviebox: true, // MovieBox - movies/TV/anime (h5-api.aoneroom.com, session-gated)
+    bingebox: true, // BingeBox - movies/TV/anime (15 direct HLS sources, bingebox.to)
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
@@ -975,14 +978,17 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             ...prev,
             videasy: data.providers?.videasy?.enabled ?? prev.videasy ?? true,
             flixer: data.providers?.flixer?.enabled ?? prev.flixer ?? true,
-            uflix: data.providers?.uflix?.enabled ?? false,
-            hexa: data.providers?.['multi-embed']?.enabled ?? false,
-            vidsrc: data.providers?.vidsrc?.enabled ?? false,
-            '1movies': data.providers?.['1movies']?.enabled ?? false,
+            primesrc: data.providers?.primesrc?.enabled ?? prev.primesrc ?? true,
+            uflix: data.providers?.uflix?.enabled ?? prev.uflix ?? true,
+            hexa: data.providers?.hexa?.enabled ?? prev.hexa ?? true,
+            vidsrc: data.providers?.vidsrc?.enabled ?? prev.vidsrc ?? true,
+            'multi-embed': data.providers?.['multi-embed']?.enabled ?? prev['multi-embed'] ?? true,
+            '1movies': data.providers?.['1movies']?.enabled ?? prev['1movies'] ?? true,
             animekai: data.providers?.animekai?.enabled ?? prev.animekai ?? true,
             hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
             miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
             moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
+            bingebox: data.providers?.bingebox?.enabled ?? prev.bingebox ?? true,
           }));
         } catch {}
       }).catch(() => {});
@@ -1002,8 +1008,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const defaultOrder: string[] = isAnime
         ? (isMalDirect
           ? ['hianime', 'animekai', 'miruro']
-          : ['hianime', 'animekai', 'miruro', 'flixer', 'moviebox'])
-        : ['videasy', 'flixer', 'moviebox'];
+          : ['hianime', 'animekai', 'miruro', 'videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'])
+        : ['videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -1546,7 +1552,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   }
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
                   if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
+                  if (provider !== 'primesrc' && providerAvailability.primesrc) fallbackProviders.push('primesrc');
+                  if (provider !== 'uflix' && providerAvailability.uflix) fallbackProviders.push('uflix');
+                  if (provider !== 'hexa' && providerAvailability.hexa) fallbackProviders.push('hexa');
+                  if (provider !== 'vidsrc' && providerAvailability.vidsrc) fallbackProviders.push('vidsrc');
+                  if (provider !== 'multi-embed' && providerAvailability['multi-embed']) fallbackProviders.push('multi-embed');
+                  if (provider !== '1movies' && providerAvailability['1movies']) fallbackProviders.push('1movies');
                   if (provider !== 'moviebox' && providerAvailability.moviebox) fallbackProviders.push('moviebox');
+                  if (provider !== 'bingebox' && providerAvailability.bingebox) fallbackProviders.push('bingebox');
 
                   for (const fallbackProvider of fallbackProviders) {
                     if (triedProvidersRef.current.has(fallbackProvider)) continue;
@@ -4747,6 +4760,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                         animekai: 'AnimeKai',
                         miruro: 'Miruro',
                         moviebox: 'MovieBox',
+                        bingebox: 'BingeBox',
                       };
                       return (
                         <button

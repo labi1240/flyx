@@ -623,6 +623,55 @@ export function getVideasyStreamProxyUrl(url: string): string {
   return `${baseUrl}/stream?url=${encodeURIComponent(url)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.net/')}`;
 }
 
+// ─── BingeBox Proxy ─────────────────────────────────────────────
+
+function getBingeBoxProxyBaseUrl(): string {
+  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
+                     process.env.CF_STREAM_PROXY_URL ||
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
+  return cfProxyUrl.replace(/\/stream\/?$/, '');
+}
+
+/**
+ * Get BingeBox stream proxy URL — proxies HLS .m3u8 streams through /bingebox/stream.
+ * BingeBox sources (api.dlproxy.com) require Origin: https://bingebox.to header.
+ */
+export function getBingeBoxStreamProxyUrl(url: string): string {
+  const baseUrl = getBingeBoxProxyBaseUrl();
+  return `${baseUrl}/bingebox/stream?url=${encodeURIComponent(url)}`;
+}
+
+/**
+ * Get BingeBox extract URL — calls CF Worker /bingebox/extract
+ */
+export function getBingeBoxExtractUrl(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  title: string,
+  source?: string,
+  season?: number,
+  episode?: number,
+): string {
+  const baseUrl = getBingeBoxProxyBaseUrl();
+  const params = new URLSearchParams({ tmdbId, type, title, year: '' });
+  if (source) params.set('source', source);
+  if (type === 'tv' && season && episode) {
+    params.set('s', season.toString());
+    params.set('e', episode.toString());
+  }
+  return `${baseUrl}/bingebox/extract?${params.toString()}`;
+}
+
+// ─── uFreeTV Proxy ─────────────────────────────────────────────
+
+/**
+ * Get uFreeTV stream proxy URL — proxies HLS streams through /ufreetv/stream.
+ */
+export function getUFreeTVStreamProxyUrl(url: string): string {
+  const baseUrl = getBingeBoxProxyBaseUrl(); // same CF Worker base
+  return `${baseUrl}/ufreetv/stream?url=${encodeURIComponent(url)}`;
+}
+
 // ─── PrimeSrc Proxy ─────────────────────────────────────────────
 
 function getPrimeSrcProxyBaseUrl(): string {

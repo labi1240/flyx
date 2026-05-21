@@ -98,7 +98,7 @@ function base64urlDecode(str: string): string {
  * Gzip compress a Uint8Array using CompressionStream
  */
 async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data]).stream();
+  const stream = new Blob([data as BlobPart]).stream();
   const compressed = stream.pipeThrough(new CompressionStream('gzip'));
   const blob = await new Response(compressed).blob();
   return new Uint8Array(await blob.arrayBuffer());
@@ -108,7 +108,7 @@ async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
  * Gunzip decompress a Uint8Array using DecompressionStream
  */
 async function gunzipDecompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data]).stream();
+  const stream = new Blob([data as BlobPart]).stream();
   const decompressed = stream.pipeThrough(new DecompressionStream('gzip'));
   const blob = await new Response(decompressed).blob();
   return new Uint8Array(await blob.arrayBuffer());
@@ -253,7 +253,7 @@ export async function handleMiruroRequest(
 }
 
 function handleHealth(): Response {
-  return jsonResponse({ status: 'ok', provider: 'miruro', baseUrl: MIRURO_BASE });
+  return jsonResponse({ status: 'ok', provider: 'miruro', baseUrl: MIRURO_BASE }, 200);
 }
 
 /**
@@ -270,7 +270,7 @@ async function handleEpisodes(
   }
 
   const data = await miruroGet('episodes', { anilistId }, logger);
-  return jsonResponse(data);
+  return jsonResponse(data, 200);
 }
 
 /**
@@ -290,7 +290,7 @@ async function handleSources(
   }
 
   const data = await miruroGet('sources', { episodeId, provider, category }, logger);
-  return jsonResponse(data);
+  return jsonResponse(data, 200);
 }
 
 /**

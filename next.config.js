@@ -4,9 +4,14 @@ const nextConfig = {
   // which causes duplicate extraction requests and race conditions
   reactStrictMode: false,
 
-  // Enable standalone output for Docker deployments
+  // Fix workspace root detection (C:\Users\Nicks\bun.lockb confuses Next.js)
+  turbopack: {
+    root: __dirname,
+  },
+
+  // Enable standalone output for Docker/Cloudflare deployments
   ...(process.env.FLYX_SELF_HOSTED === 'true' || process.env.DOCKER_BUILD === 'true'
-    ? { output: 'standalone' }
+    ? { output: 'standalone', outputFileTracingRoot: __dirname }
     : {}),
 
   // Image optimization

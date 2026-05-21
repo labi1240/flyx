@@ -748,7 +748,7 @@ async function fetchServerKey(channelKey: string, logger: any, env?: Env): Promi
       }
       rpiBase = rpiBase.replace(/\/+$/, '');
       
-      const rpiUrl = `${rpiBase}/dlhd/stream?url=${encodeURIComponent(url)}&key=${env.RPI_PROXY_KEY}`;
+      const rpiUrl = `${rpiBase}/dlhd/stream?url=${encodeURIComponent(`https://chevy.embedkclx.sbs/server_lookup?channel_id=${channelKey}`)}&key=${env.RPI_PROXY_KEY}`;
       logger.info('Trying server lookup via RPI', { channelKey });
       
       const rpiRes = await fetch(rpiUrl);

@@ -16,7 +16,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
-      sourceUrl.includes('/primesrc/') || sourceUrl.includes('/moviebox/')) {
+      sourceUrl.includes('/primesrc/') || sourceUrl.includes('/moviebox/') || sourceUrl.includes('/bingebox/')) {
     return sourceUrl;
   }
   // Only proxy if the source says it needs it (or it's a known CDN URL)
@@ -153,8 +153,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -404,21 +404,24 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { vidsrc: false, flixer: true, '1movies': false, uflix: false, animekai: true, hianime: true, primesrc: false, 'multi-embed': false, miruro: true, moviebox: true };
+      let providerAvailability = { videasy: true, flixer: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, '1movies': true, animekai: true, hianime: true, miruro: true, moviebox: true, bingebox: true };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
         providerAvailability = {
-          vidsrc: false,
+          videasy: providerData.providers?.videasy?.enabled ?? true,
           flixer: providerData.providers?.flixer?.enabled ?? true,
-          '1movies': false,
-          uflix: false,
+          primesrc: providerData.providers?.primesrc?.enabled ?? true,
+          uflix: providerData.providers?.uflix?.enabled ?? true,
+          hexa: providerData.providers?.hexa?.enabled ?? true,
+          vidsrc: providerData.providers?.vidsrc?.enabled ?? true,
+          'multi-embed': providerData.providers?.['multi-embed']?.enabled ?? true,
+          '1movies': providerData.providers?.['1movies']?.enabled ?? true,
           animekai: providerData.providers?.animekai?.enabled ?? true,
           hianime: providerData.providers?.hianime?.enabled ?? true,
-          primesrc: false,
-          'multi-embed': false,
           miruro: providerData.providers?.miruro?.enabled ?? true,
           moviebox: providerData.providers?.moviebox?.enabled ?? true,
+          bingebox: providerData.providers?.bingebox?.enabled ?? true,
         };
       } catch (e) {
         console.warn('[WatchPage] Failed to fetch provider availability, using defaults');
@@ -428,15 +431,15 @@ function WatchContent() {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      const providerOrder: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox'> = [];
+      const providerOrder: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'> = [];
       
       // Determine if this is anime content - use malId OR previously detected anime
       const isAnime = !!(malId || isAnimeDetectedRef.current);
       
       const animeOnlyProviders = ['animekai', 'hianime', 'miruro'];
-      const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox'> = isAnime
-        ? ['hianime', 'animekai', 'miruro', 'videasy', 'flixer']
-        : ['videasy', 'flixer', 'moviebox'];
+      const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'> = isAnime
+        ? ['hianime', 'animekai', 'miruro', 'videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox']
+        : ['videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
 
       // For ANIME content: always put HiAnime + AnimeKai first (sub/dub toggle needs them)
       if (isAnime) {
@@ -590,7 +593,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'miruro' | 'moviebox', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);

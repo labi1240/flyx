@@ -42,7 +42,18 @@ export function isMegaUpCdn(url: string): boolean {
 // CORS + JSON Helpers
 // ============================================================================
 
-export function corsHeaders(): Record<string, string> {
+/**
+ * Convert Headers object to a plain key-value object.
+ * CF Workers Headers class doesn't implement iterable in TS types,
+ * so we iterate manually.
+ */
+export function headersToObject(headers: Headers): Record<string, string> {
+  const obj: Record<string, string> = {};
+  headers.forEach((value, key) => { obj[key] = value; });
+  return obj;
+}
+
+export function corsHeaders(_request?: Request): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -51,7 +62,7 @@ export function corsHeaders(): Record<string, string> {
   };
 }
 
-export function jsonResponse(data: object, status: number): Response {
+export function jsonResponse(data: object, status: number = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {

@@ -17,6 +17,13 @@ export interface WorkerMetrics {
   viprowRequests: number;
   vidsrcRequests: number;
   hianimeRequests: number;
+  miruroRequests: number;
+  movieboxRequests: number;
+  ntvRequests: number;
+  primesrcRequests: number;
+  bingeboxRequests: number;
+  ufreetvRequests: number;
+  globetvRequests: number;
   startTime: number;
 }
 
@@ -34,6 +41,13 @@ export const metrics: WorkerMetrics = {
   viprowRequests: 0,
   vidsrcRequests: 0,
   hianimeRequests: 0,
+  miruroRequests: 0,
+  movieboxRequests: 0,
+  ntvRequests: 0,
+  primesrcRequests: 0,
+  bingeboxRequests: 0,
+  ufreetvRequests: 0,
+  globetvRequests: 0,
   startTime: Date.now(),
 };
 

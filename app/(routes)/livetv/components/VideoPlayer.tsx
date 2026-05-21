@@ -77,6 +77,23 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         // Return sentinel — actual extraction happens async in initPlayer
         return `cdnlive://${encodeURIComponent(name)}/${country || 'us'}`;
       }
+      if (channel.source === 'ufreetv') {
+        // uFreeTV channels have direct .m3u8 URLs that need proxying
+        const cfProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL;
+        if (cfProxy) {
+          const baseUrl = cfProxy.replace(/\/stream\/?$/, '');
+          return `${baseUrl}/ufreetv/stream?url=${encodeURIComponent(channel.channelId)}`;
+        }
+        return channel.channelId; // fallback: direct URL
+      }
+      if (channel.source === 'globetv') {
+        const cfProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL;
+        if (cfProxy) {
+          const baseUrl = cfProxy.replace(/\/stream\/?$/, '');
+          return `${baseUrl}/globetv/stream?url=${encodeURIComponent(channel.channelId)}`;
+        }
+        return null;
+      }
     }
 
     // Event playback - use selected channel

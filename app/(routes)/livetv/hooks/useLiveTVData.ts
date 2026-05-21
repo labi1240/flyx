@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 // TYPES
 // ============================================================================
 
-export type Provider = 'dlhd' | 'cdnlive' | 'ppv' | 'ntv';
+export type Provider = 'dlhd' | 'cdnlive' | 'ppv' | 'ntv' | 'ufreetv' | 'globetv';
 export type ContentType = 'events' | 'channels';
 
 export interface LiveEvent {
@@ -62,6 +62,8 @@ export interface ProviderStats {
   cdnlive: { channels: number };
   ppv: { events: number; live: number };
   ntv: { events: number; channels: number; live: number };
+  ufreetv: { channels: number };
+  globetv: { channels: number };
 }
 
 // ============================================================================
@@ -450,23 +452,81 @@ export function useLiveTVData() {
     }
   }, []);
 
+  // uFreeTV State — free live TV channels from ufreetv.com
+  const [ufreetvChannels, setUfreetvChannels] = useState<TVChannel[]>([]);
+  const [ufreetvLoading, setUfreetvLoading] = useState(true);
+
+  // GlobeTV State — global TV channels from iptv-org API
+  const [globetvChannels, setGlobetvChannels] = useState<TVChannel[]>([]);
+  const [globetvLoading, setGlobetvLoading] = useState(true);
+
+  // uFreeTV Fetcher
+  const fetchUFreeTV = useCallback(async () => {
+    setUfreetvLoading(true);
+    try {
+      const res = await fetch('/api/livetv/ufreetv-channels?source=all');
+      const data = await res.json();
+      if (data.success && data.channels) {
+        const channels: TVChannel[] = data.channels.map((ch: any) => ({
+          id: ch.id,
+          name: ch.name,
+          category: ch.category || 'general',
+          country: '',
+          source: 'ufreetv' as const,
+          channelId: ch.id,
+        }));
+        setUfreetvChannels(channels);
+      }
+    } catch (e) {
+      console.error('[LiveTV] uFreeTV fetch error:', e);
+    } finally {
+      setUfreetvLoading(false);
+    }
+  }, []);
+
+  // GlobeTV Fetcher — calls /api/livetv/globetv-channels under the hood
+  const fetchGlobeTV = useCallback(async () => {
+    setGlobetvLoading(true);
+    try {
+      const res = await fetch('/api/livetv/globetv-channels');
+      const data = await res.json();
+      if (data.success && data.channels) {
+        const channels: TVChannel[] = data.channels.map((ch: any) => ({
+          id: ch.id,
+          name: ch.name,
+          category: ch.categories?.[0] || 'general',
+          country: ch.country || '',
+          source: 'globetv' as const,
+          channelId: ch.id,
+        }));
+        setGlobetvChannels(channels);
+      }
+    } catch (e) {
+      console.error('[LiveTV] GlobeTV fetch error:', e);
+    } finally {
+      setGlobetvLoading(false);
+    }
+  }, []);
+
   // Initial Load
   useEffect(() => {
     fetchDLHD();
     fetchCDNLive();
     fetchPPV();
     fetchNTV();
-  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV]);
+    fetchUFreeTV();
+    fetchGlobeTV();
+  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV, fetchUFreeTV, fetchGlobeTV]);
 
   // All Events (DLHD + PPV + NTV)
   const allEvents = useMemo(() => {
     return [...dlhdEvents, ...ppvEvents, ...ntvEvents];
   }, [dlhdEvents, ppvEvents, ntvEvents]);
 
-  // All Channels (DLHD + CDN Live + NTV)
+  // All Channels (DLHD + CDN Live + NTV + uFreeTV + GlobeTV)
   const allChannels = useMemo(() => {
-    return [...dlhdChannels, ...cdnChannels, ...ntvChannels];
-  }, [dlhdChannels, cdnChannels, ntvChannels]);
+    return [...dlhdChannels, ...cdnChannels, ...ntvChannels, ...ufreetvChannels, ...globetvChannels];
+  }, [dlhdChannels, cdnChannels, ntvChannels, ufreetvChannels, globetvChannels]);
 
   // Filtered Events
   const filteredEvents = useMemo(() => {
@@ -507,6 +567,10 @@ export function useLiveTVData() {
       channels = dlhdChannels;
     } else if (selectedProvider === 'ntv') {
       channels = ntvChannels;
+    } else if (selectedProvider === 'ufreetv') {
+      channels = ufreetvChannels;
+    } else if (selectedProvider === 'globetv') {
+      channels = globetvChannels;
     }
 
     // Filter by search
@@ -521,7 +585,7 @@ export function useLiveTVData() {
     }
 
     return channels;
-  }, [allChannels, cdnChannels, dlhdChannels, ntvChannels, selectedProvider, searchQuery]);
+  }, [allChannels, cdnChannels, dlhdChannels, ntvChannels, ufreetvChannels, globetvChannels, selectedProvider, searchQuery]);
 
   // Event Categories
   const eventCategories = useMemo(() => {
@@ -579,7 +643,13 @@ export function useLiveTVData() {
       channels: ntvChannels.length,
       live: ntvEvents.filter(e => e.isLive).length,
     },
-  }), [dlhdEvents, dlhdChannels, cdnChannels, ppvEvents, ntvEvents, ntvChannels]);
+    ufreetv: {
+      channels: ufreetvChannels.length,
+    },
+    globetv: {
+      channels: globetvChannels.length,
+    },
+  }), [dlhdEvents, dlhdChannels, cdnChannels, ppvEvents, ntvEvents, ntvChannels, ufreetvChannels, globetvChannels]);
 
   // Loading state
   const loading = useMemo(() => {
@@ -590,8 +660,10 @@ export function useLiveTVData() {
     }
     if (selectedProvider === 'cdnlive') return cdnLoading;
     if (selectedProvider === 'ntv') return ntvLoading;
+    if (selectedProvider === 'ufreetv') return ufreetvLoading;
+    if (selectedProvider === 'globetv') return globetvLoading;
     return dlhdLoading;
-  }, [contentType, selectedProvider, dlhdLoading, cdnLoading, ppvLoading, ntvLoading]);
+  }, [contentType, selectedProvider, dlhdLoading, cdnLoading, ppvLoading, ntvLoading, ufreetvLoading, globetvLoading]);
 
   // Error state
   const error = useMemo(() => {
@@ -602,6 +674,8 @@ export function useLiveTVData() {
     }
     if (selectedProvider === 'cdnlive') return cdnError;
     if (selectedProvider === 'ntv') return ntvError;
+    if (selectedProvider === 'ufreetv') return null;
+    if (selectedProvider === 'globetv') return null;
     return dlhdError;
   }, [contentType, selectedProvider, dlhdError, cdnError, ppvError, ntvError]);
 
@@ -611,7 +685,9 @@ export function useLiveTVData() {
     fetchCDNLive();
     fetchPPV();
     fetchNTV();
-  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV]);
+    fetchUFreeTV();
+    fetchGlobeTV();
+  }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV, fetchUFreeTV, fetchGlobeTV]);
 
   return {
     // Content type toggle

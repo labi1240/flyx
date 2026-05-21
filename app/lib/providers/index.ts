@@ -39,6 +39,9 @@ try { const { CDNLiveProvider } = require('./cdn-live'); safeRegister('cdn-live'
 try { const { IPTVProvider } = require('./iptv'); safeRegister('iptv', () => new IPTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] iptv import failed:', e.message); }
 try { const { NTVProvider } = require('./ntv'); safeRegister('ntv', () => new NTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] ntv import failed:', e.message); }
 try { const { MovieBoxProvider } = require('./moviebox'); safeRegister('moviebox', () => new MovieBoxProvider()); } catch (e: any) { console.error('[ProviderRegistry] moviebox import failed:', e.message); }
+try { const { BingeBoxProvider } = require('./bingebox'); safeRegister('bingebox', () => new BingeBoxProvider()); } catch (e: any) { console.error('[ProviderRegistry] bingebox import failed:', e.message); }
+try { const { UFreeTVProvider } = require('./ufreetv'); safeRegister('ufreetv', () => new UFreeTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] ufreetv import failed:', e.message); }
+try { const { GlobeTVProvider } = require('./globetv'); safeRegister('globetv', () => new GlobeTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] globetv import failed:', e.message); }
 
 console.log(`[ProviderRegistry] Loaded ${registry.getAllEnabled().length} providers: ${registry.getAllEnabled().map(p => p.name).join(', ')}`);
 

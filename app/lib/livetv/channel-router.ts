@@ -271,6 +271,8 @@ export class ChannelRouter {
       dlhd: 0,
       cdnlive: 0,
       ppv: 0,
+      ufreetv: 0,
+      globetv: 0,
     };
 
     const byCategory: Record<string, number> = {};

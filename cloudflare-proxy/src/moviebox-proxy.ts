@@ -107,7 +107,7 @@ async function movieboxApi(
     throw new Error(`MovieBox API ${path} returned ${res.status}`);
   }
 
-  const json = await res.json();
+  const json: Record<string, any> = await res.json();
 
   // MovieBox envelope: {code: 0, message: "ok", data: {...}}
   if (json.code !== undefined && json.code !== 0) {

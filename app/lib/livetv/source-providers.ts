@@ -9,7 +9,7 @@
 
 import { getTvPlaylistUrl } from '@/app/lib/proxy-config';
 
-export type LiveTVSourceType = 'dlhd' | 'cdnlive' | 'ppv';
+export type LiveTVSourceType = 'dlhd' | 'cdnlive' | 'ppv' | 'ufreetv' | 'globetv';
 
 export interface StreamSource {
   type: LiveTVSourceType;
@@ -38,6 +38,8 @@ export const LIVE_TV_SOURCES: StreamSource[] = [
   { type: 'dlhd', name: 'DLHD', priority: 1, enabled: true },
   { type: 'cdnlive', name: 'CDN Live', priority: 2, enabled: true },
   { type: 'ppv', name: 'PPV.to', priority: 3, enabled: true },
+  { type: 'ufreetv', name: 'uFreeTV', priority: 4, enabled: true },
+  { type: 'globetv', name: 'GlobeTV', priority: 5, enabled: true },
 ];
 
 /**

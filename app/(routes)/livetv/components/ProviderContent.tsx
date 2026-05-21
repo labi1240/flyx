@@ -28,6 +28,8 @@ const PROVIDER_TITLES: Record<Provider, string> = {
   dlhd: 'DaddyLive HD',
   cdnlive: 'CDN Live TV',
   ppv: 'PPV.to Live Events',
+  ufreetv: 'uFreeTV',
+  globetv: 'GlobeTV',
 };
 
 export const ProviderContent = memo(function ProviderContent({

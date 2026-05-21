@@ -3,6 +3,8 @@
  * Provides structured logging with request context
  */
 
+import { headersToObject } from './shared';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogContext {
@@ -116,7 +118,7 @@ export class Logger {
       url: url.toString(),
     });
     this.info('Request started', {
-      headers: Object.fromEntries(request.headers),
+      headers: headersToObject(request.headers),
       query: Object.fromEntries(url.searchParams),
     });
   }

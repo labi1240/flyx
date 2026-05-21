@@ -8,7 +8,7 @@
  * Token is cached in sessionStorage with 2.5hr TTL.
  */
 
-const CAP_BASE = 'https://cap.hexa.su/0737428d64';
+const CAP_BASE = 'https://cap.hexa.su/15d2cf0395';
 const CAP_TOKEN_STORAGE_KEY = 'hexa_cap_token';
 const CAP_TOKEN_EXPIRES_KEY = 'hexa_cap_expires';
 

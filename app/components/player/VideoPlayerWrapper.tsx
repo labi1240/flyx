@@ -104,17 +104,19 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       const providersData = await providersRes.json();
       
       const availability = {
-        primesrc: providersData.providers?.primesrc?.enabled ?? true,
-        flixer: providersData.providers?.flixer?.enabled ?? true,
         videasy: providersData.providers?.videasy?.enabled ?? true,
+        flixer: providersData.providers?.flixer?.enabled ?? true,
+        primesrc: providersData.providers?.primesrc?.enabled ?? true,
         uflix: providersData.providers?.uflix?.enabled ?? true,
         hexa: providersData.providers?.hexa?.enabled ?? true,
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
+        'multi-embed': providersData.providers?.['multi-embed']?.enabled ?? true,
         '1movies': providersData.providers?.['1movies']?.enabled ?? true,
         animekai: providersData.providers?.animekai?.enabled ?? true,
         hianime: providersData.providers?.hianime?.enabled ?? true,
         miruro: providersData.providers?.miruro?.enabled ?? true,
         moviebox: providersData.providers?.moviebox?.enabled ?? true,
+        bingebox: providersData.providers?.bingebox?.enabled ?? true,
       };
 
       // Check if anime content
@@ -159,8 +161,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
       // Add any remaining available providers as fallback
       const allProviders = isAnime
-        ? ['hianime', 'animekai', 'miruro', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies', 'moviebox']
-        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', '1movies', 'moviebox'];
+        ? ['hianime', 'animekai', 'miruro', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox']
+        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;

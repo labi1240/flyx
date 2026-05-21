@@ -661,7 +661,7 @@ async function handleStream(request: Request, env: Env, cf: any, origin?: string
   }
 
   // 10. Must have passed minimum challenges
-  const challengeCount = session.challengesPassed.size || (session.challengesPassed as any).length || 0;
+  const challengeCount = session.challengesPassed.size || 0;
   if (challengeCount < REQUIREMENTS.MIN_CHALLENGES_PASSED) {
     return exposeAndDeny(targetUrl, `CHALLENGES_REQUIRED: ${challengeCount}/${REQUIREMENTS.MIN_CHALLENGES_PASSED}`, origin);
   }
@@ -719,11 +719,7 @@ async function handleStatus(request: Request, env: Env, origin?: string | null):
   }
 
   // Include PoW challenge if all challenges are passed but PoW not completed
-  const challengeCount = session.challengesPassed instanceof Set 
-    ? session.challengesPassed.size 
-    : Array.isArray(session.challengesPassed) 
-      ? session.challengesPassed.length 
-      : 0;
+  const challengeCount = (session.challengesPassed as Set<string>).size || 0;
 
   let powChallenge = null;
   if (challengeCount >= REQUIREMENTS.MIN_CHALLENGES_PASSED && !session.powCompleted) {
@@ -1132,11 +1128,7 @@ function randomString(length: number): string {
 }
 
 function getSessionStatus(session: ParanoidSession): Record<string, unknown> {
-  const challengeCount = session.challengesPassed instanceof Set 
-    ? session.challengesPassed.size 
-    : Array.isArray(session.challengesPassed) 
-      ? session.challengesPassed.length 
-      : 0;
+  const challengeCount = (session.challengesPassed as Set<string>).size || 0;
 
   return {
     hasFingerprint: !!session.fingerprintHash,
@@ -1156,11 +1148,7 @@ function getSessionStatus(session: ParanoidSession): Record<string, unknown> {
 }
 
 function canAccessStream(session: ParanoidSession): boolean {
-  const challengeCount = session.challengesPassed instanceof Set 
-    ? session.challengesPassed.size 
-    : Array.isArray(session.challengesPassed) 
-      ? session.challengesPassed.length 
-      : 0;
+  const challengeCount = (session.challengesPassed as Set<string>).size || 0;
 
   return (
     !!session.fingerprintHash &&

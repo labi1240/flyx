@@ -29,7 +29,7 @@ function sha256hex(str) {
 }
 
 async function main() {
-  const CAP_BASE = 'https://cap.hexa.su/0737428d64';
+  const CAP_BASE = 'https://cap.hexa.su/15d2cf0395';
   const headers = {
     'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',

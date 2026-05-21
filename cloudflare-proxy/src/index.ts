@@ -40,6 +40,9 @@ import { handlePrimeSrcRequest } from './primesrc-proxy';
 import { handleNTVRequest } from './ntv-proxy';
 import { handleMiruroRequest } from './miruro-proxy';
 import { handleMovieBoxRequest } from './moviebox-proxy';
+import { handleBingeBoxRequest } from './bingebox-proxy';
+import { handleUFreeTVRequest } from './ufreetv-proxy';
+import { handleGlobeTVRequest } from './globetv-proxy';
 import { runHealthChecks } from './hexa-monitor';
 import { createLogger, type LogLevel } from './logger';
 import { incrementMetric } from './metrics';
@@ -307,6 +310,30 @@ export function buildRouteTable(): RouteEntry[] {
         incrementMetric('primesrcRequests');
         logger.info('Routing to PrimeSrc proxy', { path: new URL(request.url).pathname });
         return await handlePrimeSrcRequest(request, env);
+      },
+    },
+    {
+      prefix: '/bingebox',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('bingeboxRequests');
+        logger.info('Routing to BingeBox proxy', { path: new URL(request.url).pathname });
+        return await handleBingeBoxRequest(request, env);
+      },
+    },
+    {
+      prefix: '/ufreetv',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('ufreetvRequests');
+        logger.info('Routing to uFreeTV proxy', { path: new URL(request.url).pathname });
+        return await handleUFreeTVRequest(request, env);
+      },
+    },
+    {
+      prefix: '/globetv',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('globetvRequests');
+        logger.info('Routing to GlobeTV proxy', { path: new URL(request.url).pathname });
+        return await handleGlobeTVRequest(request, env);
       },
     },
 

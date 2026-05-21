@@ -111,7 +111,7 @@ async function handleChannels(logger: ReturnType<typeof createLogger>): Promise<
     return jsonResponse({ error: `NTV channels fetch failed: ${res.status}` }, 502);
   }
 
-  const data = await res.json();
+  const data: Record<string, unknown> = await res.json();
   return jsonResponse(data);
 }
 
@@ -136,7 +136,7 @@ async function handleMatches(
     return jsonResponse({ error: `NTV matches fetch failed: ${res.status}` }, 502);
   }
 
-  const data = await res.json();
+  const data: Record<string, unknown> = await res.json();
   return jsonResponse(data);
 }
 
@@ -164,7 +164,7 @@ async function handleSearch(
     return jsonResponse({ error: `NTV search failed: ${res.status}` }, 502);
   }
 
-  const data = await res.json();
+  const data: Record<string, unknown> = await res.json();
   return jsonResponse(data);
 }
 

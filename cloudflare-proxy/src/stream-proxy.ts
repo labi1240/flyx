@@ -8,7 +8,7 @@
  */
 
 import { Logger, createLogger, type LogLevel } from './logger';
-import { isMegaUpCdn } from './shared';
+import { isMegaUpCdn, headersToObject } from './shared';
 
 export interface Env {
   API_KEY?: string;
@@ -219,7 +219,7 @@ export default {
         logger.error('Upstream error', { 
           status: response.status, 
           statusText: response.statusText,
-          headers: Object.fromEntries(response.headers),
+          headers: headersToObject(response.headers),
         });
 
         // Strategy 2: RPI /fetch-rust fallback (Chrome TLS fingerprint from residential IP)
