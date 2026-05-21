@@ -11,6 +11,7 @@ interface ProviderInfo {
   description: string;
   icon: string;
   isAnimeOnly?: boolean;
+  isLiveTvOnly?: boolean;
 }
 
 const PROVIDERS: ProviderInfo[] = [
@@ -299,6 +300,9 @@ export default function ProviderSettings() {
                     {provider.name}
                     {provider.isAnimeOnly && (
                       <span className={styles.badge}>Anime</span>
+                    )}
+                    {provider.isLiveTvOnly && (
+                      <span className={`${styles.badge} ${styles.liveTvBadge}`}>Live TV</span>
                     )}
                   </span>
                   <span className={styles.providerDesc}>{provider.description}</span>
