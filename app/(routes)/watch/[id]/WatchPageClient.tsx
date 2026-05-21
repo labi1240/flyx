@@ -154,7 +154,7 @@ function WatchContent() {
   
   // Provider state for mobile player
   const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox'>>([]);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
