@@ -5,7 +5,7 @@
  * through the browser's residential IP. Strips Referer (CDN blocks non-flixer
  * referrers) and adds CORS headers to responses.
  */
-const SW_VERSION = 'v3';
+const SW_VERSION = 'v4';
 
 console.log('[Flixer SW] Loading ' + SW_VERSION);
 
@@ -61,10 +61,10 @@ async function proxyFlixerCdn(request) {
   console.log('[Flixer SW] Proxying:', url.substring(0, 100));
 
   // CDN blocks on non-flixer Referer. Also blocks datacenter IPs.
-  // Browser's residential IP passes, but we must suppress the Referer
-  // so the CDN doesn't see tv.vynx.cc. Setting referrer: '' strips it.
-  // Origin is still sent by the browser but CDN doesn't check Origin.
-  const fetchOpts = { referrer: '' };
+  // Browser's residential IP passes. Spoof Referer as flixer.su so the
+  // CDN thinks the request originated from the flixer site itself.
+  // An empty Referer (previous approach) started returning 403.
+  const fetchOpts = { referrer: 'https://flixer.su/' };
   const range = request.headers.get('Range');
   if (range) {
     fetchOpts.headers = { 'Range': range };
