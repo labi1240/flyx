@@ -160,8 +160,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -409,13 +409,12 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { videasy: true, flixer: true, bingebox: true, hianime: true, miruro: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, moviebox: true };
+      let providerAvailability = { videasy: true, bingebox: true, hianime: true, miruro: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, moviebox: true };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
         providerAvailability = {
           videasy: providerData.providers?.videasy?.enabled ?? true,
-          flixer: providerData.providers?.flixer?.enabled ?? true,
           bingebox: providerData.providers?.bingebox?.enabled ?? true,
           hianime: providerData.providers?.hianime?.enabled ?? true,
           miruro: providerData.providers?.miruro?.enabled ?? true,
@@ -434,10 +433,10 @@ function WatchContent() {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      type WatchProvider = 'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro';
+      type WatchProvider = 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro';
       const providerOrder: WatchProvider[] = [];
 
-      const allKnownProviders: WatchProvider[] = ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
@@ -466,19 +465,7 @@ function WatchContent() {
 
           let validSources: any[] = [];
 
-          // Flixer: use browser-direct extraction (CF Worker WASM) — same as desktop player.
-          // The server-side /api/stream/extract route cannot extract flixer because it
-          // requires the browser to call hexa.su directly with the user's residential IP.
-          if (provider === 'flixer') {
-            const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
-            const clientSources = await extractFlixerClient(
-              contentId,
-              mediaType as 'movie' | 'tv',
-              seasonId ? Number(seasonId) : undefined,
-              episodeId ? Number(episodeId) : undefined,
-            );
-            validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
-          } else if (provider === 'videasy') {
+          if (provider === 'videasy') {
             const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
             const clientSources = await extractVideasyClient(
               contentId,
@@ -604,7 +591,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);
@@ -612,17 +599,7 @@ function WatchContent() {
     try {
       let validSources: any[] = [];
 
-      // Flixer: browser-direct extraction (same as desktop player)
-      if (provider === 'flixer') {
-        const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
-        const clientSources = await extractFlixerClient(
-          contentId,
-          mediaType as 'movie' | 'tv',
-          seasonId ? Number(seasonId) : undefined,
-          episodeId ? Number(episodeId) : undefined,
-        );
-        validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
-      } else if (provider === 'videasy') {
+      if (provider === 'videasy') {
         const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
         const clientSources = await extractVideasyClient(
           contentId,

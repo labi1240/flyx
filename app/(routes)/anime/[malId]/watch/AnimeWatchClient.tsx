@@ -86,8 +86,8 @@ export default function AnimeWatchClient() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0);
   
   // Provider state
-  const [currentProvider, setCurrentProvider] = useState<'hianime' | 'miruro' | 'flixer' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'hianime' | 'miruro' | 'flixer' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'hianime' | 'miruro' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'hianime' | 'miruro' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Audio preference for anime
