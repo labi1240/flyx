@@ -34,6 +34,20 @@ const PROVIDERS: ProviderInfo[] = [
     icon: '📦',
   },
   {
+    id: 'hianime',
+    name: 'HiAnime',
+    description: 'Browser-direct via CF Worker — search→match→MegaCloud decrypt, sub+dub',
+    icon: '🌸',
+    isAnimeOnly: true,
+  },
+  {
+    id: 'miruro',
+    name: 'Miruro',
+    description: 'Browser-direct via CF Worker — pipe-encrypted API, 6 providers, sub+dub',
+    icon: '🎌',
+    isAnimeOnly: true,
+  },
+  {
     id: 'primesrc',
     name: 'PrimeSrc',
     description: 'CF Worker proxy — xprime.su (needs Turnstile token)',

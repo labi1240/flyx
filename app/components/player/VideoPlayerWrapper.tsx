@@ -113,6 +113,8 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
         'multi-embed': providersData.providers?.['multi-embed']?.enabled ?? true,
         moviebox: providersData.providers?.moviebox?.enabled ?? true,
+        hianime: providersData.providers?.hianime?.enabled ?? true,
+        miruro: providersData.providers?.miruro?.enabled ?? true,
       };
 
       // Build provider order respecting user's preferred order from settings
@@ -130,7 +132,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       }
 
       // Add any remaining available providers as fallback
-      const allProviders = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const allProviders = ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
@@ -224,6 +226,52 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
                 })),
                 currentIndex: 0,
                 provider: 'bingebox',
+              });
+              setIsLoading(false);
+              return;
+            }
+            continue;
+          }
+
+          // HIANIME: Browser-direct via CF Worker /hianime/extract (anime only)
+          if (provider === 'hianime') {
+            if (!malId || !contentTitle) continue;
+            const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+            const hiSources = await extractHiAnimeClient(malId, contentTitle, episode);
+            if (hiSources.length > 0) {
+              setStreamData({
+                url: hiSources[0].url,
+                sources: hiSources.map((s: any) => ({
+                  title: s.title || s.quality || 'Source',
+                  url: s.url,
+                  quality: s.quality,
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                })),
+                currentIndex: 0,
+                provider: 'hianime',
+              });
+              setIsLoading(false);
+              return;
+            }
+            continue;
+          }
+
+          // MIRURO: Browser-direct via CF Worker /miruro/* (anime only)
+          if (provider === 'miruro') {
+            if (!malId || !contentTitle) continue;
+            const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+            const miSources = await extractMiruroClient(malId, contentTitle, episode);
+            if (miSources.length > 0) {
+              setStreamData({
+                url: miSources[0].url,
+                sources: miSources.map((s: any) => ({
+                  title: s.title || s.quality || 'Source',
+                  url: s.url,
+                  quality: s.quality,
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                })),
+                currentIndex: 0,
+                provider: 'miruro',
               });
               setIsLoading(false);
               return;

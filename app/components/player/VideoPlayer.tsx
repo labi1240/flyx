@@ -302,9 +302,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     vidsrc: false, // RPI-dependent — dead without RPI
     'multi-embed': false, // Multi-embed via CF Pages — unverified
     '1movies': false, // Disabled — complex obfuscation requires headless browser
-    animekai: false, // animekai.to blocks CF datacenter IPs — dead without RPI
-    hianime: false, // aniwatchtv.to blocks CF datacenter IPs — dead without RPI
-    miruro: false, // miruro.to blocks CF datacenter IPs — dead without RPI
+    animekai: false, // AnimeKai requires RPI for full pipeline — dead without RPI
+    hianime: true, // Browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
+    miruro: true, // Browser-direct via CF Worker /miruro/* (pipe-encrypted API, MAL→AniList)
     moviebox: false, // Empty streams from h5-api.aoneroom.com — dead
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
@@ -941,6 +941,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             vidsrc: data.providers?.vidsrc?.enabled ?? prev.vidsrc ?? true,
             'multi-embed': data.providers?.['multi-embed']?.enabled ?? prev['multi-embed'] ?? true,
             moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
+            hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
+            miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
           }));
         } catch {}
       }).catch(() => {});
@@ -957,10 +959,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const disabledProviders = new Set(userProviderSettings.disabledProviders || []);
 
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
-      // All anime providers (HiAnime, AnimeKai, Miruro) block CF datacenter IPs.
-      // Without RPI, they are dead. Only browser-direct providers work on CF Pages.
-      // For anime content, fall through to movie/TV providers.
-      const defaultOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      // For anime content: HiAnime/Miruro first (browser-direct via CF Worker),
+      // then movie/TV providers as fallback (they may work for some anime via TMDB)
+      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const defaultOrder: string[] = isMalDirect
+        ? ['hianime', 'miruro', ...movieTvOrder]
+        : movieTvOrder;
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -990,7 +994,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       // Helper: build API URL for a provider
       const buildApiUrl = (providerName: string): string | null => {
-        if (isMalDirect) return null; // No API-based providers work for MAL-direct without RPI
+        // Anime providers use browser-direct extraction — no API URL needed
+        if (providerName === 'hianime' || providerName === 'miruro') return null;
+        if (isMalDirect) return null;
         const params = new URLSearchParams({ tmdbId, type: mediaType, provider: providerName });
         if (mediaType === 'tv' && season && episode) {
           params.append('season', season.toString());
@@ -1035,6 +1041,28 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           if (sources.length === 0) throw new Error('bingebox: no sources');
           console.log(`[VideoPlayer] ✓ bingebox: ${sources.length} source(s)`);
           return { providerName: 'bingebox', data: { success: true, provider: 'bingebox' }, sources };
+        }
+
+        // HiAnime: browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
+        if (providerName === 'hianime') {
+          if (!malId || !title) throw new Error('hianime: requires malId and title');
+          console.log(`[VideoPlayer] Trying hianime (browser-direct) malId=${malId}...`);
+          const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+          const sources = await extractHiAnimeClient(malId, title, episode);
+          if (sources.length === 0) throw new Error('hianime: no sources');
+          console.log(`[VideoPlayer] ✓ hianime: ${sources.length} source(s)`);
+          return { providerName: 'hianime', data: { success: true, provider: 'hianime' }, sources };
+        }
+
+        // Miruro: browser-direct via CF Worker /miruro/* (MAL→AniList→episodes→sources)
+        if (providerName === 'miruro') {
+          if (!malId || !title) throw new Error('miruro: requires malId and title');
+          console.log(`[VideoPlayer] Trying miruro (browser-direct) malId=${malId}...`);
+          const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+          const sources = await extractMiruroClient(malId, title, episode);
+          if (sources.length === 0) throw new Error('miruro: no sources');
+          console.log(`[VideoPlayer] ✓ miruro: ${sources.length} source(s)`);
+          return { providerName: 'miruro', data: { success: true, provider: 'miruro' }, sources };
         }
 
         const apiUrl = buildApiUrl(providerName);

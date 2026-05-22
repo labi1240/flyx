@@ -57,6 +57,20 @@ export async function GET() {
         primary: false,
         description: 'Multi-source embed aggregator — direct fetch (unverified)',
       },
+      hianime: {
+        enabled: true,
+        name: 'HiAnime',
+        primary: false,
+        animeOnly: true,
+        description: 'Browser-direct via CF Worker — search→match→extract→MegaCloud decrypt',
+      },
+      miruro: {
+        enabled: true,
+        name: 'Miruro',
+        primary: false,
+        animeOnly: true,
+        description: 'Browser-direct via CF Worker — pipe-encrypted API, 6 providers, sub+dub',
+      },
       moviebox: {
         enabled: false,
         name: 'MovieBox',

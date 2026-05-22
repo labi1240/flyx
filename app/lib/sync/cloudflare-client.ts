@@ -473,7 +473,7 @@ function getEmptySyncData(): SyncData {
 
 function getDefaultProviderSettings(): ProviderSettings {
   return {
-    providerOrder: ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'],
+    providerOrder: ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'],
     disabledProviders: [],
     lastSuccessfulProviders: {},
     animeAudioPreference: 'sub',
