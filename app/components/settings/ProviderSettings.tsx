@@ -18,25 +18,31 @@ const PROVIDERS: ProviderInfo[] = [
   {
     id: 'videasy',
     name: 'Videasy',
-    description: 'Primary — zero-auth, direct HLS, 4K support',
+    description: 'Primary — browser-direct via CF Worker, zero-auth HLS, 4K',
     icon: '🎯',
   },
   {
     id: 'flixer',
     name: 'Flixer',
-    description: 'WASM-based extraction — 12 NATO servers',
+    description: 'Browser-direct via CF Worker — WASM-based, 12 NATO servers',
     icon: '📺',
+  },
+  {
+    id: 'bingebox',
+    name: 'BingeBox',
+    description: 'Browser-direct via CF Worker — 15 direct HLS sources',
+    icon: '📦',
   },
   {
     id: 'primesrc',
     name: 'PrimeSrc',
-    description: 'CF Worker proxy — xprime.su backend',
+    description: 'CF Worker proxy — xprime.su (needs Turnstile token)',
     icon: '⚡',
   },
   {
     id: 'uflix',
     name: 'Uflix',
-    description: '5 embed servers — cloudnestra extraction',
+    description: '5 embed servers — direct fetch from API route',
     icon: '🌐',
   },
   {
@@ -48,7 +54,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     id: 'vidsrc',
     name: 'VidSrc',
-    description: '2embed API + cloudnestra extraction',
+    description: 'RPI-dependent — currently unavailable',
     icon: '🎬',
   },
   {
@@ -58,43 +64,10 @@ const PROVIDERS: ProviderInfo[] = [
     icon: '🔗',
   },
   {
-    id: '1movies',
-    name: '1movies',
-    description: 'Alternative provider — 111movies.com',
-    icon: '🎥',
-  },
-  {
-    id: 'animekai',
-    name: 'AnimeKai',
-    description: 'Anime — native crypto, MegaUp CDN (sub)',
-    icon: '🎌',
-    isAnimeOnly: true,
-  },
-  {
-    id: 'hianime',
-    name: 'HiAnime',
-    description: 'Anime sub+dub — MegaCloud extraction',
-    icon: '🍥',
-    isAnimeOnly: true,
-  },
-  {
-    id: 'miruro',
-    name: 'Miruro',
-    description: 'Anime sub+dub — 6 providers, AniList metadata',
-    icon: '🌸',
-    isAnimeOnly: true,
-  },
-  {
     id: 'moviebox',
     name: 'MovieBox',
-    description: 'Movies/TV/Anime — Nuxt 3 backend, multi-quality HLS',
+    description: 'Movies/TV/Anime — currently unavailable',
     icon: '🎞️',
-  },
-  {
-    id: 'bingebox',
-    name: 'BingeBox',
-    description: 'Movies/TV/Anime — 15 direct HLS sources',
-    icon: '📦',
   },
   {
     id: 'ntv',
@@ -120,7 +93,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     id: 'dlhd',
     name: 'DLHD',
-    description: 'Live TV — DLHD/DaddyLive (831 channels)',
+    description: 'Live TV — DLHD/DaddyLive',
     icon: '🏟️',
     isLiveTvOnly: true,
   },

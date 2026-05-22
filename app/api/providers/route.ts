@@ -4,7 +4,6 @@
  */
 
 import { NextResponse } from 'next/server';
-import { ANIMEKAI_ENABLED } from '@/app/lib/services/animekai-extractor';
 import { FLIXER_ENABLED } from '@/app/lib/services/flixer-extractor';
 
 export async function GET() {
@@ -14,82 +13,55 @@ export async function GET() {
         enabled: true,
         name: 'Videasy',
         primary: true,
-        description: 'Primary streaming source (player.videasy.net)',
+        description: 'Primary — browser-direct via CF Worker, zero-auth, direct HLS, 4K',
       },
       flixer: {
         enabled: FLIXER_ENABLED,
         name: 'Flixer',
         primary: false,
-        description: 'WASM-based extraction — multi-server (12 NATO servers)',
-      },
-      primesrc: {
-        enabled: true,
-        name: 'PrimeSrc',
-        primary: false,
-        description: 'CF Worker proxy — xprime.su backend',
-      },
-      uflix: {
-        enabled: true,
-        name: 'Uflix',
-        primary: false,
-        description: '5 embed servers — cloudnestra extraction',
-      },
-      hexa: {
-        enabled: true,
-        name: 'Hexa',
-        primary: false,
-        description: 'Multi-embed aggregator — 8 servers (hexa.su)',
-      },
-      vidsrc: {
-        enabled: true,
-        name: 'VidSrc',
-        primary: false,
-        description: '2embed API + cloudnestra extraction',
-      },
-      'multi-embed': {
-        enabled: true,
-        name: 'MultiEmbed',
-        primary: false,
-        description: 'Multi-source embed aggregator',
-      },
-      '1movies': {
-        enabled: true,
-        name: '1movies',
-        primary: false,
-        description: 'Alternative provider (111movies.com)',
-      },
-      animekai: {
-        enabled: ANIMEKAI_ENABLED,
-        name: 'AnimeKai',
-        primary: false,
-        animeOnly: true,
-        description: 'Anime — native crypto, MegaUp CDN (sub)',
-      },
-      hianime: {
-        enabled: true,
-        name: 'HiAnime',
-        primary: false,
-        animeOnly: true,
-        description: 'Anime sub+dub — MegaCloud extraction via CF Worker',
-      },
-      miruro: {
-        enabled: true,
-        name: 'Miruro',
-        primary: false,
-        animeOnly: true,
-        description: 'Anime sub+dub — 6 providers, uwucdn.top CDN',
-      },
-      moviebox: {
-        enabled: true,
-        name: 'MovieBox',
-        primary: false,
-        description: 'Movies/TV/anime — h5-api.aoneroom.com',
+        description: 'Browser-direct via CF Worker — WASM-based, 12 NATO servers',
       },
       bingebox: {
         enabled: true,
         name: 'BingeBox',
         primary: false,
-        description: 'Movies/TV/anime — 15 direct HLS sources (bingebox.to)',
+        description: 'Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)',
+      },
+      primesrc: {
+        enabled: false,
+        name: 'PrimeSrc',
+        primary: false,
+        description: 'Needs Turnstile token + embed CDNs block CF IPs',
+      },
+      uflix: {
+        enabled: true,
+        name: 'Uflix',
+        primary: false,
+        description: '5 embed servers — direct fetch (unverified from CF IPs)',
+      },
+      hexa: {
+        enabled: true,
+        name: 'Hexa',
+        primary: false,
+        description: 'Multi-embed aggregator — direct fetch (unverified from CF IPs)',
+      },
+      vidsrc: {
+        enabled: false,
+        name: 'VidSrc',
+        primary: false,
+        description: 'RPI-dependent — dead without RPI',
+      },
+      'multi-embed': {
+        enabled: true,
+        name: 'MultiEmbed',
+        primary: false,
+        description: 'Multi-source embed aggregator — direct fetch (unverified)',
+      },
+      moviebox: {
+        enabled: false,
+        name: 'MovieBox',
+        primary: false,
+        description: 'Empty streams from h5-api.aoneroom.com — dead',
       },
       ntv: {
         enabled: true,
@@ -117,7 +89,7 @@ export async function GET() {
         name: 'DLHD',
         primary: false,
         liveTvOnly: true,
-        description: 'Live TV — DLHD/DaddyLive (831 channels)',
+        description: 'Live TV — DLHD/DaddyLive',
       },
       viprow: {
         enabled: true,

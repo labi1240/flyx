@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings } from '@/lib/sync';
-import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getFlixerStreamProxyUrl } from '@/app/lib/proxy-config';
 import { malService } from '@/lib/services/mal';
 import type { MALAnime } from '@/lib/services/mal';
 import { sourceMatchesAudioPreference, type AnimeAudioPreference } from '@/lib/utils/player-preferences';
@@ -14,10 +14,9 @@ import styles from '../../../watch/[id]/WatchPage.module.css';
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
 function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
-  if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
-      sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
+  if (sourceUrl.includes('/flixer/stream') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
-      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
+      sourceUrl.includes('/moviebox/') ||
       sourceUrl.includes('/stream/')) {
     return sourceUrl;
   }
@@ -31,8 +30,6 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
   if (!needsProxy) return sourceUrl;
 
   if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
-  if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
-  if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   return sourceUrl;
 }
 
@@ -112,8 +109,8 @@ export default function AnimeWatchClient() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0);
   
   // Provider state
-  const [currentProvider, setCurrentProvider] = useState<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'flixer' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'flixer' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Audio preference for anime
@@ -157,14 +154,14 @@ export default function AnimeWatchClient() {
   }, []);
 
   // Fetch stream for mobile player
-  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: 'hianime' | 'animekai' | 'miruro') => {
+  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: string) => {
     if (!malId) return;
     
     setMobileLoading(true);
     setMobileError(null);
     
     const currentAudioPref = audioPreference || audioPref;
-    const useProvider = provider || 'hianime';
+    const useProvider = provider || 'flixer';
     
     const timeoutId = setTimeout(() => {
       setMobileError('Request timed out. Please try again.');
@@ -208,7 +205,7 @@ export default function AnimeWatchClient() {
           
           setMobileSources(sources);
           setCurrentProvider(activeProvider);
-          setAvailableProviders(['hianime', 'animekai', 'miruro']);
+          setAvailableProviders(['flixer', 'videasy', 'bingebox']);
           
           // Find source matching audio preference
           let selectedIndex = 0;
@@ -252,11 +249,11 @@ export default function AnimeWatchClient() {
     setMobileResumeTime(currentTime);
     setAudioPref(newPref);
     saveProviderSettings({ animeAudioPreference: newPref });
-    fetchMobileStream(newPref, currentProvider as 'hianime' | 'animekai' | 'miruro' | undefined);
+    fetchMobileStream(newPref, currentProvider);
   }, [fetchMobileStream, currentProvider]);
 
   // Handle provider change - supports hianime and animekai
-  const handleProviderChange = useCallback(async (_provider: 'animekai' | 'hianime' | 'miruro' | 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (_provider: 'flixer' | 'videasy' | 'bingebox' | 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'multi-embed', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     

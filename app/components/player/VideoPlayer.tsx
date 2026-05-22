@@ -293,19 +293,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [showCastTips, setShowCastTips] = useState(false); // Cast Tips modal
   const castErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
-    videasy: true, // Primary provider — zero-auth, direct HLS, 4K support
-    flixer: true, // Backup provider — WASM-based extraction
-    primesrc: true,
-    uflix: true,
-    hexa: true,
-    vidsrc: true,
-    'multi-embed': true,
-    '1movies': true,
-    animekai: true, // Anime-specific provider - auto-selected for anime content
-    hianime: true, // HiAnime - primary anime provider (MegaCloud extraction)
-    miruro: true, // Miruro - anime sub+dub provider (6 providers, uwucdn.top CDN)
-    moviebox: true, // MovieBox - movies/TV/anime (h5-api.aoneroom.com, session-gated)
-    bingebox: true, // BingeBox - movies/TV/anime (15 direct HLS sources, bingebox.to)
+    videasy: true, // Browser-direct via CF Worker — zero-auth, direct HLS, 4K
+    flixer: true, // Browser-direct via CF Worker — WASM-based, 12 NATO servers
+    bingebox: true, // Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)
+    primesrc: false, // Needs Turnstile token + embed CDNs block CF IPs — disabled
+    uflix: false, // Direct fetch from CF Pages IP — unverified, likely blocked
+    hexa: false, // Multi-embed via CF Pages — unverified
+    vidsrc: false, // RPI-dependent — dead without RPI
+    'multi-embed': false, // Multi-embed via CF Pages — unverified
+    '1movies': false, // Disabled — complex obfuscation requires headless browser
+    animekai: false, // animekai.to blocks CF datacenter IPs — dead without RPI
+    hianime: false, // aniwatchtv.to blocks CF datacenter IPs — dead without RPI
+    miruro: false, // miruro.to blocks CF datacenter IPs — dead without RPI
+    moviebox: false, // Empty streams from h5-api.aoneroom.com — dead
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
@@ -642,42 +642,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         throw new Error('No Hexa sources available');
       }
 
-      // ANIME PROVIDERS: Use dedicated /api/anime/stream when malId is available
-      if (malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-        const params = new URLSearchParams({
-          malId: malId.toString(),
-          provider: providerName,
-        });
-        if (title) params.append('title', title);
-        params.append('type', mediaType);
-        if (mediaType === 'tv' && episode) {
-          params.append('episode', episode.toString());
-        }
-        console.log(`[VideoPlayer] ${providerName}: fetching via /api/anime/stream (malId=${malId})`);
-        const res = await fetch(`/api/anime/stream?${params}`, { priority: 'high' as RequestPriority, cache: 'no-store' });
-        const data = await res.json();
-
-        if (data.success && data.sources?.length) {
-          const sources = data.sources.filter((s: any) => s.url);
-          if (sources.length > 0) {
-            // Verify provider matches — don't cache cross-provider sources
-            const actualProvider = data.provider || providerName;
-            if (actualProvider !== providerName) {
-              console.log(`[VideoPlayer] ${providerName}: API returned ${actualProvider} sources — not caching`);
-              setSourcesCache(prev => ({ ...prev, [providerName]: [] }));
-              return [];
-            }
-            setSourcesCache(prev => ({ ...prev, [providerName]: sources }));
-            if (providerName === provider) {
-              setAvailableSources(sources);
-              const firstSource = sources[0];
-              if (firstSource?.skipIntro) setSkipIntro(firstSource.skipIntro);
-              if (firstSource?.skipOutro) setSkipOutro(firstSource.skipOutro);
-            }
-            return sources;
+      // BINGEBOX: Browser-direct extraction via CF Worker
+      if (providerName === 'bingebox') {
+        console.log('[VideoPlayer] BingeBox: browser-direct extraction');
+        const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+        const sources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+        if (sources.length > 0) {
+          setSourcesCache(prev => ({ ...prev, bingebox: sources }));
+          if (providerName === provider) {
+            setAvailableSources(sources);
           }
+          return sources;
         }
-        throw new Error(data.error || `No ${providerName} sources available`);
+        throw new Error('No BingeBox sources available');
       }
 
       const params = new URLSearchParams({
@@ -792,45 +769,24 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Helper function to fetch from a specific provider
   // No pre-flight validation - let HLS.js handle it with automatic fallback
   const fetchFromProvider = async (providerName: string): Promise<{ sources: any[], provider: string } | null> => {
-    // For anime with malId, use the dedicated anime stream API (supports hianime + animekai + miruro)
-    if (malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-      console.log(`[VideoPlayer] Using /api/anime/stream for malId=${malId}, provider=${providerName}`);
-      
-      const params = new URLSearchParams({
-        malId: malId.toString(),
-        provider: providerName,
-      });
-      // Pass title/type so the API doesn't need AniList
-      if (title) params.append('title', title);
-      params.append('type', mediaType);
-      if (mediaType === 'tv' && episode) {
-        params.append('episode', episode.toString());
-      }
-      
+    // BingeBox: Browser-direct extraction (fallback path)
+    if (providerName === 'bingebox') {
+      console.log('[VideoPlayer] BingeBox: browser-direct extraction (fallback)');
       try {
-        const response = await fetch(`/api/anime/stream?${params}`, { priority: 'high' as RequestPriority, cache: 'no-store' });
-        const data = await response.json();
-
-        if (data.success && data.sources && data.sources.length > 0) {
-          const activeProvider = data.provider || providerName;
-          console.log(`[VideoPlayer] ✓ ${activeProvider} (anime stream API) returned ${data.sources.length} sources`);
-          if (data.sources[0]?.skipIntro || data.sources[0]?.skipOutro) {
-            console.log(`[VideoPlayer] Skip data in response:`, {
-              skipIntro: data.sources[0].skipIntro,
-              skipOutro: data.sources[0].skipOutro,
-            });
-          }
-          return { sources: data.sources, provider: activeProvider };
+        const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+        const sources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+        if (sources.length > 0) {
+          console.log(`[VideoPlayer] ✓ BingeBox returned ${sources.length} source(s)`);
+          return { sources, provider: 'bingebox' };
         }
-        
-        console.warn(`[VideoPlayer] ✗ ${providerName} (anime stream API) failed:`, data.error);
+        console.warn('[VideoPlayer] ✗ BingeBox returned no sources');
         return null;
       } catch (err) {
-        console.error(`[VideoPlayer] ✗ ${providerName} (anime stream API) network error:`, err);
+        console.error('[VideoPlayer] ✗ BingeBox error:', err);
         return null;
       }
     }
-    
+
     // HEXA: Browser-direct extraction (fallback path)
     if (providerName === 'flixer') {
       console.log(`[VideoPlayer] Hexa: browser-direct extraction (fallback path)`);
@@ -978,17 +934,13 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             ...prev,
             videasy: data.providers?.videasy?.enabled ?? prev.videasy ?? true,
             flixer: data.providers?.flixer?.enabled ?? prev.flixer ?? true,
+            bingebox: data.providers?.bingebox?.enabled ?? prev.bingebox ?? true,
             primesrc: data.providers?.primesrc?.enabled ?? prev.primesrc ?? true,
             uflix: data.providers?.uflix?.enabled ?? prev.uflix ?? true,
             hexa: data.providers?.hexa?.enabled ?? prev.hexa ?? true,
             vidsrc: data.providers?.vidsrc?.enabled ?? prev.vidsrc ?? true,
             'multi-embed': data.providers?.['multi-embed']?.enabled ?? prev['multi-embed'] ?? true,
-            '1movies': data.providers?.['1movies']?.enabled ?? prev['1movies'] ?? true,
-            animekai: data.providers?.animekai?.enabled ?? prev.animekai ?? true,
-            hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
-            miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
             moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
-            bingebox: data.providers?.bingebox?.enabled ?? prev.bingebox ?? true,
           }));
         } catch {}
       }).catch(() => {});
@@ -1005,11 +957,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const disabledProviders = new Set(userProviderSettings.disabledProviders || []);
 
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
-      const defaultOrder: string[] = isAnime
-        ? (isMalDirect
-          ? ['hianime', 'animekai', 'miruro']
-          : ['hianime', 'animekai', 'miruro', 'videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'])
-        : ['videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
+      // All anime providers (HiAnime, AnimeKai, Miruro) block CF datacenter IPs.
+      // Without RPI, they are dead. Only browser-direct providers work on CF Pages.
+      // For anime content, fall through to movie/TV providers.
+      const defaultOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -1039,13 +990,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       // Helper: build API URL for a provider
       const buildApiUrl = (providerName: string): string | null => {
-        if (isMalDirect && !['hianime', 'animekai', 'miruro'].includes(providerName)) return null;
-        if (isAnime && malId && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-          const params = new URLSearchParams({ malId: malId.toString(), provider: providerName, type: mediaType });
-          if (title) params.append('title', title);
-          if (mediaType === 'tv' && episode) params.append('episode', episode.toString());
-          return `/api/anime/stream?${params}`;
-        }
+        if (isMalDirect) return null; // No API-based providers work for MAL-direct without RPI
         const params = new URLSearchParams({ tmdbId, type: mediaType, provider: providerName });
         if (mediaType === 'tv' && season && episode) {
           params.append('season', season.toString());
@@ -1062,7 +1007,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       type ProviderResult = { providerName: string; data: any; sources: any[] };
 
       const providerPromises = priorityOrder.map(async (providerName): Promise<ProviderResult> => {
-        // Flixer: use browser-direct extraction via CF Worker
+        // Flixer: browser-direct extraction via CF Worker
         if (providerName === 'flixer') {
           console.log(`[VideoPlayer] Trying flixer (browser-direct)...`);
           const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
@@ -1072,7 +1017,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName: 'flixer', data: { success: true, provider: 'flixer' }, sources };
         }
 
-        // Videasy: browser-direct extraction via CF Worker (backup source)
+        // Videasy: browser-direct extraction via CF Worker
         if (providerName === 'videasy') {
           console.log(`[VideoPlayer] Trying videasy (browser-direct)...`);
           const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
@@ -1082,8 +1027,18 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName: 'videasy', data: { success: true, provider: 'videasy' }, sources };
         }
 
+        // BingeBox: browser-direct extraction via CF Worker
+        if (providerName === 'bingebox') {
+          console.log(`[VideoPlayer] Trying bingebox (browser-direct)...`);
+          const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+          const sources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+          if (sources.length === 0) throw new Error('bingebox: no sources');
+          console.log(`[VideoPlayer] ✓ bingebox: ${sources.length} source(s)`);
+          return { providerName: 'bingebox', data: { success: true, provider: 'bingebox' }, sources };
+        }
+
         const apiUrl = buildApiUrl(providerName);
-        if (!apiUrl) throw new Error(`${providerName}: skipped (MAL-direct)`);
+        if (!apiUrl) throw new Error(`${providerName}: skipped (no API URL)`);
 
         console.log(`[VideoPlayer] Trying ${providerName}...`);
         const res = await fetchWithTimeout(apiUrl, 15000);
@@ -1093,7 +1048,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         const sources = data.sources?.filter((s: any) => s.url && s.url.length > 0) || [];
         if (sources.length === 0) throw new Error(`${providerName}: no sources`);
 
-        // Verify the provider didn't return a different provider's sources
         const actualProvider = data.provider || providerName;
         if (actualProvider !== providerName) {
           throw new Error(`${providerName}: API returned ${actualProvider} instead`);
@@ -1116,17 +1070,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         let selectedSource = sources[workingIdx >= 0 ? workingIdx : 0];
         let selectedIndex = workingIdx >= 0 ? workingIdx : 0;
 
-        if (isAnime && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-          const audioPref = userProviderSettings.animeAudioPreference || 'sub';
-          const matchIdx = sources.findIndex((s: any) =>
-            s.title && sourceMatchesAudioPreference(s.title, audioPref)
-          );
-          if (matchIdx >= 0) {
-            selectedSource = sources[matchIdx];
-            selectedIndex = matchIdx;
-          }
-        }
-
         console.log(`[VideoPlayer] ✓ ${providerName}: playing "${selectedSource.title}" — ${selectedSource.url?.substring(0, 80)}`);
 
         setProvider(providerName);
@@ -1138,12 +1081,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
         if (selectedSource.skipIntro) setSkipIntro(selectedSource.skipIntro);
         if (selectedSource.skipOutro) setSkipOutro(selectedSource.skipOutro);
-
-        if (isAnime && selectedSource.title && (providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro')) {
-          const actualPref = sourceMatchesAudioPreference(selectedSource.title, 'dub') ? 'dub' : 'sub';
-          const savedPref = userProviderSettings.animeAudioPreference || 'sub';
-          if (actualPref !== savedPref) setAnimeAudioPref(actualPref as AnimeAudioPreference);
-        }
 
         setStreamUrl(applyStreamProxy(selectedSource.url, providerName, selectedSource.requiresSegmentProxy));
         setIsLoading(false);
@@ -4747,22 +4684,18 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 <div className={styles.tabsContainer} data-server-tabs="true">
                   {providerTabOrder
                     .filter(p => providerAvailability[p])
-                    .filter(p => tmdbId !== '0' || ['hianime', 'animekai', 'miruro'].includes(p))
+                    .filter(p => tmdbId !== '0' || ['videasy', 'flixer', 'bingebox'].includes(p))
                     .map(p => {
                       const displayNames: Record<string, string> = {
                         videasy: 'Videasy',
                         flixer: 'Flixer',
+                        bingebox: 'BingeBox',
                         primesrc: 'PrimeSrc',
                         uflix: 'Uflix',
                         hexa: 'Hexa',
                         vidsrc: 'VidSrc',
                         'multi-embed': 'MultiEmbed',
-                        '1movies': '1movies',
-                        hianime: 'HiAnime',
-                        animekai: 'AnimeKai',
-                        miruro: 'Miruro',
                         moviebox: 'MovieBox',
-                        bingebox: 'BingeBox',
                       };
                       return (
                         <button

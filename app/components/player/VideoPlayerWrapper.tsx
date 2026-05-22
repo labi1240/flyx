@@ -106,63 +106,31 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       const availability = {
         videasy: providersData.providers?.videasy?.enabled ?? true,
         flixer: providersData.providers?.flixer?.enabled ?? true,
+        bingebox: providersData.providers?.bingebox?.enabled ?? true,
         primesrc: providersData.providers?.primesrc?.enabled ?? true,
         uflix: providersData.providers?.uflix?.enabled ?? true,
         hexa: providersData.providers?.hexa?.enabled ?? true,
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
         'multi-embed': providersData.providers?.['multi-embed']?.enabled ?? true,
-        '1movies': providersData.providers?.['1movies']?.enabled ?? true,
-        animekai: providersData.providers?.animekai?.enabled ?? true,
-        hianime: providersData.providers?.hianime?.enabled ?? true,
-        miruro: providersData.providers?.miruro?.enabled ?? true,
         moviebox: providersData.providers?.moviebox?.enabled ?? true,
-        bingebox: providersData.providers?.bingebox?.enabled ?? true,
       };
-
-      // Check if anime content
-      let isAnime = false;
-      try {
-        const animeRes = await fetch(`/api/content/check-anime?tmdbId=${tmdbId}&type=${mediaType}`);
-        if (animeRes.ok) {
-          const animeData = await animeRes.json();
-          isAnime = animeData.isAnime === true;
-        }
-      } catch (e) {
-        console.warn('[VideoPlayerWrapper] Anime check failed:', e);
-      }
 
       // Build provider order respecting user's preferred order from settings
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      const animeOnlyProviders = ['animekai', 'hianime', 'miruro'];
-
       const providerOrder: string[] = [];
-
-      // For anime: always put anime providers first
-      if (isAnime && availability.animekai && !disabledProviders.has('animekai')) {
-        providerOrder.push('animekai');
-      }
-      if (isAnime && availability.hianime && !disabledProviders.has('hianime')) {
-        providerOrder.push('hianime');
-      }
-      if (isAnime && availability.miruro && !disabledProviders.has('miruro')) {
-        providerOrder.push('miruro');
-      }
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
-        if (!isAnime && animeOnlyProviders.includes(p)) continue;
         if (p !== 'uflix' && !availability[p as keyof typeof availability]) continue;
         providerOrder.push(p);
       }
 
       // Add any remaining available providers as fallback
-      const allProviders = isAnime
-        ? ['hianime', 'animekai', 'miruro', 'videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox']
-        : ['videasy', 'primesrc', 'flixer', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
+      const allProviders = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
@@ -238,46 +206,13 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
             continue;
           }
 
-          // ANIME PROVIDERS: Use dedicated /api/anime/stream when malId is available
-          if (malId && (provider === 'animekai' || provider === 'hianime' || provider === 'miruro')) {
-            const animeParams = new URLSearchParams({
-              malId: malId.toString(),
-              provider,
-            });
-            // Pass title/type so the API doesn't need AniList
-            if (contentTitle) animeParams.append('title', contentTitle);
-            animeParams.append('type', mediaType);
-            if (mediaType === 'tv' && episode) {
-              animeParams.append('episode', episode.toString());
-            }
-            
-            const response = await fetch(`/api/anime/stream?${animeParams}`, {
-              cache: 'no-store',
-            });
-            const data = await response.json();
-
-            if (data.success && data.sources && data.sources.length > 0) {
-              const sources = data.sources;
-              const actualProvider = data.provider || provider;
-              
-              let sourceUrl = sources[0].url;
-              
-              if (sources[0].requiresSegmentProxy) {
-                const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') || 
-                  sourceUrl.includes('/stream/') ||
-                  sourceUrl.includes('/animekai') ||
-                  sourceUrl.includes('/hianime') ||
-                  sourceUrl.includes('/flixer/stream');
-                
-                if (!isAlreadyProxied) {
-                  const targetUrl = sources[0].directUrl || sourceUrl;
-                  if (actualProvider === 'hianime') {
-                    sourceUrl = getHiAnimeStreamProxyUrl(targetUrl);
-                  } else if (actualProvider === 'animekai') {
-                    sourceUrl = getAnimeKaiProxyUrl(targetUrl);
-                  }
-                }
-              }
+          // BINGEBOX: Browser-direct extraction via CF Worker
+          if (provider === 'bingebox') {
+            const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+            const bbSources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', contentTitle || '', season, episode);
+            if (bbSources.length > 0) {
+              const sources = bbSources;
+              const sourceUrl = sources[0].url;
 
               setStreamData({
                 url: sourceUrl,
@@ -288,7 +223,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
                   requiresSegmentProxy: s.requiresSegmentProxy,
                 })),
                 currentIndex: 0,
-                provider: actualProvider,
+                provider: 'bingebox',
               });
               setIsLoading(false);
               return;
@@ -385,16 +320,13 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
 
     // Apply proxy if needed — route through provider-specific proxy
     if (source.requiresSegmentProxy) {
-      const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') || 
+      const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') ||
         sourceUrl.includes('/stream/') ||
-        sourceUrl.includes('/animekai') ||
         sourceUrl.includes('/flixer/stream');
-      
+
       if (!isAlreadyProxied) {
         if (streamData.provider === 'flixer') {
           sourceUrl = getFlixerStreamProxyUrl(sourceUrl);
-        } else if (streamData.provider === 'hianime') {
-          sourceUrl = getHiAnimeStreamProxyUrl(sourceUrl);
         } else {
           sourceUrl = getAnimeKaiProxyUrl(sourceUrl);
         }

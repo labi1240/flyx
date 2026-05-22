@@ -1638,8 +1638,7 @@
 
 
 /* Top row control focus styles (sub/dub toggle, server button) */
-button[data-player-top-control].playerControlFocused,
-button[data-player-top-control]:focus-visible {
+button[data-player-top-control].playerControlFocused {
   outline: 3px solid #a855f7 !important;
   outline-offset: 2px !important;
   background: rgba(168, 85, 247, 0.3) !important;
@@ -1649,9 +1648,7 @@ button[data-player-top-control]:focus-visible {
 
 /* Server menu tab focus styles */
 .tab:focus,
-.tab:focus-visible,
-button[data-server-tab]:focus,
-button[data-server-tab]:focus-visible {
+.tab:focus-visible {
   outline: 2px solid #a855f7 !important;
   outline-offset: 2px !important;
   background: rgba(168, 85, 247, 0.2) !important;
@@ -1660,9 +1657,7 @@ button[data-server-tab]:focus-visible {
 
 /* Server menu source item focus styles */
 .settingsOption:focus,
-.settingsOption:focus-visible,
-button[data-server-source]:focus,
-button[data-server-source]:focus-visible {
+.settingsOption:focus-visible {
   outline: 2px solid #a855f7 !important;
   outline-offset: -2px !important;
   background: rgba(168, 85, 247, 0.3) !important;

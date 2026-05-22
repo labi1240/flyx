@@ -5,21 +5,17 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+// proxy-config imports removed — anime providers no longer used
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
 function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
-  // Already proxied — don't double-wrap
-  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
-  if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
-      sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
+  if (sourceUrl.includes('/flixer/stream') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
       sourceUrl.includes('/primesrc/') || sourceUrl.includes('/moviebox/') || sourceUrl.includes('/bingebox/')) {
     return sourceUrl;
   }
-  // Only proxy if the source says it needs it (or it's a known CDN URL)
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -29,9 +25,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
     sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'flixer') return sourceUrl; // CDN blocks CF Worker IPs — browser fetches directly (SW adds CORS)
-  if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
-  if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
+  if (providerName === 'flixer') return sourceUrl;
   return sourceUrl;
 }
 
@@ -153,8 +147,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -373,7 +367,7 @@ function WatchContent() {
   }, []);
 
   // Fetch stream URL for mobile player with proper provider fallback
-  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference) => {
+  const fetchMobileStream = useCallback(async (_audioPreference?: AnimeAudioPreference) => {
     // Note: Don't check useMobilePlayer here - the caller is responsible for that check
     // This avoids stale closure issues since useMobilePlayer is intentionally not in deps
     if (!contentId || !mediaType) {
@@ -386,8 +380,6 @@ function WatchContent() {
     
     setMobileLoading(true);
     setMobileError(null);
-    
-    const currentAudioPref = audioPreference || audioPref;
     
     // Add timeout to prevent infinite loading
     const timeoutId = setTimeout(() => {
@@ -404,57 +396,39 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { videasy: true, flixer: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, '1movies': true, animekai: true, hianime: true, miruro: true, moviebox: true, bingebox: true };
+      let providerAvailability = { videasy: true, flixer: true, bingebox: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, moviebox: true };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
         providerAvailability = {
           videasy: providerData.providers?.videasy?.enabled ?? true,
           flixer: providerData.providers?.flixer?.enabled ?? true,
+          bingebox: providerData.providers?.bingebox?.enabled ?? true,
           primesrc: providerData.providers?.primesrc?.enabled ?? true,
           uflix: providerData.providers?.uflix?.enabled ?? true,
           hexa: providerData.providers?.hexa?.enabled ?? true,
           vidsrc: providerData.providers?.vidsrc?.enabled ?? true,
           'multi-embed': providerData.providers?.['multi-embed']?.enabled ?? true,
-          '1movies': providerData.providers?.['1movies']?.enabled ?? true,
-          animekai: providerData.providers?.animekai?.enabled ?? true,
-          hianime: providerData.providers?.hianime?.enabled ?? true,
-          miruro: providerData.providers?.miruro?.enabled ?? true,
           moviebox: providerData.providers?.moviebox?.enabled ?? true,
-          bingebox: providerData.providers?.bingebox?.enabled ?? true,
         };
       } catch (e) {
         console.warn('[WatchPage] Failed to fetch provider availability, using defaults');
       }
-      
+
       // Build provider order respecting user's preferred order from settings
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      const providerOrder: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'> = [];
-      
-      // Determine if this is anime content - use malId OR previously detected anime
-      const isAnime = !!(malId || isAnimeDetectedRef.current);
-      
-      const animeOnlyProviders = ['animekai', 'hianime', 'miruro'];
-      const allKnownProviders: Array<'vidsrc' | '1movies' | 'flixer' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'videasy' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed'> = isAnime
-        ? ['hianime', 'animekai', 'miruro', 'videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox']
-        : ['videasy', 'flixer', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', '1movies', 'moviebox', 'bingebox'];
+      type WatchProvider = 'vidsrc' | 'flixer' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed';
+      const providerOrder: WatchProvider[] = [];
 
-      // For ANIME content: always put HiAnime + AnimeKai first (sub/dub toggle needs them)
-      if (isAnime) {
-        if (providerAvailability.hianime && !disabledProviders.has('hianime')) providerOrder.push('hianime');
-        if (providerAvailability.animekai && !disabledProviders.has('animekai')) providerOrder.push('animekai');
-        if (providerAvailability.miruro && !disabledProviders.has('miruro')) providerOrder.push('miruro');
-        console.log('[WatchPage] ✓ Anime providers for mobile:', providerOrder.join(', '));
-      }
+      const allKnownProviders: WatchProvider[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
-        const provider = p as typeof providerOrder[number];
+        const provider = p as WatchProvider;
         if (providerOrder.includes(provider)) continue;
         if (disabledProviders.has(provider)) continue;
-        if (!isAnime && animeOnlyProviders.includes(provider)) continue;
         if (provider !== 'uflix' && !providerAvailability[provider as keyof typeof providerAvailability]) continue;
         providerOrder.push(provider);
       }
@@ -466,12 +440,11 @@ function WatchContent() {
         if (!providerAvailability[provider as keyof typeof providerAvailability]) continue;
         providerOrder.push(provider);
       }
-      
-      // Set available providers for the mobile player tabs
+
       setAvailableProviders(providerOrder);
-      
-      console.log(`[WatchPage] Mobile provider order: ${providerOrder.join(' → ')} (isAnime=${isAnime}, malId=${malId})`);
-      
+
+      console.log(`[WatchPage] Mobile provider order: ${providerOrder.join(' → ')}`);
+
       for (const provider of providerOrder) {
         try {
           console.log(`[WatchPage] Trying ${provider}...`);
@@ -493,6 +466,16 @@ function WatchContent() {
           } else if (provider === 'videasy') {
             const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
             const clientSources = await extractVideasyClient(
+              contentId,
+              mediaType as 'movie' | 'tv',
+              title || '',
+              seasonId ? Number(seasonId) : undefined,
+              episodeId ? Number(episodeId) : undefined,
+            );
+            validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+          } else if (provider === 'bingebox') {
+            const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+            const clientSources = await extractBingeBoxClient(
               contentId,
               mediaType as 'movie' | 'tv',
               title || '',
@@ -536,15 +519,6 @@ function WatchContent() {
             setCurrentProvider(provider);
 
             let selectedIndex = 0;
-            if (provider === 'animekai' || provider === 'hianime') {
-              console.log(`[WatchPage] ${provider} succeeded - setting isAnimeContent to TRUE`);
-              isAnimeDetectedRef.current = true;
-              setIsAnimeContent(true);
-              const matchingIndex = sources.findIndex((s: any) =>
-                s.title && sourceMatchesAudioPref(s.title, currentAudioPref)
-              );
-              if (matchingIndex >= 0) selectedIndex = matchingIndex;
-            }
 
             setMobileStreamUrl(sources[selectedIndex].url);
             setMobileSourceIndex(selectedIndex);
@@ -552,7 +526,7 @@ function WatchContent() {
             setMobileLoading(false);
             console.log(`[WatchPage] ✓ Mobile stream loaded from ${provider}:`,
               sources[selectedIndex].url?.substring(0, 50),
-              provider === 'animekai' ? `(${currentAudioPref})` : '');
+              '');
             if (sources[selectedIndex].skipIntro || sources[selectedIndex].skipOutro) {
               console.log('[WatchPage] Skip data available:', {
                 skipIntro: sources[selectedIndex].skipIntro,
@@ -593,7 +567,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | '1movies' | 'flixer' | 'videasy' | 'uflix' | 'animekai' | 'hianime' | 'hexa' | 'primesrc' | 'miruro' | 'moviebox' | 'bingebox' | 'multi-embed', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'flixer' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);
@@ -614,6 +588,16 @@ function WatchContent() {
       } else if (provider === 'videasy') {
         const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
         const clientSources = await extractVideasyClient(
+          contentId,
+          mediaType as 'movie' | 'tv',
+          title || '',
+          seasonId ? Number(seasonId) : undefined,
+          episodeId ? Number(episodeId) : undefined,
+        );
+        validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+      } else if (provider === 'bingebox') {
+        const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
+        const clientSources = await extractBingeBoxClient(
           contentId,
           mediaType as 'movie' | 'tv',
           title || '',
@@ -655,11 +639,6 @@ function WatchContent() {
         setCurrentProvider(provider);
         setMobileStreamUrl(sources[0].url);
         setMobileSourceIndex(0);
-
-        if (provider === 'animekai' || provider === 'hianime') {
-          isAnimeDetectedRef.current = true;
-          setIsAnimeContent(true);
-        }
 
         console.log(`[WatchPage] ✓ Provider changed to ${provider}:`, sources[0].url?.substring(0, 50));
       } else {
@@ -875,7 +854,7 @@ function WatchContent() {
             currentSourceIndex={mobileSourceIndex}
             nextEpisode={nextEpisodeProp}
             onNextEpisode={handleNextEpisode}
-            isAnime={isAnimeContent || isAnimeDetectedRef.current || mobileSources.some(s => s.provider === 'animekai')}
+            isAnime={isAnimeContent || isAnimeDetectedRef.current}
             audioPref={audioPref}
             onAudioPrefChange={handleAudioPrefChange}
             initialTime={mobileResumeTime}
