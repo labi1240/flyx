@@ -110,30 +110,32 @@ interface VideoPlayerProps {
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
   // Already proxied — don't double-wrap
-  // Check for specific proxy route patterns only (not generic /stream/ which matches CDN paths)
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
       sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
-      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/')) {
+      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
+      sourceUrl.includes('/bingebox/')) {
     return sourceUrl;
   }
 
-  // Flixer CDN (*.workers.dev) is handled by the Service Worker which
-  // fetches from the browser's residential IP + adds CORS. Do NOT proxy
-  // Flixer through CF Worker (its IP is blocked by Flixer CDN).
-  // Other providers (DLHD, IPTV, etc.) still need CF Worker proxy for CORS.
-  const isFlixerCdn = providerName === 'flixer' && sourceUrl.includes('.workers.dev');
-  const needsProxy = (!isFlixerCdn && requiresProxy) ||
-    (!isFlixerCdn && sourceUrl.includes('.workers.dev')) ||
-    (!isFlixerCdn && sourceUrl.includes('frostcomet')) ||
-    (!isFlixerCdn && sourceUrl.includes('thunderleaf')) ||
-    (!isFlixerCdn && sourceUrl.includes('skyember')) ||
-    (!isFlixerCdn && sourceUrl.includes('nightbreeze')) ||
-    (!isFlixerCdn && sourceUrl.includes('wind.'));
+  // Route ALL Flixer CDN (*.workers.dev) through CF Worker /flixer/stream.
+  // The CF Worker strips Origin (which the CDN blocks), adds CORS headers,
+  // and falls back to RPI residential proxy if the CF IP is blocked.
+  // The Service Worker approach was a race-condition nightmare on mobile.
+  if (providerName === 'flixer' && sourceUrl.includes('.workers.dev')) {
+    return getFlixerStreamProxyUrl(sourceUrl);
+  }
+
+  const needsProxy = requiresProxy ||
+    sourceUrl.includes('.workers.dev') ||
+    sourceUrl.includes('frostcomet') ||
+    sourceUrl.includes('thunderleaf') ||
+    sourceUrl.includes('skyember') ||
+    sourceUrl.includes('nightbreeze') ||
+    sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'flixer') return getFlixerStreamProxyUrl(sourceUrl);
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);

@@ -5,17 +5,30 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-// proxy-config imports removed — anime providers no longer used
+import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
 function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
-  if (sourceUrl.includes('/flixer/stream') ||
-      sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/api/stream-proxy') ||
-      sourceUrl.includes('/primesrc/') || sourceUrl.includes('/moviebox/') || sourceUrl.includes('/bingebox/')) {
+  // Already proxied — don't double-wrap
+  if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
+      sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
+      sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
+      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
+      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
+      sourceUrl.includes('/bingebox/')) {
     return sourceUrl;
   }
+
+  // Route ALL Flixer CDN (*.workers.dev) through CF Worker /flixer/stream.
+  // The CF Worker strips Origin (which the CDN blocks), adds CORS headers,
+  // and falls back to RPI residential proxy if the CF IP is blocked.
+  // The Service Worker approach was a race-condition nightmare on mobile.
+  if (providerName === 'flixer' && sourceUrl.includes('.workers.dev')) {
+    return getFlixerStreamProxyUrl(sourceUrl);
+  }
+
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -25,7 +38,10 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
     sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'flixer') return sourceUrl;
+  if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
+  if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
+  if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
+  // For other providers, return as-is (they handle their own proxying)
   return sourceUrl;
 }
 
