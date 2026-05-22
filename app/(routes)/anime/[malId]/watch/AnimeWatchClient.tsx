@@ -142,33 +142,49 @@ export default function AnimeWatchClient() {
     const animeTitle = anime.title_english || anime.title;
     const targetEp = anime.type === 'Movie' ? undefined : episode;
 
-    try {
-      let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
-      let activeProvider = useProvider;
+    // Build fallback order: try requested provider first, then the other anime provider
+    const fallbackProviders: Array<'hianime' | 'miruro'> = useProvider === 'miruro'
+      ? ['miruro', 'hianime']
+      : ['hianime', 'miruro'];
 
-      // Try the requested provider first via browser-direct CF Worker
-      if (useProvider === 'hianime') {
-        const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
-        const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
-        sources = hiSources.map((s: any) => ({
-          title: s.title || 'HiAnime Source',
-          url: s.url,
-          quality: s.quality,
-          provider: 'hianime',
-          skipIntro: s.skipIntro,
-          skipOutro: s.skipOutro,
-        }));
-        activeProvider = 'hianime';
-      } else if (useProvider === 'miruro') {
-        const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
-        const miSources = await extractMiruroClient(malId, animeTitle, targetEp, currentAudioPref);
-        sources = miSources.map((s: any) => ({
-          title: s.title || 'Miruro Source',
-          url: s.url,
-          quality: s.quality,
-          provider: 'miruro',
-        }));
-        activeProvider = 'miruro';
+    let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
+    let activeProvider: string = useProvider;
+
+    try {
+      for (const fbProvider of fallbackProviders) {
+        try {
+          if (fbProvider === 'hianime') {
+            const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+            const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
+            if (hiSources.length > 0) {
+              sources = hiSources.map((s: any) => ({
+                title: s.title || 'HiAnime Source',
+                url: s.url,
+                quality: s.quality,
+                provider: 'hianime',
+                skipIntro: s.skipIntro,
+                skipOutro: s.skipOutro,
+              }));
+              activeProvider = 'hianime';
+              break;
+            }
+          } else if (fbProvider === 'miruro') {
+            const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+            const miSources = await extractMiruroClient(malId, animeTitle, targetEp, currentAudioPref);
+            if (miSources.length > 0) {
+              sources = miSources.map((s: any) => ({
+                title: s.title || 'Miruro Source',
+                url: s.url,
+                quality: s.quality,
+                provider: 'miruro',
+              }));
+              activeProvider = 'miruro';
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn(`[AnimeWatch] ${fbProvider} failed:`, e);
+        }
       }
 
       if (sources.length > 0) {
@@ -188,7 +204,7 @@ export default function AnimeWatchClient() {
         return;
       }
 
-      setMobileError('No streams available');
+      setMobileError('No streams available from any anime provider');
       setMobileLoading(false);
     } catch (e) {
       setMobileError('Failed to load video');
@@ -223,20 +239,37 @@ export default function AnimeWatchClient() {
     const animeTitle = anime.title_english || anime.title;
     const targetEp = anime.type === 'Movie' ? undefined : episode;
 
-    try {
-      let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
-      let activeProvider = _provider;
+    // Build fallback order: try requested provider first, then the other anime provider
+    const fallbackProviders: Array<'hianime' | 'miruro'> = _provider === 'miruro'
+      ? ['miruro', 'hianime']
+      : ['hianime', 'miruro'];
 
-      if (_provider === 'hianime') {
-        const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
-        const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
-        sources = hiSources.map((s: any) => ({ title: s.title || 'HiAnime Source', url: s.url, quality: s.quality, provider: 'hianime', skipIntro: s.skipIntro, skipOutro: s.skipOutro }));
-        activeProvider = 'hianime';
-      } else if (_provider === 'miruro') {
-        const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
-        const miSources = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
-        sources = miSources.map((s: any) => ({ title: s.title || 'Miruro Source', url: s.url, quality: s.quality, provider: 'miruro' }));
-        activeProvider = 'miruro';
+    let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
+    let activeProvider: string = _provider;
+
+    try {
+      for (const fbProvider of fallbackProviders) {
+        try {
+          if (fbProvider === 'hianime') {
+            const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+            const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
+            if (hiSources.length > 0) {
+              sources = hiSources.map((s: any) => ({ title: s.title || 'HiAnime Source', url: s.url, quality: s.quality, provider: 'hianime', skipIntro: s.skipIntro, skipOutro: s.skipOutro }));
+              activeProvider = 'hianime';
+              break;
+            }
+          } else if (fbProvider === 'miruro') {
+            const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+            const miSources = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
+            if (miSources.length > 0) {
+              sources = miSources.map((s: any) => ({ title: s.title || 'Miruro Source', url: s.url, quality: s.quality, provider: 'miruro' }));
+              activeProvider = 'miruro';
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn(`[AnimeWatch] Provider change ${fbProvider} failed:`, e);
+        }
       }
 
       if (sources.length > 0) {
@@ -380,6 +413,8 @@ export default function AnimeWatchClient() {
           currentProvider={currentProvider}
           onProviderChange={handleProviderChange}
           loadingProvider={loadingProvider}
+          skipIntro={mobileSources[mobileSourceIndex]?.skipIntro}
+          skipOutro={mobileSources[mobileSourceIndex]?.skipOutro}
         />
       </div>
     );

@@ -494,7 +494,8 @@ function WatchContent() {
           } else if (provider === 'miruro') {
             if (malId && title) {
               const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
-              const clientSources = await extractMiruroClient(Number(malId), title, episodeId ? Number(episodeId) : undefined);
+              const currentPref = _audioPreference || audioPref;
+              const clientSources = await extractMiruroClient(Number(malId), title, episodeId ? Number(episodeId) : undefined, currentPref);
               validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
             }
           } else {
@@ -532,7 +533,16 @@ function WatchContent() {
             setMobileSources(sources);
             setCurrentProvider(provider);
 
+            // Auto-select source matching audio preference for anime content
+            const isAnime = !!(malId || isAnimeDetectedRef.current);
             let selectedIndex = 0;
+            if (isAnime) {
+              const currentPref = _audioPreference || audioPref;
+              const matchingIndex = sources.findIndex((s: any) =>
+                s.title && sourceMatchesAudioPref(s.title, currentPref)
+              );
+              if (matchingIndex >= 0) selectedIndex = matchingIndex;
+            }
 
             setMobileStreamUrl(sources[selectedIndex].url);
             setMobileSourceIndex(selectedIndex);
@@ -619,6 +629,18 @@ function WatchContent() {
           episodeId ? Number(episodeId) : undefined,
         );
         validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+      } else if (provider === 'hianime') {
+        if (malId && title) {
+          const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+          const clientSources = await extractHiAnimeClient(Number(malId), title, episodeId ? Number(episodeId) : undefined);
+          validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+        }
+      } else if (provider === 'miruro') {
+        if (malId && title) {
+          const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+          const clientSources = await extractMiruroClient(Number(malId), title, episodeId ? Number(episodeId) : undefined, audioPref);
+          validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+        }
       } else {
         const params = new URLSearchParams({
           tmdbId: contentId,
@@ -651,10 +673,21 @@ function WatchContent() {
 
         setMobileSources(sources);
         setCurrentProvider(provider);
-        setMobileStreamUrl(sources[0].url);
-        setMobileSourceIndex(0);
 
-        console.log(`[WatchPage] ✓ Provider changed to ${provider}:`, sources[0].url?.substring(0, 50));
+        // Auto-select source matching audio preference for anime content
+        const isAnime = !!(malId || isAnimeDetectedRef.current);
+        let selectedIndex = 0;
+        if (isAnime) {
+          const matchingIndex = sources.findIndex((s: any) =>
+            s.title && sourceMatchesAudioPref(s.title, audioPref)
+          );
+          if (matchingIndex >= 0) selectedIndex = matchingIndex;
+        }
+
+        setMobileStreamUrl(sources[selectedIndex].url);
+        setMobileSourceIndex(selectedIndex);
+
+        console.log(`[WatchPage] ✓ Provider changed to ${provider}:`, sources[selectedIndex].url?.substring(0, 50));
       } else {
         setMobileSources([]);
         setCurrentProvider(provider);

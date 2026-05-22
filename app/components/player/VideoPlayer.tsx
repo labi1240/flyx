@@ -1059,7 +1059,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           if (!malId || !title) throw new Error('miruro: requires malId and title');
           console.log(`[VideoPlayer] Trying miruro (browser-direct) malId=${malId}...`);
           const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
-          const sources = await extractMiruroClient(malId, title, episode);
+          const sources = await extractMiruroClient(malId, title, episode, animeAudioPref);
           if (sources.length === 0) throw new Error('miruro: no sources');
           console.log(`[VideoPlayer] ✓ miruro: ${sources.length} source(s)`);
           return { providerName: 'miruro', data: { success: true, provider: 'miruro' }, sources };
@@ -1092,11 +1092,25 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
         const { providerName, sources } = winner;
 
-        // Pick best source — prefer 'validated' status, then any with a URL
-        const validatedIdx = sources.findIndex((s: any) => s.url && s.status === 'validated');
-        const workingIdx = validatedIdx >= 0 ? validatedIdx : sources.findIndex((s: any) => s.url && s.status !== 'unknown');
-        let selectedSource = sources[workingIdx >= 0 ? workingIdx : 0];
-        let selectedIndex = workingIdx >= 0 ? workingIdx : 0;
+        // Pick best source — prefer audio-preference match for anime, then 'validated' status
+        const isAnimeProvider = providerName === 'hianime' || providerName === 'miruro';
+        let selectedIndex = 0;
+        if (isAnimeProvider) {
+          const matchingIdx = sources.findIndex((s: any) =>
+            s.url && s.title && sourceMatchesAudioPreference(s.title, animeAudioPref)
+          );
+          if (matchingIdx >= 0) selectedIndex = matchingIdx;
+          else {
+            const validatedIdx = sources.findIndex((s: any) => s.url && s.status === 'validated');
+            const workingIdx = validatedIdx >= 0 ? validatedIdx : sources.findIndex((s: any) => s.url && s.status !== 'unknown');
+            if (workingIdx >= 0) selectedIndex = workingIdx;
+          }
+        } else {
+          const validatedIdx = sources.findIndex((s: any) => s.url && s.status === 'validated');
+          const workingIdx = validatedIdx >= 0 ? validatedIdx : sources.findIndex((s: any) => s.url && s.status !== 'unknown');
+          if (workingIdx >= 0) selectedIndex = workingIdx;
+        }
+        const selectedSource = sources[selectedIndex];
 
         console.log(`[VideoPlayer] ✓ ${providerName}: playing "${selectedSource.title}" — ${selectedSource.url?.substring(0, 80)}`);
 
@@ -4618,7 +4632,36 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                     if (serverName) setPreferredAnimeKaiServer(serverName);
                   }
                 } else {
-                  console.log(`[VideoPlayer] No ${newPref} sources available on ${currentAnimeProvider}`);
+                  // No matching source in cache — re-extract from this provider with new pref
+                  console.log(`[VideoPlayer] No ${newPref} sources cached on ${currentAnimeProvider}, re-extracting...`);
+                  setIsLoading(true);
+                  try {
+                    if (currentAnimeProvider === 'hianime' && malId) {
+                      const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
+                      const newSources = await extractHiAnimeClient(malId, title || '', episode);
+                      if (newSources.length > 0) {
+                        setSourcesCache(prev => ({ ...prev, [currentAnimeProvider]: newSources }));
+                        const match = newSources.find((s: any) => s.title && sourceMatchesAudioPreference(s.title, newPref));
+                        if (match) {
+                          setCurrentSourceIndex(newSources.indexOf(match));
+                          setStreamUrl(applyStreamProxy(match.url, currentAnimeProvider, match.requiresSegmentProxy));
+                        }
+                      }
+                    } else if (currentAnimeProvider === 'miruro' && malId) {
+                      const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+                      const newSources = await extractMiruroClient(malId, title || '', episode, newPref);
+                      if (newSources.length > 0) {
+                        setSourcesCache(prev => ({ ...prev, [currentAnimeProvider]: newSources }));
+                        setCurrentSourceIndex(0);
+                        setStreamUrl(applyStreamProxy(newSources[0].url, currentAnimeProvider, newSources[0].requiresSegmentProxy));
+                      }
+                    }
+                  } catch (err) {
+                    console.error('[VideoPlayer] Re-extract failed:', err);
+                    pendingSeekTimeRef.current = null;
+                  } finally {
+                    setIsLoading(false);
+                  }
                 }
               }}
               title={`Switch to ${animeAudioPref === 'sub' ? 'Dubbed' : 'Subbed'}`}
