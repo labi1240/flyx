@@ -599,9 +599,35 @@ export default function MobileVideoPlayer({
   // Track the last initialized stream URL to prevent re-initialization on rotation
   const lastInitializedUrlRef = useRef<string | null>(null);
 
+  // Service Worker readiness — Flixer CDN blocks all proxy IPs, only the
+  // browser's residential IP works. The SW (flixer-cdn-sw.js) strips Referer
+  // and adds CORS. We must wait for it to claim the client before HLS.js
+  // makes its first XHR, or the CDN returns 403 with no CORS headers.
+  const isFlixerCdnUrl = !!(streamUrl && (
+    streamUrl.includes('.workers.dev') ||
+    streamUrl.includes('frostcomet') ||
+    streamUrl.includes('thunderleaf') ||
+    streamUrl.includes('skyember') ||
+    streamUrl.includes('nightbreeze')
+  ));
+  const [swReady, setSwReady] = useState(!isFlixerCdnUrl);
+
+  useEffect(() => {
+    if (!isFlixerCdnUrl || !('serviceWorker' in navigator)) {
+      setSwReady(true);
+      return;
+    }
+    setSwReady(false);
+    let cancelled = false;
+    navigator.serviceWorker.ready.then(() => {
+      if (!cancelled) setSwReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [streamUrl, isFlixerCdnUrl]);
+
   // Initialize HLS
   useEffect(() => {
-    if (!streamUrl || !videoRef.current) return;
+    if (!streamUrl || !videoRef.current || !swReady) return;
     if (lastInitializedUrlRef.current === streamUrl && hlsRef.current) return;
 
     lastInitializedUrlRef.current = streamUrl;
@@ -776,7 +802,7 @@ export default function MobileVideoPlayer({
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl, hlsConfig]);
+  }, [streamUrl, hlsConfig, swReady]);
 
   // Auto-hide controls after 3s when playing
   useEffect(() => {

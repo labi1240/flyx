@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
-import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import { useAnalytics } from '../analytics/AnalyticsProvider';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
 import { trackWatchStart, trackWatchProgress, trackWatchPause, trackWatchComplete } from '@/lib/utils/live-activity';
@@ -119,13 +119,11 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return sourceUrl;
   }
 
-  // Route ALL Flixer CDN (*.workers.dev) through CF Worker /flixer/stream.
-  // The CF Worker strips Origin (which the CDN blocks), adds CORS headers,
-  // and falls back to RPI residential proxy if the CF IP is blocked.
-  // The Service Worker approach was a race-condition nightmare on mobile.
-  if (providerName === 'flixer' && sourceUrl.includes('.workers.dev')) {
-    return getFlixerStreamProxyUrl(sourceUrl);
-  }
+  // Flixer CDN blocks ALL proxy IPs (CF Worker datacenter + RPI residential).
+  // Only the browser's own residential IP works. The Service Worker
+  // (flixer-cdn-sw.js) strips Referer and adds CORS headers for direct
+  // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
+  if (providerName === 'flixer') return sourceUrl;
 
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
@@ -139,7 +137,6 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
-  // For other providers, return as-is (they handle their own proxying)
   return sourceUrl;
 }
 
@@ -1167,9 +1164,35 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Without this, switching between different MAL anime won't trigger a re-fetch
   }, [tmdbId, mediaType, season, episode, malId]);
 
+  // Service Worker readiness — Flixer CDN blocks all proxy IPs, only the
+  // browser's residential IP works. The SW (flixer-cdn-sw.js) strips Referer
+  // and adds CORS. We must wait for it to claim the client before HLS.js
+  // makes its first XHR, or the CDN returns 403 with no CORS headers.
+  const isFlixerCdnUrl = !!(streamUrl && (
+    streamUrl.includes('.workers.dev') ||
+    streamUrl.includes('frostcomet') ||
+    streamUrl.includes('thunderleaf') ||
+    streamUrl.includes('skyember') ||
+    streamUrl.includes('nightbreeze')
+  ));
+  const [swReady, setSwReady] = useState(!isFlixerCdnUrl);
+
+  useEffect(() => {
+    if (!isFlixerCdnUrl || !('serviceWorker' in navigator)) {
+      setSwReady(true);
+      return;
+    }
+    setSwReady(false);
+    let cancelled = false;
+    navigator.serviceWorker.ready.then(() => {
+      if (!cancelled) setSwReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [streamUrl, isFlixerCdnUrl]);
+
   // Initialize HLS
   useEffect(() => {
-    if (!streamUrl || !videoRef.current) {
+    if (!streamUrl || !videoRef.current || !swReady) {
       return;
     }
 
@@ -1703,7 +1726,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         }
       };
     }
-  }, [streamUrl]);
+  }, [streamUrl, swReady]);
 
   // Fetch subtitles when content changes
   useEffect(() => {

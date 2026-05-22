@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-import { getFlixerStreamProxyUrl, getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
@@ -21,13 +21,11 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
     return sourceUrl;
   }
 
-  // Route ALL Flixer CDN (*.workers.dev) through CF Worker /flixer/stream.
-  // The CF Worker strips Origin (which the CDN blocks), adds CORS headers,
-  // and falls back to RPI residential proxy if the CF IP is blocked.
-  // The Service Worker approach was a race-condition nightmare on mobile.
-  if (providerName === 'flixer' && sourceUrl.includes('.workers.dev')) {
-    return getFlixerStreamProxyUrl(sourceUrl);
-  }
+  // Flixer CDN blocks ALL proxy IPs (CF Worker datacenter + RPI residential).
+  // Only the browser's own residential IP works. The Service Worker
+  // (flixer-cdn-sw.js) strips Referer and adds CORS headers for direct
+  // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
+  if (providerName === 'flixer') return sourceUrl;
 
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
@@ -41,7 +39,6 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
-  // For other providers, return as-is (they handle their own proxying)
   return sourceUrl;
 }
 

@@ -10,7 +10,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
 import type { PlayerSource } from './types';
 
 export interface UseSourceSwitcherOptions {
@@ -61,12 +61,13 @@ export function useSourceSwitcher(options: UseSourceSwitcherOptions): UseSourceS
       if (!isAlreadyProxied) {
         const targetUrl = source.directUrl || source.url;
         // Route through provider-specific proxy
-        const isFlixerSource = source.title?.toLowerCase().includes('flixer') || 
+        const isFlixerSource = source.title?.toLowerCase().includes('flixer') ||
                                options.provider === 'flixer';
         const isHiAnimeSource = source.title?.toLowerCase().includes('hianime') ||
                                 options.provider === 'hianime';
         if (isFlixerSource) {
-          finalUrl = getFlixerStreamProxyUrl(targetUrl);
+          // Flixer CDN blocks all proxy IPs — return raw, let the SW handle it
+          finalUrl = targetUrl;
         } else if (isHiAnimeSource) {
           finalUrl = getHiAnimeStreamProxyUrl(targetUrl);
         } else {
