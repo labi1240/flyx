@@ -599,35 +599,9 @@ export default function MobileVideoPlayer({
   // Track the last initialized stream URL to prevent re-initialization on rotation
   const lastInitializedUrlRef = useRef<string | null>(null);
 
-  // Service Worker readiness — Flixer CDN blocks all proxy IPs, only the
-  // browser's residential IP works. The SW (flixer-cdn-sw.js) strips Referer
-  // and adds CORS. We must wait for it to claim the client before HLS.js
-  // makes its first XHR, or the CDN returns 403 with no CORS headers.
-  const isFlixerCdnUrl = !!(streamUrl && (
-    streamUrl.includes('.workers.dev') ||
-    streamUrl.includes('frostcomet') ||
-    streamUrl.includes('thunderleaf') ||
-    streamUrl.includes('skyember') ||
-    streamUrl.includes('nightbreeze')
-  ));
-  const [swReady, setSwReady] = useState(!isFlixerCdnUrl);
-
-  useEffect(() => {
-    if (!isFlixerCdnUrl || !('serviceWorker' in navigator)) {
-      setSwReady(true);
-      return;
-    }
-    setSwReady(false);
-    let cancelled = false;
-    navigator.serviceWorker.ready.then(() => {
-      if (!cancelled) setSwReady(true);
-    });
-    return () => { cancelled = true; };
-  }, [streamUrl, isFlixerCdnUrl]);
-
   // Initialize HLS
   useEffect(() => {
-    if (!streamUrl || !videoRef.current || !swReady) return;
+    if (!streamUrl || !videoRef.current) return;
     if (lastInitializedUrlRef.current === streamUrl && hlsRef.current) return;
 
     lastInitializedUrlRef.current = streamUrl;
@@ -699,110 +673,124 @@ export default function MobileVideoPlayer({
       }
     };
 
-    if (isIOS && supportsHLS) {
+    // iOS event handlers (defined here so cleanup can remove them)
+    const handleLoadedMetadata = () => {
+      setDuration(video.duration);
+      setIsLoading(false);
+      checkResumeProgress();
+      if (!showResumePrompt) attemptAutoplay();
+    };
+    const handleCanPlay = () => {
+      setIsLoading(false);
+      if (video.paused) attemptAutoplay();
+    };
+    const handleError = () => {
+      const err = video.error;
+      setError(`Playback error: ${err?.message || 'Unknown error'}`);
+      setIsLoading(false);
+      onErrorRef.current?.(err?.message || 'Playback failed');
+    };
+
+    const startStream = () => {
+      if (isIOS && supportsHLS) {
+        video.src = streamUrl;
+        if (!showResumePrompt) startPlaybackTimeout();
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        video.addEventListener('canplay', handleCanPlay);
+        video.addEventListener('error', handleError);
+        return;
+      }
+
+      if (Hls.isSupported()) {
+        const hls = new Hls(hlsConfig);
+        hlsRef.current = hls;
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        if (!showResumePrompt) startPlaybackTimeout();
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setIsLoading(false);
+          if (playbackSpeed !== 1 && video) video.playbackRate = playbackSpeed;
+          const checkAndPlay = () => {
+            if (video.duration > 0) {
+              checkResumeProgress();
+              if (!hasShownResumePromptRef.current || !showResumePrompt) attemptAutoplay();
+            } else {
+              setTimeout(checkAndPlay, 100);
+            }
+          };
+          checkAndPlay();
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              networkRetryCountRef.current++;
+              if (networkRetryCountRef.current <= 2) {
+                hls.startLoad();
+              } else {
+                const nextIndex = currentSourceIndex + 1;
+                if (nextIndex < availableSources.length) {
+                  onSourceChangeRef.current?.(nextIndex, currentTime);
+                } else {
+                  setError('Stream unavailable. Try another source.');
+                  setIsLoading(false);
+                  onErrorRef.current?.('All sources failed with network errors');
+                }
+              }
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+            else {
+              setError('Playback failed. Try another source.');
+              setIsLoading(false);
+              onErrorRef.current?.('Fatal playback error');
+            }
+          }
+        });
+        return;
+      }
+
+      // Fallback: direct video src
       video.src = streamUrl;
       if (!showResumePrompt) startPlaybackTimeout();
-      const handleLoadedMetadata = () => {
-        setDuration(video.duration);
+      video.addEventListener('loadedmetadata', () => {
         setIsLoading(false);
-        checkResumeProgress();
-        if (!showResumePrompt) attemptAutoplay();
-      };
-      const handleCanPlay = () => {
-        setIsLoading(false);
-        if (video.paused) attemptAutoplay();
-      };
-      const handleError = () => {
-        const err = video.error;
-        setError(`Playback error: ${err?.message || 'Unknown error'}`);
-        setIsLoading(false);
-        onErrorRef.current?.(err?.message || 'Playback failed');
-      };
-      video.addEventListener('loadedmetadata', handleLoadedMetadata);
-      video.addEventListener('canplay', handleCanPlay);
-      video.addEventListener('error', handleError);
-      return () => {
-        video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-        video.removeEventListener('canplay', handleCanPlay);
-        video.removeEventListener('error', handleError);
-        video.removeEventListener('playing', onPlaying);
-        if (playbackStartTimeoutRef.current) {
-          clearTimeout(playbackStartTimeoutRef.current);
-          playbackStartTimeoutRef.current = null;
-        }
-      };
-    }
-
-    if (Hls.isSupported()) {
-      const hls = new Hls(hlsConfig);
-      hlsRef.current = hls;
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-      if (!showResumePrompt) startPlaybackTimeout();
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setIsLoading(false);
-        if (playbackSpeed !== 1 && video) video.playbackRate = playbackSpeed;
-        const checkAndPlay = () => {
-          if (video.duration > 0) {
-            checkResumeProgress();
-            if (!hasShownResumePromptRef.current || !showResumePrompt) attemptAutoplay();
-          } else {
-            setTimeout(checkAndPlay, 100);
-          }
-        };
-        checkAndPlay();
+        if (playbackSpeed !== 1) video.playbackRate = playbackSpeed;
+        attemptAutoplay();
       });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            networkRetryCountRef.current++;
-            if (networkRetryCountRef.current <= 2) {
-              hls.startLoad();
-            } else {
-              const nextIndex = currentSourceIndex + 1;
-              if (nextIndex < availableSources.length) {
-                onSourceChangeRef.current?.(nextIndex, currentTime);
-              } else {
-                setError('Stream unavailable. Try another source.');
-                setIsLoading(false);
-                onErrorRef.current?.('All sources failed with network errors');
-              }
-            }
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-          else {
-            setError('Playback failed. Try another source.');
-            setIsLoading(false);
-            onErrorRef.current?.('Fatal playback error');
-          }
+    };
+
+    // Wait for Service Worker before loading Flixer CDN URLs.
+    // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
+    // The SW (flixer-cdn-sw.js) strips Referer and adds CORS headers.
+    const isFlixerCdn = streamUrl.includes('.workers.dev') ||
+      streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
+      streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');
+
+    if (isFlixerCdn && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(() => {
+        // Only load if the URL hasn't changed while we were waiting
+        if (lastInitializedUrlRef.current === streamUrl) {
+          startStream();
         }
       });
-      return () => {
-        hls.destroy();
-        hlsRef.current = null;
-        video.removeEventListener('playing', onPlaying);
-        if (playbackStartTimeoutRef.current) {
-          clearTimeout(playbackStartTimeoutRef.current);
-          playbackStartTimeoutRef.current = null;
-        }
-      };
+    } else {
+      startStream();
     }
 
-    video.src = streamUrl;
-    if (!showResumePrompt) startPlaybackTimeout();
-    video.addEventListener('loadedmetadata', () => {
-      setIsLoading(false);
-      if (playbackSpeed !== 1) video.playbackRate = playbackSpeed;
-      attemptAutoplay();
-    });
     return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
       video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('error', handleError);
       if (playbackStartTimeoutRef.current) {
         clearTimeout(playbackStartTimeoutRef.current);
         playbackStartTimeoutRef.current = null;
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl, hlsConfig, swReady]);
+  }, [streamUrl, hlsConfig]);
 
   // Auto-hide controls after 3s when playing
   useEffect(() => {

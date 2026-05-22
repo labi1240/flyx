@@ -1164,35 +1164,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Without this, switching between different MAL anime won't trigger a re-fetch
   }, [tmdbId, mediaType, season, episode, malId]);
 
-  // Service Worker readiness — Flixer CDN blocks all proxy IPs, only the
-  // browser's residential IP works. The SW (flixer-cdn-sw.js) strips Referer
-  // and adds CORS. We must wait for it to claim the client before HLS.js
-  // makes its first XHR, or the CDN returns 403 with no CORS headers.
-  const isFlixerCdnUrl = !!(streamUrl && (
-    streamUrl.includes('.workers.dev') ||
-    streamUrl.includes('frostcomet') ||
-    streamUrl.includes('thunderleaf') ||
-    streamUrl.includes('skyember') ||
-    streamUrl.includes('nightbreeze')
-  ));
-  const [swReady, setSwReady] = useState(!isFlixerCdnUrl);
-
-  useEffect(() => {
-    if (!isFlixerCdnUrl || !('serviceWorker' in navigator)) {
-      setSwReady(true);
-      return;
-    }
-    setSwReady(false);
-    let cancelled = false;
-    navigator.serviceWorker.ready.then(() => {
-      if (!cancelled) setSwReady(true);
-    });
-    return () => { cancelled = true; };
-  }, [streamUrl, isFlixerCdnUrl]);
-
   // Initialize HLS
   useEffect(() => {
-    if (!streamUrl || !videoRef.current || !swReady) {
+    if (!streamUrl || !videoRef.current) {
       return;
     }
 
@@ -1259,6 +1233,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     };
     video.addEventListener('playing', onPlaying);
 
+    // Stream cleanup function — populated by loadStream when HLS/iOS is set up.
+    // The cleanup closure var is mutable so the SW .then() path can populate it
+    // asynchronously, and the useEffect return fn still sees the latest value.
+    let streamCleanup: (() => void) | null = null;
+
+    const loadStream = () => {
     if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/vidsrc') || streamUrl.includes('workers.dev')) {
       if (Hls.isSupported()) {
         // Check if this is a Hexa source (needs more aggressive buffering)
@@ -1626,14 +1606,16 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
         hlsRef.current = hls;
 
-        return () => {
+        streamCleanup = () => {
           hls.destroy();
+          hlsRef.current = null;
           video.removeEventListener('playing', onPlaying);
           if (playbackStartTimeoutRef.current) {
             clearTimeout(playbackStartTimeoutRef.current);
             playbackStartTimeoutRef.current = null;
           }
         };
+        return;
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl;
         // Start auto-advance timeout for Safari native HLS
@@ -1672,13 +1654,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             console.log('[VideoPlayer] Skipping autoplay (Safari) - resume prompt will be shown');
           }
         });
-        return () => {
+        streamCleanup = () => {
           video.removeEventListener('playing', onPlaying);
           if (playbackStartTimeoutRef.current) {
             clearTimeout(playbackStartTimeoutRef.current);
             playbackStartTimeoutRef.current = null;
           }
         };
+        return;
       }
     } else {
       video.src = streamUrl;
@@ -1718,7 +1701,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           console.log('[VideoPlayer] Skipping autoplay (native) - resume prompt will be shown');
         }
       });
-      return () => {
+      streamCleanup = () => {
         video.removeEventListener('playing', onPlaying);
         if (playbackStartTimeoutRef.current) {
           clearTimeout(playbackStartTimeoutRef.current);
@@ -1726,7 +1709,30 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         }
       };
     }
-  }, [streamUrl, swReady]);
+    }; // end loadStream
+
+    // Wait for Service Worker before loading Flixer CDN URLs.
+    // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
+    // The SW (flixer-cdn-sw.js) strips Referer and adds CORS headers.
+    const isFlixerCdn = streamUrl.includes('.workers.dev') ||
+      streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
+      streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');
+
+    if (isFlixerCdn && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(loadStream);
+    } else {
+      loadStream();
+    }
+
+    return () => {
+      if (streamCleanup) streamCleanup();
+      video.removeEventListener('playing', onPlaying);
+      if (playbackStartTimeoutRef.current) {
+        clearTimeout(playbackStartTimeoutRef.current);
+        playbackStartTimeoutRef.current = null;
+      }
+    };
+  }, [streamUrl]);
 
   // Fetch subtitles when content changes
   useEffect(() => {
