@@ -38,6 +38,7 @@ export class MovieBoxProvider implements Provider {
         request.mediaType,
         request.season,
         request.episode,
+        request.title,
       );
 
       if (!result.success || result.sources.length === 0) {

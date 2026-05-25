@@ -45,11 +45,8 @@ export class MiruroProvider implements Provider {
         };
       }
 
-      // Determine best language: default to sub, use malTitle hints for dub preference
-      const language: 'sub' | 'dub' = 'sub';
-
       // Use malId if available, otherwise try title-based search
-      // For now, malId is used as AniList ID (they're often aligned via MAL→AniList mapping)
+      // malId is used as AniList ID (they're often aligned via MAL→AniList mapping)
       const anilistId = request.malId;
       if (!anilistId) {
         return {
@@ -62,28 +59,51 @@ export class MiruroProvider implements Provider {
         };
       }
 
-      const result = await extractMiruroStreams(
-        anilistId,
-        request.malTitle || request.title || '',
-        request.episode,
-        language,
-      );
+      // Try dub first, then sub — merge both for maximum coverage
+      const title = request.malTitle || request.title || '';
+      let allSources: import('../types').StreamSource[] = [];
+      let allSubtitles: import('../types').SubtitleTrack[] = [];
+      let errors: string[] = [];
 
-      if (!result.success || result.sources.length === 0) {
+      for (const language of ['dub', 'sub'] as const) {
+        try {
+          const result = await extractMiruroStreams(
+            anilistId,
+            title,
+            request.episode,
+            language,
+          );
+          if (result.success && result.sources.length > 0) {
+            // Tag sources with language
+            allSources.push(...result.sources.map(s => ({
+              ...s,
+              language: s.language || language,
+              title: `${s.title || 'Miruro'} [${language.toUpperCase()}]`,
+            })));
+            if (result.subtitles) allSubtitles.push(...result.subtitles);
+          } else if (result.error) {
+            errors.push(`${language}: ${result.error}`);
+          }
+        } catch (err: any) {
+          errors.push(`${language}: ${err.message}`);
+        }
+      }
+
+      if (allSources.length === 0) {
         return {
           success: false,
           sources: [],
           subtitles: [],
           provider: this.name,
-          error: result.error || 'Miruro returned no sources',
+          error: errors.join('; ') || 'Miruro returned no sources',
           timing: Date.now() - start,
         };
       }
 
       return {
         success: true,
-        sources: result.sources,
-        subtitles: result.subtitles || [],
+        sources: allSources,
+        subtitles: allSubtitles,
         provider: this.name,
         timing: Date.now() - start,
       };

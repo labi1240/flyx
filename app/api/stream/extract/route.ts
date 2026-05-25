@@ -737,7 +737,7 @@ async function directExtract(
       }
       case 'moviebox': {
         const { extractMovieBoxStreams } = await import('@/app/lib/services/moviebox-extractor');
-        const result = await extractMovieBoxStreams(request.tmdbId, request.mediaType, request.season, request.episode);
+        const result = await extractMovieBoxStreams(request.tmdbId, request.mediaType, request.season, request.episode, request.title || request.malTitle);
         if (result.success && result.sources.length > 0) {
           return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? false })), provider: 'moviebox' };
         }

@@ -23,17 +23,54 @@ function getWorkerBaseUrl(): string {
 }
 
 /**
+ * Resolve a TMDB ID + title to a MovieBox subjectId via CF Worker.
+ */
+async function resolveMovieBoxId(
+  baseUrl: string,
+  tmdbId: string,
+  title: string,
+  mediaType: 'movie' | 'tv',
+): Promise<string | null> {
+  if (!title) return null;
+  try {
+    const params = new URLSearchParams({ tmdbId, title, type: mediaType });
+    const res = await fetch(`${baseUrl}/moviebox/resolve?${params}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.success && data.subjectId) {
+      console.log(`[MovieBox] Resolved "${title}" → subjectId: ${data.subjectId}`);
+      return data.subjectId;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Extract stream sources from MovieBox for a movie or TV episode.
  * The CF Worker handles session management for the /subject/play endpoint.
+ * When title is provided, the Worker resolves TMDB ID → MovieBox subjectId first.
  */
 export async function extractMovieBoxStreams(
   subjectId: string,
   mediaType: 'movie' | 'tv',
   season?: number,
   episode?: number,
+  title?: string,
 ): Promise<ExtractionResult> {
   const baseUrl = getWorkerBaseUrl();
-  const params = new URLSearchParams({ id: subjectId });
+
+  // Resolve TMDB ID → MovieBox subjectId when title is available
+  let movieboxId = subjectId;
+  if (title) {
+    const resolved = await resolveMovieBoxId(baseUrl, subjectId, title, mediaType);
+    if (resolved) movieboxId = resolved;
+  }
+
+  const params = new URLSearchParams({ id: movieboxId });
   if (mediaType === 'tv' && season !== undefined) params.set('s', season.toString());
   if (mediaType === 'tv' && episode !== undefined) params.set('e', episode.toString());
 

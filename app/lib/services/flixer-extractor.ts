@@ -118,8 +118,13 @@ export async function extractFlixerStreams(
     const extractUrl = `${baseUrl}/flixer/extract-all?${params}`;
     console.log(`[Hexa] Calling CF Worker: ${extractUrl}`);
 
+    // Forward capToken — CF Worker requires it, otherwise API returns 403
+    const fetchHeaders: Record<string, string> = {};
+    if (_capToken) fetchHeaders['x-cap-token'] = _capToken;
+
     // Use cfFetch to route through RPI when on CF Pages
     const res = await cfFetch(extractUrl, {
+      headers: fetchHeaders,
       signal: AbortSignal.timeout(30000),
     });
 
@@ -199,7 +204,11 @@ export async function fetchFlixerSourceByName(
     if (type === 'tv' && season != null) params.set('season', season.toString());
     if (type === 'tv' && episode != null) params.set('episode', episode.toString());
 
+    const fetchHeaders: Record<string, string> = {};
+    if (_capToken) fetchHeaders['x-cap-token'] = _capToken;
+
     const res = await cfFetch(`${baseUrl}/flixer/extract?${params}`, {
+      headers: fetchHeaders,
       signal: AbortSignal.timeout(15000),
     });
 

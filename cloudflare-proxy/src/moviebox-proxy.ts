@@ -146,6 +146,8 @@ export async function handleMovieBoxRequest(
         return await handleTrending(url.searchParams, logger);
       case path === 'detail':
         return await handleDetail(url.searchParams, logger);
+      case path === 'resolve':
+        return await handleResolve(url.searchParams, logger);
       case path === 'play':
         return await handlePlay(url.searchParams, logger);
       case path === 'stream':
@@ -178,6 +180,52 @@ async function handleSearch(params: URLSearchParams, logger: ReturnType<typeof c
     pageSize: params.get('pageSize') || '20',
   }, logger);
   return jsonResponse(data);
+}
+
+/**
+ * Resolve a TMDB ID or title to a MovieBox subjectId.
+ * Searches by title first, then matches by type (movie/tv) and year if available.
+ */
+async function handleResolve(params: URLSearchParams, logger: ReturnType<typeof createLogger>): Promise<Response> {
+  const title = params.get('title');
+  const tmdbId = params.get('tmdbId');
+  const type = params.get('type') || 'movie';
+
+  if (!title && !tmdbId) return jsonResponse({ error: 'Missing title or tmdbId' }, 400);
+
+  const query = title || tmdbId!;
+  logger.info('Resolving MovieBox subjectId', { query, type });
+
+  try {
+    const data = await movieboxApi('/subject/search', {
+      keyword: query,
+      page: '1',
+      pageSize: '10',
+    }, logger);
+
+    const list = data?.list || data?.data?.list || data?.records || [];
+
+    if (!Array.isArray(list) || list.length === 0) {
+      return jsonResponse({ error: 'No results found', subjectId: null }, 404);
+    }
+
+    // Find best match: prefer same type, then first result
+    const match = list.find((item: any) => {
+      const itemType = (item.type || item.mediaType || '').toLowerCase();
+      return itemType === type || (type === 'movie' && itemType.includes('movie')) || (type === 'tv' && itemType.includes('tv'));
+    }) || list[0];
+
+    const subjectId = match.subjectId || match.id || match.subject_id;
+    if (!subjectId) {
+      return jsonResponse({ error: 'No subjectId in results', subjectId: null }, 404);
+    }
+
+    logger.info('Resolved MovieBox subjectId', { query, subjectId, matchTitle: match.title });
+    return jsonResponse({ success: true, subjectId, title: match.title, type: match.type });
+  } catch (err: any) {
+    logger.error('MovieBox resolve failed', err);
+    return jsonResponse({ error: err.message, subjectId: null }, 502);
+  }
 }
 
 async function handleTrending(params: URLSearchParams, logger: ReturnType<typeof createLogger>): Promise<Response> {
