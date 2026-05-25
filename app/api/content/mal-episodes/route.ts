@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMALAnimeEpisodes } from '@/lib/services/mal';
 
-export const runtime = 'edge';
-
 /**
  * GET /api/content/mal-episodes?malId=X&page=Y
  *

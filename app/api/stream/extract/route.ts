@@ -113,7 +113,7 @@ function maybeProxyUrl(source: any, provider: string): string {
 
   try {
     // These providers/CDNs block datacenter IPs (Cloudflare, AWS, etc.)
-    // They MUST go through /animekai route -> RPI residential proxy
+    // They MUST go through /animekai route -> proxying
     const isAnimeKai = provider === 'animekai';
     const isAnimeKaiSrc = isAnimeKaiSource(source);
     const isMegaUpCdn = isMegaUpCdnUrl(source.url);

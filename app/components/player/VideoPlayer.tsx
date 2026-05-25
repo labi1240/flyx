@@ -104,8 +104,8 @@ interface VideoPlayerProps {
  * Apply CF Worker stream proxy to a source URL when needed.
  *
  * Flixer CDN (*.workers.dev) blocks CF Worker IPs (all headers fail with 403).
- * But residential IPs get 200 + ACAO:* from the CDN. So browsers fetch CDN
- * content directly — no proxy needed. Only proxy when requiresSegmentProxy: true.
+ * The browser fetches CDN content directly — no proxy needed.
+ * Only proxy when requiresSegmentProxy: true.
  */
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
@@ -292,19 +292,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const [showCastTips, setShowCastTips] = useState(false); // Cast Tips modal
   const castErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({
-    videasy: true, // Browser-direct via CF Worker — zero-auth, direct HLS, 4K
+    videasy: true, // Primary — browser-direct via CF Worker, zero-auth, direct HLS, 4K
     flixer: true, // Browser-direct via CF Worker — WASM-based, 12 NATO servers
     bingebox: true, // Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)
-    primesrc: false, // Needs Turnstile token + embed CDNs block CF IPs — disabled
-    uflix: false, // Direct fetch from CF Pages IP — unverified, likely blocked
-    hexa: false, // Multi-embed via CF Pages — unverified
-    vidsrc: false, // RPI-dependent — dead without RPI
-    'multi-embed': false, // Multi-embed via CF Pages — unverified
+    primesrc: true, // CF Worker /primesrc/extract — Turnstile handled client-side
+    uflix: true, // 5 embed servers — resolved via CF Worker /vidsrc/extract
+    hexa: true, // Multi-embed aggregator via CF Worker /flixer/extract-all
+    vidsrc: true, // 2embed API via CF Worker /vidsrc/extract
+    'multi-embed': true, // Multi-source embed aggregator
     '1movies': false, // Disabled — complex obfuscation requires headless browser
     animekai: false, // AnimeKai requires RPI for full pipeline — dead without RPI
     hianime: true, // Browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
     miruro: true, // Browser-direct via CF Worker /miruro/* (pipe-encrypted API, MAL→AniList)
-    moviebox: false, // Empty streams from h5-api.aoneroom.com — dead
+    moviebox: true, // CF Worker /moviebox/extract — session-gated h5-api.aoneroom.com
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
@@ -349,6 +349,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Auto-advance timer: if a source doesn't begin playing within 10s, skip to next source
   const playbackStartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const playbackStartedRef = useRef<boolean>(false);
+
+  // Track consecutive segment-level network errors for graceful degradation.
+  // A single bad segment should be skipped, not kill the entire source.
+  // Only after many consecutive failures do we switch to the next source.
+  const consecutiveSegmentErrorsRef = useRef<number>(0);
+  const MAX_CONSECUTIVE_SEGMENT_ERRORS = 8;
   
   // Skip intro/outro refs (to avoid stale closures in event handlers)
   const skipIntroRef = useRef<[number, number] | null>(null);
@@ -641,19 +647,23 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         throw new Error('No Hexa sources available');
       }
 
-      // BINGEBOX: Browser-direct extraction via CF Worker
+      // BINGEBOX: Server-side extraction via Next.js API (bypasses CF Worker IP block)
       if (providerName === 'bingebox') {
-        console.log('[VideoPlayer] BingeBox: browser-direct extraction');
-        const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
-        const sources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
-        if (sources.length > 0) {
-          setSourcesCache(prev => ({ ...prev, bingebox: sources }));
-          if (providerName === provider) {
-            setAvailableSources(sources);
-          }
-          return sources;
+        console.log('[VideoPlayer] BingeBox: server-side extraction');
+        const params = new URLSearchParams({ tmdbId, type: mediaType, provider: 'bingebox' });
+        if (title) params.append('title', title);
+        if (mediaType === 'tv' && season && episode) {
+          params.append('season', season.toString());
+          params.append('episode', episode.toString());
         }
-        throw new Error('No BingeBox sources available');
+        const response = await fetch(`/api/stream/extract?${params}`, { priority: 'high' as RequestPriority, cache: 'no-store' });
+        const data = await response.json();
+        if (data.success && data.sources?.length > 0) {
+          setSourcesCache(prev => ({ ...prev, bingebox: data.sources }));
+          if (providerName === provider) setAvailableSources(data.sources);
+          return data.sources;
+        }
+        throw new Error(data.error || 'No BingeBox sources available');
       }
 
       const params = new URLSearchParams({
@@ -1032,14 +1042,21 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName: 'videasy', data: { success: true, provider: 'videasy' }, sources };
         }
 
-        // BingeBox: browser-direct extraction via CF Worker
+        // BingeBox: server-side extraction via Next.js API (bypasses CF Worker IP block)
         if (providerName === 'bingebox') {
-          console.log(`[VideoPlayer] Trying bingebox (browser-direct)...`);
-          const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
-          const sources = await extractBingeBoxClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
-          if (sources.length === 0) throw new Error('bingebox: no sources');
-          console.log(`[VideoPlayer] ✓ bingebox: ${sources.length} source(s)`);
-          return { providerName: 'bingebox', data: { success: true, provider: 'bingebox' }, sources };
+          console.log(`[VideoPlayer] Trying bingebox (server-side)...`);
+          const bingeboxParams = new URLSearchParams({ tmdbId, type: mediaType, provider: 'bingebox' });
+          if (title) bingeboxParams.append('title', title);
+          if (mediaType === 'tv' && season && episode) {
+            bingeboxParams.append('season', season.toString());
+            bingeboxParams.append('episode', episode.toString());
+          }
+          const res = await fetchWithTimeout(`/api/stream/extract?${bingeboxParams}`, 20000);
+          if (!res || !res.ok) throw new Error(`bingebox: ${res ? res.status : 'timeout'}`);
+          const d = await res.json();
+          if (!d.success || !d.sources?.length) throw new Error('bingebox: no sources');
+          console.log(`[VideoPlayer] ✓ bingebox: ${d.sources.length} source(s)`);
+          return { providerName: 'bingebox', data: d, sources: d.sources };
         }
 
         // HiAnime: browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
@@ -1176,6 +1193,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     // Reset source confirmation flag for new stream
     sourceConfirmedWorkingRef.current = false;
     playbackStartedRef.current = false;
+    consecutiveSegmentErrorsRef.current = 0;
     
     // Clear any previous playback start timeout
     if (playbackStartTimeoutRef.current) {
@@ -1297,7 +1315,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           if (fragSn >= 0 && fragSn < 3) {
             console.log('[HLS] Fragment loaded:', fragSn, 'bytes:', data.payload?.byteLength);
           }
-          
+
+          // Reset consecutive segment error counter on successful load
+          consecutiveSegmentErrorsRef.current = 0;
+
           // Mark current source as confirmed working when first fragment loads (only once)
           if ((fragSn === 0 || fragSn === 1) && !sourceConfirmedWorkingRef.current) {
             sourceConfirmedWorkingRef.current = true;
@@ -1412,7 +1433,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             reason: data.reason,
             frag: data.frag ? { sn: data.frag.sn, url: data.frag.url } : null,
           });
-          
+
           // Log the actual response if available
           if (data.response) {
             logFn('[HLS] Response details:', {
@@ -1420,9 +1441,27 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
               text: data.response.text,
             });
           }
-          
+
           if (data.fatal) {
-            // Shared fallback: save position + mark source down + try next
+            // Determine if this is a segment-level error (single fragment/level)
+            // vs a source-level error (manifest failure).
+            // Segment errors should be skipped gracefully; manifest errors
+            // mean the source is truly dead and we should switch.
+            const isSegmentError =
+              data.details === 'fragLoadError' ||
+              data.details === 'fragLoadTimeOut' ||
+              data.details === 'fragParsingError' ||
+              data.details === 'levelLoadError' ||
+              data.details === 'levelLoadTimeOut' ||
+              data.details === 'bufferStalledError' ||
+              data.details === 'bufferAppendError' ||
+              data.details === 'bufferFullError';
+
+            const isManifestError =
+              data.details === 'manifestLoadError' ||
+              data.details === 'manifestLoadTimeOut';
+
+            // Shared fallback: save position + mark source down + try next source/provider
             const prepareAndFallback = () => {
               setIsLoading(true);
               setError(null);
@@ -1448,14 +1487,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   // Use ref for fresh data — closure captures stale state
                   const currentSources = availableSourcesRef.current;
                   const currentIdx = currentSourceIndex;
-                  
+
                   // Look for next source to try
                   for (let i = currentIdx + 1; i < currentSources.length; i++) {
                     const nextSource = currentSources[i];
-                    
+
                     // Skip null/undefined sources
                     if (!nextSource) continue;
-                    
+
                     // If source has a URL, use it directly
                     if (nextSource.url && nextSource.url !== '') {
                       console.log(`[VideoPlayer] Trying source ${i}: ${nextSource.title} (has URL)`);
@@ -1472,13 +1511,13 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                       }
                       return true;
                     }
-                    
+
                     // Source doesn't have URL - need to fetch it from API
                     if (nextSource.title && (provider === 'uflix' || provider === 'animekai' || provider === 'hianime' || provider === 'flixer')) {
                       console.log(`[VideoPlayer] Fetching source ${i}: ${nextSource.title}...`);
-                      
+
                       const sourceName = nextSource.title.split(' (')[0];
-                      
+
                       try {
                         const params = new URLSearchParams({
                           tmdbId,
@@ -1486,25 +1525,25 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                           provider,
                           source: sourceName,
                         });
-                        
+
                         if (mediaType === 'tv' && season && episode) {
                           params.append('season', season.toString());
                           params.append('episode', episode.toString());
                         }
-                        
+
                         const response = await fetch(`/api/stream/extract?${params}`);
                         const data = await response.json();
-                        
+
                         if (data.sources && data.sources[0]?.url) {
                           console.log(`[VideoPlayer] ✓ ${sourceName} fetched successfully`);
-                          
+
                           setAvailableSources(prev => {
                             const updatedSources = [...prev];
                             updatedSources[i] = { ...updatedSources[i], ...data.sources[0], status: 'working' };
                             setSourcesCache(prevCache => ({ ...prevCache, [provider]: updatedSources }));
                             return updatedSources;
                           });
-                          
+
                           setCurrentSourceIndex(i);
                           setStreamUrl(applyStreamProxy(data.sources[0].url, provider, data.sources[0].requiresSegmentProxy));
                           return true;
@@ -1522,11 +1561,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                       }
                     }
                   }
-                  
+
                   // No more sources in current provider, try other providers
-                  // Order: vidsrc → flixer → 1movies → uflix
                   console.log(`[VideoPlayer] All ${provider} sources exhausted, trying other providers...`);
-                  
+
                   const fallbackProviders: string[] = [];
                   // For anime providers, try the other anime providers first
                   if ((provider === 'animekai' || provider === 'hianime' || provider === 'miruro') && isAnimeContent) {
@@ -1547,10 +1585,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
                   for (const fallbackProvider of fallbackProviders) {
                     if (triedProvidersRef.current.has(fallbackProvider)) continue;
-                    
+
                     console.log(`[VideoPlayer] Trying fallback: ${fallbackProvider}`);
                     triedProvidersRef.current.add(fallbackProvider);
-                    
+
                     const result = await fetchFromProvider(fallbackProvider);
                     if (result && result.sources.length > 0 && result.sources[0].url) {
                       console.log(`[VideoPlayer] ✓ ${fallbackProvider} works!`);
@@ -1572,7 +1610,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                       return true;
                     }
                   }
-                  
+
               return false;
             };
 
@@ -1587,19 +1625,46 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
               });
             };
 
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error('[HLS] Fatal network error, trying next source...', data);
-                handleFatalWithFallback('All sources failed');
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.error('[HLS] Fatal media error, attempting recovery...', data);
-                hls.recoverMediaError();
-                break;
-              default:
-                console.error('[HLS] Fatal error (other), trying next source...', data.type, data.details);
-                handleFatalWithFallback('Fatal error loading video');
-                break;
+            // ── GRACEFUL SEGMENT SKIP ───────────────────────────────
+            // Single unreachable segments should be skipped, not kill the
+            // entire movie. Only escalate after many consecutive failures,
+            // or immediately for manifest-level errors.
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              if (isManifestError) {
+                // Manifest unreachable → source is dead, switch immediately
+                console.error('[HLS] Fatal manifest error — switching source:', data.details);
+                handleFatalWithFallback('Source manifest unavailable');
+              } else if (isSegmentError) {
+                // Fragment or level load failed — skip the bad segment and resume
+                consecutiveSegmentErrorsRef.current++;
+                console.warn(
+                  `[HLS] Segment error (${consecutiveSegmentErrorsRef.current}/${MAX_CONSECUTIVE_SEGMENT_ERRORS}):`,
+                  data.details,
+                  data.frag ? `sn=${data.frag.sn}` : ''
+                );
+
+                if (consecutiveSegmentErrorsRef.current >= MAX_CONSECUTIVE_SEGMENT_ERRORS) {
+                  // Too many consecutive failures — source is likely dead
+                  console.error('[HLS] Too many consecutive segment errors — switching source');
+                  consecutiveSegmentErrorsRef.current = 0;
+                  handleFatalWithFallback('Too many segment failures');
+                } else {
+                  // Skip the bad segment and continue
+                  hls.startLoad();
+                }
+              } else {
+                // Other network error (e.g. keyLoadError, decryptError)
+                console.error('[HLS] Fatal network error:', data.details);
+                handleFatalWithFallback('Network error loading video');
+              }
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              // Decoding/media errors — try swapping codecs first
+              console.error('[HLS] Fatal media error, attempting recovery:', data.details);
+              hls.recoverMediaError();
+            } else {
+              // Unknown fatal error type
+              console.error('[HLS] Fatal error (other):', data.type, data.details);
+              handleFatalWithFallback('Fatal error loading video');
             }
           }
         });

@@ -4,8 +4,6 @@
 
 export interface Env {
   API_KEY?: string;
-  RPI_PROXY_URL?: string;
-  RPI_PROXY_KEY?: string;
   LOG_LEVEL?: string;
   TMDB_API_KEY?: string;
   HETZNER_PROXY_URL?: string;

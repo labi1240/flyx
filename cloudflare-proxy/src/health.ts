@@ -67,7 +67,7 @@ export function buildRootResponse(env: Env, logLevel: LogLevel): Response {
       },
       tv: {
         path: '/tv/',
-        description: 'DLHD live TV proxy (direct/RPI fallback)',
+        description: 'DLHD live TV proxy',
         usage: '/tv/?channel=<id>',
         subRoutes: {
           key: '/tv/key?url=<encoded_url>',
@@ -98,12 +98,9 @@ export function buildRootResponse(env: Env, logLevel: LogLevel): Response {
       },
       animekai: {
         path: '/animekai/',
-        description: 'AnimeKai stream proxy via RPI residential IP (MegaUp CDN)',
+        description: 'AnimeKai stream proxy (MegaUp CDN)',
         usage: '/animekai?url=<encoded_url>',
         subRoutes: { health: '/animekai/health' },
-        config: {
-          rpiProxy: !!(env.RPI_PROXY_URL && env.RPI_PROXY_KEY) ? 'configured' : 'not configured',
-        },
       },
       flixer: {
         path: '/flixer/',

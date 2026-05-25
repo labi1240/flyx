@@ -63,6 +63,8 @@ export function useHlsPlayer(options: UseHlsPlayerOptions): UseHlsPlayerReturn {
 
   const hlsRef = useRef<Hls | null>(null);
   const isHlsSupported = typeof window !== 'undefined' ? Hls.isSupported() : false;
+  const consecutiveSegmentErrorsRef = useRef(0);
+  const MAX_CONSECUTIVE_SEGMENT_ERRORS = 8;
 
   const hlsConfig = useMemo(() => ({
     enableWorker: true,
@@ -99,6 +101,7 @@ export function useHlsPlayer(options: UseHlsPlayerOptions): UseHlsPlayerReturn {
 
     const video = videoRef.current;
     sourceConfirmedWorkingRef.current = false;
+    consecutiveSegmentErrorsRef.current = 0;
 
     const isHlsUrl = streamUrl.includes('.m3u8') ||
       streamUrl.includes('stream-proxy') ||
@@ -192,6 +195,9 @@ export function useHlsPlayer(options: UseHlsPlayerOptions): UseHlsPlayerReturn {
         const fragSn = typeof data.frag?.sn === 'number' ? data.frag.sn : -1;
         onFragmentLoaded?.(fragSn);
 
+        // Reset segment error counter on successful load
+        consecutiveSegmentErrorsRef.current = 0;
+
         if ((fragSn === 0 || fragSn === 1) && !sourceConfirmedWorkingRef.current) {
           sourceConfirmedWorkingRef.current = true;
           onSourceConfirmed?.(options.currentSourceIndex);
@@ -206,9 +212,37 @@ export function useHlsPlayer(options: UseHlsPlayerOptions): UseHlsPlayerReturn {
         });
 
         if (data.fatal) {
+          const isSegmentError =
+            data.details === 'fragLoadError' ||
+            data.details === 'fragLoadTimeOut' ||
+            data.details === 'fragParsingError' ||
+            data.details === 'levelLoadError' ||
+            data.details === 'levelLoadTimeOut' ||
+            data.details === 'bufferStalledError' ||
+            data.details === 'bufferAppendError';
+
+          const isManifestError =
+            data.details === 'manifestLoadError' ||
+            data.details === 'manifestLoadTimeOut';
+
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              onError?.(true, 'network', data.details);
+              if (isManifestError) {
+                // Manifest unreachable — source is dead, escalate immediately
+                onError?.(true, 'network', data.details);
+              } else if (isSegmentError) {
+                // Fragment/segment error — skip the bad segment,
+                // only escalate after many consecutive failures
+                consecutiveSegmentErrorsRef.current++;
+                if (consecutiveSegmentErrorsRef.current >= MAX_CONSECUTIVE_SEGMENT_ERRORS) {
+                  consecutiveSegmentErrorsRef.current = 0;
+                  onError?.(true, 'network', data.details);
+                } else {
+                  hls.startLoad();
+                }
+              } else {
+                onError?.(true, 'network', data.details);
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               hls.recoverMediaError();

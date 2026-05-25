@@ -5,8 +5,8 @@
  * Set NEXT_PUBLIC_CF_STREAM_PROXY_URL and NEXT_PUBLIC_CF_TV_PROXY_URL env vars.
  * 
  * Live TV Proxy Options:
- *   - /tv/   - Direct fetch with RPI proxy fallback (faster, but may be blocked)
- *   - /dlhd/ - Oxylabs residential proxy (more reliable, uses residential IPs)
+ *   - /tv/   - Direct fetch via CF Worker (faster, but may be blocked)
+ *   - /dlhd/ - DLHD extractor worker (decrypts segments server-side)
  * 
  * Set NEXT_PUBLIC_USE_DLHD_PROXY=true to use Oxylabs residential proxies for Live TV.
  * 
@@ -174,39 +174,20 @@ export function isCloudflareProxyConfigured(): {
 }
 
 // IPTV Stalker Portal proxy configuration
-// Uses RPi residential proxy to bypass datacenter IP blocking
-export function getIPTVProxyUrl(): string | null {
-  // Client-side: use public env var
-  if (typeof window !== 'undefined') {
-    return process.env.NEXT_PUBLIC_RPI_PROXY_URL || null;
-  }
-  // Server-side: use server env var
-  return process.env.RPI_PROXY_URL || null;
-}
-
-export function getIPTVProxyKey(): string | null {
-  // Client-side: use public env var
-  if (typeof window !== 'undefined') {
-    return process.env.NEXT_PUBLIC_RPI_PROXY_KEY || null;
-  }
-  // Server-side: use server env var
-  return process.env.RPI_PROXY_KEY || null;
-}
-
-// Get IPTV stream URL through RPi proxy
+// Routes through CF Worker /iptv/* to bypass datacenter IP blocking
 export function getIPTVStreamProxyUrl(
   streamUrl: string,
   mac?: string,
   token?: string
-): string | null {
-  const proxyUrl = getIPTVProxyUrl();
-  if (!proxyUrl) return null;
-  
+): string {
+  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
+                     process.env.CF_STREAM_PROXY_URL ||
+                     'https://media-proxy.vynx-3b3.workers.dev/stream';
+  const baseUrl = cfProxyUrl.replace(/\/stream\/?$/, '');
   const params = new URLSearchParams({ url: streamUrl });
   if (mac) params.set('mac', mac);
   if (token) params.set('token', token);
-  
-  return `${proxyUrl}/iptv/stream?${params.toString()}`;
+  return `${baseUrl}/iptv/stream?${params.toString()}`;
 }
 
 // ============================================================================
@@ -215,9 +196,9 @@ export function getIPTVStreamProxyUrl(
 // AnimeKai uses MegaUp CDN which blocks:
 //   1. Datacenter IPs (Cloudflare, AWS, etc.)
 //   2. Requests with Origin header
-// 
-// The /animekai route on Cloudflare Worker forwards to RPI residential proxy
-// which fetches without Origin/Referer headers from a residential IP.
+//
+// The /animekai route on Cloudflare Worker handles CDN fetching with
+// correct headers to bypass anti-bot protections.
 // ============================================================================
 
 /**
@@ -230,7 +211,7 @@ export function isAnimeKaiProxyConfigured(): boolean {
 
 /**
  * Get AnimeKai stream proxy URL
- * Routes through Cloudflare Worker -> RPI Proxy -> MegaUp CDN
+ * Routes through Cloudflare Worker -> MegaUp CDN
  * In Docker mode, routes through local Bun proxy
  * 
  * @param url - The CDN stream URL (m3u8 or segment)
@@ -244,7 +225,7 @@ export function getAnimeKaiProxyUrl(url: string, referer?: string): string {
                      process.env.CF_STREAM_PROXY_URL || 
                      'https://media-proxy.vynx-3b3.workers.dev/stream';
   
-  // Use /animekai route which forwards to RPI residential proxy
+  // Use /animekai route which handles CDN fetching with correct headers
   // Strip /stream suffix if present (the base URL might include it)
   const baseUrl = cfProxyUrl.replace(/\/stream\/?$/, '');
   
@@ -256,13 +237,13 @@ export function getAnimeKaiProxyUrl(url: string, referer?: string): string {
 }
 
 /**
- * Check if a URL is from AnimeKai CDN (requires RPI residential proxy)
- * 
+ * Check if a URL is from AnimeKai CDN
+ *
  * AnimeKai uses multiple CDN domains that ALL block:
  *   1. Datacenter IPs (Cloudflare, AWS, etc.)
  *   2. Requests with Origin header
- * 
- * ALL these domains need to go through the /animekai route -> RPI proxy
+ *
+ * ALL these domains need to go through the /animekai route for proxying.
  */
 export function isMegaUpCdnUrl(url: string): boolean {
   // MegaUp CDN domains
@@ -303,13 +284,13 @@ export function isMegaUpCdnUrl(url: string): boolean {
 }
 
 /**
- * Check if a URL is from 1movies CDN (requires RPI residential proxy)
- * 
+ * Check if a URL is from 1movies CDN
+ *
  * 1movies uses Cloudflare Workers CDN domains that block:
  *   1. Datacenter IPs (Cloudflare, AWS, etc.)
  *   2. Requests from other Cloudflare Workers
- * 
- * These domains need to go through the /animekai route -> RPI proxy
+ *
+ * These domains need to go through the /animekai route for proxying.
  */
 export function is1moviesCdnUrl(url: string): boolean {
   // 1movies CDN domains - Cloudflare Workers that block datacenter IPs
@@ -329,7 +310,7 @@ export function is1moviesCdnUrl(url: string): boolean {
 }
 
 /**
- * Check if a source is from AnimeKai provider (all AnimeKai sources need RPI proxy)
+ * Check if a source is from AnimeKai provider
  */
 export function isAnimeKaiSource(source: { title?: string; referer?: string }): boolean {
   if (source.title?.toLowerCase().includes('animekai')) return true;
@@ -391,8 +372,7 @@ export function getFlixerExtractUrl(
 
 /**
  * Get Flixer batch extraction URL — fetches ALL servers in one request.
- * The CF Worker fans out to all 12 servers in parallel internally,
- * avoiding 12 separate round-trips through RPI.
+ * The CF Worker fans out to all 12 servers in parallel internally.
  */
 export function getFlixerExtractAllUrl(
   tmdbId: string,
@@ -456,8 +436,8 @@ export function isFlixerCdnUrl(url: string): boolean {
 /**
  * Get Flixer stream proxy URL — dedicated /flixer/stream route.
  * Flixer CDN (p.XXXXX.workers.dev) blocks CF Worker IPs, so this route
- * handles RPI proxying with the correct Referer for Flixer CDN domains.
- * 
+ * handles proxying with the correct Referer for Flixer CDN domains.
+ *
  * DO NOT use /animekai for Flixer streams — each provider has its own route.
  */
 export function getFlixerStreamProxyUrl(url: string): string {
@@ -471,7 +451,7 @@ export function getFlixerStreamProxyUrl(url: string): string {
 
 /**
  * Get HiAnime/MegaCloud stream proxy URL — dedicated /hianime/stream route.
- * MegaCloud CDN uses TLS fingerprinting; this route handles RPI proxying
+ * MegaCloud CDN uses TLS fingerprinting; this route handles proxying
  * with megacloud.blog Referer/Origin.
  */
 export function getHiAnimeStreamProxyUrl(url: string): string {
@@ -485,7 +465,7 @@ export function getHiAnimeStreamProxyUrl(url: string): string {
 
 /**
  * Get VidLink stream proxy URL — routes through CF Worker /animekai route.
- * The CF Worker detects VidLink CDN domains and forwards to RPI's dedicated
+ * The CF Worker detects VidLink CDN domains and forwards to the dedicated
  * /vidlink/stream endpoint which has the correct headers for vodvidl.site.
  */
 export function getVidLinkStreamProxyUrl(url: string): string {
@@ -498,9 +478,8 @@ export function getVidLinkStreamProxyUrl(url: string): string {
 // ============================================================================
 
 /**
- * Get VidSrc/2embed stream proxy URL — routes through CF Worker /animekai route.
- * The CF Worker detects VidSrc CDN domains and forwards to RPI's dedicated
- * /vidsrc/stream endpoint.
+ * Get VidSrc/2embed stream proxy URL — routes through CF Worker /vidsrc/stream.
+ * The CF Worker detects VidSrc CDN domains and proxies with correct headers.
  */
 export function getVidSrcStreamProxyUrl(url: string, referer?: string): string {
   const baseUrl = getFlixerProxyBaseUrl();
@@ -516,7 +495,7 @@ export function getVidSrcStreamProxyUrl(url: string, referer?: string): string {
 /**
  * Get 1movies stream proxy URL — routes through CF Worker /animekai route.
  * The CF Worker detects 1movies CDN domains (p.XXXXX.workers.dev) and forwards
- * to RPI's dedicated /1movies/stream endpoint.
+ * to the dedicated /1movies/stream endpoint.
  */
 export function get1moviesStreamProxyUrl(url: string): string {
   const baseUrl = getFlixerProxyBaseUrl();
@@ -547,7 +526,7 @@ export function isVIPRowProxyConfigured(): boolean {
 
 /**
  * Get VIPRow stream URL via Cloudflare Worker
- * The CF Worker forwards extraction to RPI proxy (boanki.net blocks CF Workers)
+ * The CF Worker handles extraction (boanki.net blocks CF Workers)
  * and returns a proxied m3u8 that can be played directly in hls.js
  * 
  * @param eventUrl - VIPRow event URL (e.g., /nba/event-online-stream)

@@ -1,9 +1,9 @@
 /**
  * BingeBox Extractor — Movies/TV/Anime Streaming
  *
- * bingebox.to has 15 direct HLS sources accessible via /api/stream.
- * Requires Origin: https://bingebox.to header.
- * Streams come from api.dlproxy.com.
+ * Calls bingebox.to/api/stream directly from the Next.js server.
+ * bingebox.to blocks CF Worker datacenter IPs but allows the
+ * wider IP ranges used by CF Pages / Vercel serverless functions.
  */
 
 import type { StreamSource } from '../providers/types';
@@ -13,6 +13,9 @@ interface ExtractionResult {
   sources: StreamSource[];
   error?: string;
 }
+
+const BINGEBOX_BASE = 'https://bingebox.to';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 
 function getWorkerBaseUrl(): string {
   const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
@@ -35,41 +38,54 @@ export async function extractBingeBoxStreams(
   season?: number,
   episode?: number,
 ): Promise<ExtractionResult> {
-  const baseUrl = getWorkerBaseUrl();
-
   // Try sources in priority order
   for (const source of SOURCE_PRIORITY) {
     try {
-      const params = new URLSearchParams({
+      const apiParams = new URLSearchParams({
         tmdbId,
-        type: mediaType,
+        mediaType: mediaType === 'tv' ? 'show' : 'movie',
         title,
         year: year || '',
         source,
       });
       if (mediaType === 'tv' && season !== undefined && episode !== undefined) {
-        params.set('s', season.toString());
-        params.set('e', episode.toString());
+        apiParams.set('season', season.toString());
+        apiParams.set('episode', episode.toString());
       }
 
-      const url = `${baseUrl}/bingebox/extract?${params.toString()}`;
-      console.log(`[BingeBox] Trying ${source}: ${url}`);
+      const apiUrl = `${BINGEBOX_BASE}/api/stream?${apiParams.toString()}`;
+      console.log(`[BingeBox] Trying ${source}: ${apiUrl}`);
 
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      const res = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': UA,
+          'Referer': `${BINGEBOX_BASE}/`,
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
 
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.warn(`[BingeBox] ${source}: HTTP ${res.status}`);
+        continue;
+      }
 
-      const data = await res.json();
-      if (!data.success) continue;
+      const data = await res.json() as {
+        success?: boolean;
+        data?: { type?: string; url?: string; playlist?: string; qualities?: Record<string, { url: string }> };
+      };
 
-      const streamUrl = data.url || data.playlist;
+      if (!data.success || !data.data) continue;
+
+      const streamUrl = data.data.url || data.data.playlist;
       if (!streamUrl) continue;
 
       const sources: StreamSource[] = [];
+      const workerBase = getWorkerBaseUrl();
 
-      if (data.type === 'hls' || streamUrl.includes('.m3u8')) {
+      if (data.data.type === 'hls' || streamUrl.includes('.m3u8')) {
         sources.push({
-          url: `${baseUrl}/bingebox/stream?url=${encodeURIComponent(streamUrl)}`,
+          url: `${workerBase}/bingebox/stream?url=${encodeURIComponent(streamUrl)}`,
           quality: 'auto',
           type: 'hls',
           title: `BingeBox (${source})`,
@@ -77,11 +93,11 @@ export async function extractBingeBoxStreams(
           language: 'en',
           requiresSegmentProxy: true,
         });
-      } else if (data.qualities) {
-        for (const [quality, info] of Object.entries(data.qualities) as [string, { url: string }][]) {
+      } else if (data.data.qualities) {
+        for (const [quality, info] of Object.entries(data.data.qualities)) {
           if (info.url) {
             sources.push({
-              url: `${baseUrl}/bingebox/stream?url=${encodeURIComponent(info.url)}`,
+              url: `${workerBase}/bingebox/stream?url=${encodeURIComponent(info.url)}`,
               quality,
               type: 'mp4',
               title: `BingeBox ${source} (${quality})`,
@@ -91,9 +107,9 @@ export async function extractBingeBoxStreams(
             });
           }
         }
-      } else if (streamUrl) {
+      } else {
         sources.push({
-          url: `${baseUrl}/bingebox/stream?url=${encodeURIComponent(streamUrl)}`,
+          url: `${workerBase}/bingebox/stream?url=${encodeURIComponent(streamUrl)}`,
           quality: 'auto',
           type: streamUrl.includes('.mp4') ? 'mp4' : 'hls',
           title: `BingeBox (${source})`,

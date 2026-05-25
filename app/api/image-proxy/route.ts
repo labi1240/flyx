@@ -12,8 +12,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 // Allowed image source domains
 const ALLOWED_DOMAINS = [
   'image.tmdb.org',

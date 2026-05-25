@@ -13,8 +13,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 const ITEMS_PER_PAGE = 12;
 
 function getBaseUrl(request: NextRequest): string {

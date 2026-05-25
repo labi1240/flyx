@@ -182,7 +182,7 @@ export function buildRouteTable(): RouteEntry[] {
       prefix: '/animekai',
       handler: async (request, env, _ctx, logger) => {
         incrementMetric('animekaiRequests');
-        logger.info('Routing to AnimeKai proxy (RPI)', { path: new URL(request.url).pathname });
+        logger.info('Routing to AnimeKai proxy', { path: new URL(request.url).pathname });
         return await handleAnimeKaiRequest(request, env);
       },
     },
@@ -394,6 +394,55 @@ export function buildRouteTable(): RouteEntry[] {
         incrementMetric('decodeRequests');
         logger.info('Routing to decoder sandbox');
         return await decoderSandbox.fetch(request, env);
+      },
+    },
+
+    // Recon fetch proxy — routes requests through CF IPs to bypass anti-DDoS
+    {
+      prefix: '/recon/fetch',
+      handler: async (request, _env, _ctx, logger) => {
+        const url = new URL(request.url);
+        const targetUrl = url.searchParams.get('url');
+        if (!targetUrl) {
+          return new Response(JSON.stringify({ error: 'url param required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        try {
+          const decoded = decodeURIComponent(targetUrl);
+          const targetHost = new URL(decoded).hostname;
+
+          // Restrict to known recon targets
+          const allowed = ['195.128.25.19', '195.128.27.233', '213.21.239.30', '176.97.122.56',
+            'cdn-live-tv.ru', 'cdn-live-tv.cfd', 'cdn-live.tv', 'cdn-live.is', 'cdnlivetv.tv',
+            'dlhd.pk', 'daddylive.pk', 'dlstreams.com', 'dlhd.sx',
+            'localhost', '127.0.0.1'];
+          if (!allowed.some(h => targetHost.includes(h) || h.includes(targetHost))) {
+            return new Response(JSON.stringify({ error: 'target not allowed', host: targetHost }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+          }
+
+          const method = url.searchParams.get('method') || 'GET';
+          const hdrsStr = url.searchParams.get('headers');
+          const body = url.searchParams.get('body');
+          const fetchHeaders = hdrsStr ? JSON.parse(hdrsStr) : {};
+
+          logger.info('Recon fetch', { method, url: decoded.substring(0, 80) });
+
+          const fetchOpts: RequestInit = { method, headers: fetchHeaders };
+          if (body && method !== 'GET') fetchOpts.body = body;
+
+          const resp = await fetch(decoded, fetchOpts);
+          const respBody = await resp.text();
+
+          return new Response(JSON.stringify({
+            status: resp.status,
+            headers: Object.fromEntries(resp.headers.entries()),
+            body: respBody.substring(0, 50000),
+          }), {
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
       },
     },
   ];

@@ -10,7 +10,7 @@ This project includes authorized security testing of streaming infrastructure as
 
 ### DLHD / DaddyLive (reborn infrastructure)
 - Domains: dlhd.pk, dlstreams.com, dlhd.sx, daddylive.pk, daddylive.pk
-- IP: 213.21.239.30 (stream), 176.97.122.56 (mirror page)
+- IP: 213.21.239.30 (stream), 176.97.122.56 (mirror page), 195.128.27.233 (Flussonic admin panel)
 
 ### Priority Movie/TV Targets (FMHY-sourced, ad-supported)
 - MovieBox: themoviebox.org, movieboxonline.net, 123movie.app

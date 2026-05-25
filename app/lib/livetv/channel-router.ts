@@ -269,6 +269,7 @@ export class ChannelRouter {
     
     const byProvider: Record<LiveTVSourceType, number> = {
       dlhd: 0,
+      ntv: 0,
       cdnlive: 0,
       ppv: 0,
       ufreetv: 0,

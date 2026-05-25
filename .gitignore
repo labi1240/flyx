@@ -56,6 +56,9 @@ results-2025-12-09T02-53-04.json
 results-2025-12-09T03-48-59.json
 working-2025-12-09T03-48-59.json
 
+# Development/reverse-engineering scripts (not for public repo)
+scripts/
+
 # Debug and temp files
 debug-*.html
 debug-*.js

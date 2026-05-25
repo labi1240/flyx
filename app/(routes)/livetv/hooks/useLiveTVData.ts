@@ -10,7 +10,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 // ============================================================================
 
 export type Provider = 'dlhd' | 'cdnlive' | 'ppv' | 'ntv' | 'ufreetv' | 'globetv';
-export type ContentType = 'events' | 'channels';
+export type ProviderFilter = Provider | 'all';
+
 
 export interface LiveEvent {
   id: string;
@@ -59,7 +60,7 @@ export interface Category {
 
 export interface ProviderStats {
   dlhd: { events: number; channels: number; live: number };
-  cdnlive: { channels: number };
+  cdnlive: { events: number; channels: number; live: number };
   ppv: { events: number; live: number };
   ntv: { events: number; channels: number; live: number };
   ufreetv: { channels: number };
@@ -151,9 +152,10 @@ function categorizeChannel(channelName: string): string {
 // ============================================================================
 
 export function useLiveTVData() {
-  const [contentType, setContentType] = useState<ContentType>('events');
-  const [selectedProvider, setSelectedProvider] = useState<Provider>('dlhd');
+  const [selectedProvider, setSelectedProvider] = useState<ProviderFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'timeline'>('grid');
   
   // DLHD State
   const [dlhdEvents, setDlhdEvents] = useState<LiveEvent[]>([]);
@@ -161,8 +163,9 @@ export function useLiveTVData() {
   const [dlhdLoading, setDlhdLoading] = useState(true);
   const [dlhdError, setDlhdError] = useState<string | null>(null);
 
-  // CDN Live State - These are TV Channels, NOT events
+  // CDN Live State - Channels + Events (from cinephage API)
   const [cdnChannels, setCdnChannels] = useState<TVChannel[]>([]);
+  const [cdnEvents, setCdnEvents] = useState<LiveEvent[]>([]);
   const [cdnLoading, setCdnLoading] = useState(true);
   const [cdnError, setCdnError] = useState<string | null>(null);
 
@@ -250,46 +253,83 @@ export function useLiveTVData() {
     }
   }, []);
 
-  // CDN Live Fetcher - These are TV CHANNELS, not events!
+  // CDN Live Fetcher — TV channels + sports events from cinephage API
   const fetchCDNLive = useCallback(async () => {
     setCdnLoading(true);
     setCdnError(null);
-    
+
     try {
-      const response = await fetch('/api/livetv/cdn-live-channels');
-      if (!response.ok) {
-        console.warn('[LiveTV] CDN Live returned', response.status);
+      const [channelsRes, eventsRes] = await Promise.allSettled([
+        fetch('/api/livetv/cdn-live-channels').then(r => r.json()),
+        fetch('/api/livetv/cdn-live-events').then(r => r.json()),
+      ]);
+
+      // Parse channels
+      if (channelsRes.status === 'fulfilled') {
+        const data = channelsRes.value;
+        if (!data.error) {
+          const rawChannels = data.channels || [];
+          const onlineChannels = rawChannels.filter((c: any) => c.status === 'online');
+
+          const channels: TVChannel[] = onlineChannels.map((channel: any) => ({
+            id: `cdn-${channel.id || channel.name.toLowerCase().replace(/\s+/g, '-')}`,
+            name: channel.name,
+            category: categorizeChannel(channel.name),
+            country: channel.country || 'us',
+            countryName: channel.country_name,
+            logo: channel.logo,
+            viewers: channel.viewers,
+            source: 'cdnlive' as const,
+            channelId: `${channel.name}|${channel.country}`,
+          }));
+
+          setCdnChannels(channels);
+        }
+      } else {
+        console.warn('[LiveTV] CDN Live channels fetch failed:', channelsRes.reason);
         setCdnChannels([]);
-        return;
-      }
-      const data = await response.json();
-
-      if (data.error) {
-        console.warn('[LiveTV] CDN Live error:', data.error);
-        setCdnChannels([]);
-        return;
       }
 
-      const rawChannels = data.channels || [];
-      const onlineChannels = rawChannels.filter((c: any) => c.status === 'online');
+      // Parse events (from cinephage API)
+      if (eventsRes.status === 'fulfilled') {
+        const eventsData = eventsRes.value;
+        if (!eventsData.error && eventsData.events) {
+          const events: LiveEvent[] = eventsData.events.map((event: any) => ({
+            id: `cdnevent-${event.id}`,
+            title: event.home_team && event.away_team
+              ? `${event.home_team} vs ${event.away_team}`
+              : event.sport,
+            sport: event.sport,
+            league: event.tournament,
+            teams: event.home_team && event.away_team
+              ? { home: event.home_team, away: event.away_team }
+              : undefined,
+            time: formatLocalTime(event.start),
+            isoTime: event.start,
+            isLive: event.status === 'live',
+            source: 'cdnlive' as const,
+            poster: event.home_logo || event.away_logo || undefined,
+            startsAt: event.start ? new Date(event.start).getTime() : undefined,
+            endsAt: event.end ? new Date(event.end).getTime() : undefined,
+            channels: (event.channels || []).map((ch: any) => ({
+              name: ch.name,
+              channelId: ch.stream_url || ch.id,
+              href: ch.stream_url || '',
+            })),
+          }));
 
-      // These are TV CHANNELS - NOT live events!
-      const channels: TVChannel[] = onlineChannels.map((channel: any) => ({
-        id: `cdn-${channel.id || channel.name.toLowerCase().replace(/\s+/g, '-')}`,
-        name: channel.name,
-        category: categorizeChannel(channel.name),
-        country: channel.country || 'us',
-        countryName: channel.country_name,
-        logo: channel.logo,
-        viewers: channel.viewers,
-        source: 'cdnlive' as const,
-        channelId: `${channel.name}|${channel.country}`,
-      }));
-
-      setCdnChannels(channels);
+          setCdnEvents(events);
+        } else {
+          setCdnEvents([]);
+        }
+      } else {
+        console.warn('[LiveTV] CDN Live events fetch failed:', eventsRes.reason);
+        setCdnEvents([]);
+      }
     } catch (error) {
       console.error('[LiveTV] CDN Live fetch error:', error);
       setCdnChannels([]);
+      setCdnEvents([]);
       setCdnError(error instanceof Error ? error.message : 'Failed to load CDN Live');
     } finally {
       setCdnLoading(false);
@@ -518,30 +558,42 @@ export function useLiveTVData() {
     fetchGlobeTV();
   }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV, fetchUFreeTV, fetchGlobeTV]);
 
-  // All Events (DLHD + PPV + NTV)
+  // All Events (DLHD + PPV + NTV + CDN Live)
   const allEvents = useMemo(() => {
-    return [...dlhdEvents, ...ppvEvents, ...ntvEvents];
-  }, [dlhdEvents, ppvEvents, ntvEvents]);
+    return [...dlhdEvents, ...ppvEvents, ...ntvEvents, ...cdnEvents];
+  }, [dlhdEvents, ppvEvents, ntvEvents, cdnEvents]);
 
   // All Channels (DLHD + CDN Live + NTV + uFreeTV + GlobeTV)
   const allChannels = useMemo(() => {
     return [...dlhdChannels, ...cdnChannels, ...ntvChannels, ...ufreetvChannels, ...globetvChannels];
   }, [dlhdChannels, cdnChannels, ntvChannels, ufreetvChannels, globetvChannels]);
 
+  // Provider-specific events
+  const providerEvents = useMemo(() => {
+    switch (selectedProvider) {
+      case 'dlhd': return dlhdEvents;
+      case 'ppv': return ppvEvents;
+      case 'ntv': return ntvEvents;
+      case 'cdnlive': return cdnEvents;
+      default: return allEvents;
+    }
+  }, [selectedProvider, allEvents, dlhdEvents, ppvEvents, ntvEvents, cdnEvents]);
+
+  // Provider-specific channels
+  const providerChannels = useMemo(() => {
+    switch (selectedProvider) {
+      case 'dlhd': return dlhdChannels;
+      case 'cdnlive': return cdnChannels;
+      case 'ntv': return ntvChannels;
+      case 'ufreetv': return ufreetvChannels;
+      case 'globetv': return globetvChannels;
+      default: return allChannels;
+    }
+  }, [selectedProvider, allChannels, dlhdChannels, cdnChannels, ntvChannels, ufreetvChannels, globetvChannels]);
+
   // Filtered Events
   const filteredEvents = useMemo(() => {
-    let events = allEvents;
-
-    // Filter by provider
-    if (selectedProvider === 'ppv') {
-      events = ppvEvents;
-    } else if (selectedProvider === 'dlhd') {
-      events = dlhdEvents;
-    } else if (selectedProvider === 'ntv') {
-      events = ntvEvents;
-    }
-
-    // Filter by search
+    let events = providerEvents;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       events = events.filter(event =>
@@ -552,28 +604,12 @@ export function useLiveTVData() {
         event.teams?.away.toLowerCase().includes(query)
       );
     }
-
     return events;
-  }, [allEvents, ppvEvents, dlhdEvents, ntvEvents, selectedProvider, searchQuery]);
+  }, [providerEvents, searchQuery]);
 
   // Filtered Channels
   const filteredChannels = useMemo(() => {
-    let channels = allChannels;
-
-    // Filter by provider
-    if (selectedProvider === 'cdnlive') {
-      channels = cdnChannels;
-    } else if (selectedProvider === 'dlhd') {
-      channels = dlhdChannels;
-    } else if (selectedProvider === 'ntv') {
-      channels = ntvChannels;
-    } else if (selectedProvider === 'ufreetv') {
-      channels = ufreetvChannels;
-    } else if (selectedProvider === 'globetv') {
-      channels = globetvChannels;
-    }
-
-    // Filter by search
+    let channels = providerChannels;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       channels = channels.filter(channel =>
@@ -583,20 +619,36 @@ export function useLiveTVData() {
         channel.countryName?.toLowerCase().includes(query)
       );
     }
-
+    if (selectedCountry !== 'all') {
+      channels = channels.filter(c => c.country === selectedCountry);
+    }
     return channels;
-  }, [allChannels, cdnChannels, dlhdChannels, ntvChannels, ufreetvChannels, globetvChannels, selectedProvider, searchQuery]);
+  }, [providerChannels, searchQuery, selectedCountry]);
 
-  // Event Categories
-  const eventCategories = useMemo(() => {
+  // Currently live events (for hero strip)
+  const currentlyLive = useMemo(() => {
+    return allEvents.filter(e => e.isLive).sort((a, b) => {
+      if (a.startsAt && b.startsAt) return a.startsAt - b.startsAt;
+      return 0;
+    });
+  }, [allEvents]);
+
+  // Upcoming events sorted by start time
+  const upcoming = useMemo(() => {
+    return allEvents
+      .filter(e => !e.isLive && e.startsAt)
+      .sort((a, b) => (a.startsAt || 0) - (b.startsAt || 0));
+  }, [allEvents]);
+
+  // Unified sport categories (from ALL events, not just filtered)
+  const sportCategories = useMemo(() => {
     const sportMap = new Map<string, number>();
-    filteredEvents.forEach(event => {
+    providerEvents.forEach(event => {
       if (event.sport) {
         const sport = event.sport.toLowerCase();
         sportMap.set(sport, (sportMap.get(sport) || 0) + 1);
       }
     });
-
     return Array.from(sportMap.entries())
       .map(([sport, count]) => ({
         id: sport,
@@ -605,15 +657,14 @@ export function useLiveTVData() {
         count,
       }))
       .sort((a, b) => b.count - a.count);
-  }, [filteredEvents]);
+  }, [providerEvents]);
 
-  // Channel Categories
+  // Channel categories (from filtered channels)
   const channelCategories = useMemo(() => {
     const categoryMap = new Map<string, number>();
-    filteredChannels.forEach(channel => {
+    providerChannels.forEach(channel => {
       categoryMap.set(channel.category, (categoryMap.get(channel.category) || 0) + 1);
     });
-
     return Array.from(categoryMap.entries())
       .map(([category, count]) => ({
         id: category,
@@ -622,7 +673,28 @@ export function useLiveTVData() {
         count,
       }))
       .sort((a, b) => b.count - a.count);
-  }, [filteredChannels]);
+  }, [providerChannels]);
+
+  // Available countries from channels
+  const availableCountries = useMemo(() => {
+    const countryMap = new Map<string, { name: string; count: number }>();
+    providerChannels.forEach(channel => {
+      if (channel.country) {
+        const existing = countryMap.get(channel.country);
+        if (existing) {
+          existing.count++;
+        } else {
+          countryMap.set(channel.country, {
+            name: channel.countryName || channel.country.toUpperCase(),
+            count: 1,
+          });
+        }
+      }
+    });
+    return Array.from(countryMap.entries())
+      .map(([code, info]) => ({ code, ...info }))
+      .sort((a, b) => b.count - a.count);
+  }, [providerChannels]);
 
   // Stats
   const stats: ProviderStats = useMemo(() => ({
@@ -632,7 +704,9 @@ export function useLiveTVData() {
       live: dlhdEvents.filter(e => e.isLive).length,
     },
     cdnlive: {
+      events: cdnEvents.length,
       channels: cdnChannels.length,
+      live: cdnEvents.filter(e => e.isLive).length,
     },
     ppv: {
       events: ppvEvents.length,
@@ -653,33 +727,29 @@ export function useLiveTVData() {
 
   // Loading state
   const loading = useMemo(() => {
-    if (contentType === 'events') {
-      if (selectedProvider === 'ppv') return ppvLoading;
-      if (selectedProvider === 'ntv') return ntvLoading;
-      return dlhdLoading;
+    switch (selectedProvider) {
+      case 'ppv': return ppvLoading;
+      case 'ntv': return ntvLoading;
+      case 'cdnlive': return cdnLoading;
+      case 'ufreetv': return ufreetvLoading;
+      case 'globetv': return globetvLoading;
+      default: return dlhdLoading || ppvLoading || ntvLoading || cdnLoading || ufreetvLoading || globetvLoading;
     }
-    if (selectedProvider === 'cdnlive') return cdnLoading;
-    if (selectedProvider === 'ntv') return ntvLoading;
-    if (selectedProvider === 'ufreetv') return ufreetvLoading;
-    if (selectedProvider === 'globetv') return globetvLoading;
-    return dlhdLoading;
-  }, [contentType, selectedProvider, dlhdLoading, cdnLoading, ppvLoading, ntvLoading, ufreetvLoading, globetvLoading]);
+  }, [selectedProvider, dlhdLoading, cdnLoading, ppvLoading, ntvLoading, ufreetvLoading, globetvLoading]);
 
   // Error state
   const error = useMemo(() => {
-    if (contentType === 'events') {
-      if (selectedProvider === 'ppv') return ppvError;
-      if (selectedProvider === 'ntv') return ntvError;
-      return dlhdError;
+    switch (selectedProvider) {
+      case 'ppv': return ppvError;
+      case 'ntv': return ntvError;
+      case 'cdnlive': return cdnError;
+      case 'ufreetv': return null;
+      case 'globetv': return null;
+      default: return dlhdError;
     }
-    if (selectedProvider === 'cdnlive') return cdnError;
-    if (selectedProvider === 'ntv') return ntvError;
-    if (selectedProvider === 'ufreetv') return null;
-    if (selectedProvider === 'globetv') return null;
-    return dlhdError;
-  }, [contentType, selectedProvider, dlhdError, cdnError, ppvError, ntvError]);
+  }, [selectedProvider, dlhdError, cdnError, ppvError, ntvError]);
 
-  // Refresh
+  // Refresh all
   const refresh = useCallback(() => {
     fetchDLHD();
     fetchCDNLive();
@@ -689,32 +759,60 @@ export function useLiveTVData() {
     fetchGlobeTV();
   }, [fetchDLHD, fetchCDNLive, fetchPPV, fetchNTV, fetchUFreeTV, fetchGlobeTV]);
 
+  // Total counts
+  const totalLive = stats.dlhd.live + stats.ppv.live + stats.ntv.live + stats.cdnlive.live;
+  const totalEvents = allEvents.length;
+  const totalChannels = allChannels.length;
+
   return {
-    // Content type toggle
-    contentType,
-    setContentType,
-    
     // Provider selection
     selectedProvider,
     setSelectedProvider,
-    
+
     // Data
     events: filteredEvents,
     channels: filteredChannels,
-    eventCategories,
+    allEvents,
+    allChannels,
+    currentlyLive,
+    upcoming,
+    sportCategories,
     channelCategories,
-    
+
+    // Country filter
+    selectedCountry,
+    setSelectedCountry,
+    availableCountries,
+
+    // View mode
+    viewMode,
+    setViewMode,
+
     // State
     loading,
     error,
-    
+
     // Search
     searchQuery,
     setSearchQuery,
-    
+
     // Stats
     stats,
-    
+    totalLive,
+    totalEvents,
+    totalChannels,
+
+    // Provider-specific data (for granular access)
+    dlhdEvents,
+    dlhdChannels,
+    ppvEvents,
+    ntvEvents,
+    ntvChannels,
+    cdnEvents,
+    cdnChannels,
+    ufreetvChannels,
+    globetvChannels,
+
     // Actions
     refresh,
   };

@@ -66,6 +66,11 @@ const ALLOWED_ORIGINS = [
 const PLAYER_DOMAIN = 'www.ksohls.ru';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
+// Regions where DLHD CDN blocks datacenter IPs — these MUST route through RPI residential proxy.
+// Netherlands (NL) confirmed blocking daddylive.pk as of May 2026.
+// Expand this list as users report blocked regions.
+const BLOCKED_REGIONS = new Set(['NL', 'DE', 'FR', 'GB', 'AU', 'BE', 'CH', 'AT', 'SE', 'NO', 'DK', 'FI']);
+
 
 // UPDATED March 30, 2026: Full server list from live scan. x4 is NEW.
 const ALL_SERVER_KEYS = [
@@ -1245,12 +1250,19 @@ export default {
 
     const url = new URL(request.url);
     const path = url.pathname;
-    
-    logger.info('TV Proxy request', { 
-      path, 
+
+    // Geo-detection: check if client is in a region where DLHD blocks datacenter IPs.
+    // When forceRPI is true, ALL upstream requests route through residential proxy
+    // instead of trying direct CF fetches that would fail.
+    const clientCountry = (request as any).cf?.country || '';
+    const forceRPI = BLOCKED_REGIONS.has(clientCountry.toUpperCase());
+    logger.info('Region check', { clientCountry, forceRPI });
+
+    logger.info('TV Proxy request', {
+      path,
       search: url.search,
       channel: url.searchParams.get('channel'),
-      fullUrl: request.url 
+      fullUrl: request.url
     });
 
     if (request.method === 'OPTIONS') {
@@ -1277,7 +1289,20 @@ export default {
 
     try {
       if (path === '/health' || path === '/' && !url.searchParams.has('channel')) {
-        return jsonResponse({ status: 'healthy', domain: CDN_DOMAIN, method: 'pow-auth' }, 200, origin);
+        const health = {
+          status: 'healthy',
+          domain: CDN_DOMAIN,
+          m3u8Server: M3U8_SERVER,
+          playerDomain: PLAYER_DOMAIN,
+          geo: {
+            clientCountry,
+            forceRPI,
+            blockedRegions: Array.from(BLOCKED_REGIONS),
+          },
+          rpiConfigured: !!(env.RPI_PROXY_URL && env.RPI_PROXY_KEY),
+          timestamp: Date.now(),
+        };
+        return jsonResponse(health, 200, origin);
       }
       if (path === '/whitelist/token') return handleWhitelistToken(url, logger, origin, request);
       if (path === '/whitelist/verify') return handleWhitelistVerify(url, logger, origin, request, env);
@@ -1309,7 +1334,7 @@ export default {
           receivedChannel: channel 
         }, 400, origin);
       }
-      return handlePlaylistRequest(channel, proxyBase, logger, origin, env, request, skipBackends);
+      return handlePlaylistRequest(channel, proxyBase, logger, origin, env, request, skipBackends, forceRPI);
     } catch (error) {
       logger.error('TV Proxy error', error as Error);
       return jsonResponse({ error: 'Proxy error', details: (error as Error).message }, 500, origin);
@@ -1471,33 +1496,39 @@ async function tryDvalnaServer(
   jwt: string | null,
   env: Env | undefined,
   logger: any,
-  timeoutMs: number = 8000
+  timeoutMs: number = 8000,
+  forceRPI: boolean = false
 ): Promise<{ content: string; m3u8Url: string } | null> {
   const m3u8Url = constructM3U8Url(serverKey, channelKey);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   try {
-    // Try direct fetch first (fast, ~1s) — M3U8 doesn't need residential IP
-    // Only fall back to RPI if direct fails (e.g., DLHD blocks CF IPs)
     let m3u8Res: Response | null = null;
-    try {
-      m3u8Res = await fetch(m3u8Url, {
-        headers: {
-          'User-Agent': USER_AGENT,
-          'Origin': `https://${PLAYER_DOMAIN}`,
-          'Referer': `https://${PLAYER_DOMAIN}/`,
-        },
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!m3u8Res.ok || !(await m3u8Res.clone().text()).includes('#EXTM3U')) {
-        m3u8Res = null; // fall through to RPI
+
+    // When forceRPI is true (blocked region), skip direct fetch entirely —
+    // datacenter IPs are known to be blocked, so save time and go straight to RPI.
+    if (!forceRPI) {
+      try {
+        m3u8Res = await fetch(m3u8Url, {
+          headers: {
+            'User-Agent': USER_AGENT,
+            'Origin': `https://${PLAYER_DOMAIN}`,
+            'Referer': `https://${PLAYER_DOMAIN}/`,
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!m3u8Res.ok || !(await m3u8Res.clone().text()).includes('#EXTM3U')) {
+          m3u8Res = null; // fall through to RPI
+        }
+      } catch {
+        m3u8Res = null;
       }
-    } catch {
-      m3u8Res = null;
+    } else {
+      logger.info('dvalna: skipping direct fetch (region blocked), using RPI proxy');
     }
 
-    // Fallback: RPI proxy
+    // Fallback (or primary in blocked regions): RPI proxy
     if (!m3u8Res) {
       const rpiUrl = env?.RPI_PROXY_URL && env?.RPI_PROXY_KEY
         ? `${env.RPI_PROXY_URL}/dlhd/stream?url=${encodeURIComponent(m3u8Url)}&key=${env.RPI_PROXY_KEY}&referer=${encodeURIComponent(`https://${PLAYER_DOMAIN}/`)}`
@@ -1506,9 +1537,10 @@ async function tryDvalnaServer(
         logger.warn('RPI proxy not configured for dvalna');
         return null;
       }
+      logger.info('dvalna: routing through RPI', { serverKey, channelKey });
       m3u8Res = await fetch(rpiUrl, { signal: controller.signal });
     }
-    
+
     clearTimeout(timeout);
     
     if (!m3u8Res.ok) {
@@ -1553,7 +1585,8 @@ async function tryDvalnaBackend(
   logger: any,
   origin: string | null,
   env?: Env,
-  errors?: string[]
+  errors?: string[],
+  forceRPI: boolean = false
 ): Promise<Response | null> {
   // JWT is optional now - M3U8 works without it through RPI proxy
   const jwt = await jwtPromise;
@@ -1595,7 +1628,7 @@ async function tryDvalnaBackend(
     
     for (const server of serversToTry) {
       // Try the server
-      const result = await tryDvalnaServer(server, channelKey, jwt, env, logger, 8000);
+      const result = await tryDvalnaServer(server, channelKey, jwt, env, logger, 8000, forceRPI);
       
       if (result) {
         logger.info('dvalna: SUCCESS', { channel, channelKey, server });
@@ -1635,7 +1668,7 @@ async function tryDvalnaBackend(
   return null;
 }
 
-async function handlePlaylistRequest(channel: string, proxyOrigin: string, logger: any, origin: string | null, env?: Env, request?: Request, skipBackends: string[] = []): Promise<Response> {
+async function handlePlaylistRequest(channel: string, proxyOrigin: string, logger: any, origin: string | null, env?: Env, request?: Request, skipBackends: string[] = [], forceRPI: boolean = false): Promise<Response> {
   const errors: string[] = [];
 
   // ============================================================================
@@ -1659,7 +1692,7 @@ async function handlePlaylistRequest(channel: string, proxyOrigin: string, logge
   // ============================================================================
   if (!skipBackends.includes('dvalna')) {
     try {
-      const result = await tryDvalnaBackend(channel, jwtPromise, proxyOrigin, logger, origin, env, errors);
+      const result = await tryDvalnaBackend(channel, jwtPromise, proxyOrigin, logger, origin, env, errors, forceRPI);
       if (result && result.status === 200) {
         return result;
       }

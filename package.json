@@ -70,6 +70,7 @@
     "react-syntax-highlighter": "^16.1.0",
     "react-world-flags": "^1.6.0",
     "recharts": "^3.5.1",
+    "ssh2": "1.17.0",
     "undici": "^7.16.0",
     "uuid": "^13.0.0",
     "zod": "^4.1.13",

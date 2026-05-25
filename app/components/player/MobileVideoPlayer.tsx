@@ -386,6 +386,7 @@ export default function MobileVideoPlayer({
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
   const networkRetryCountRef = useRef(0);
+  const MAX_CONSECUTIVE_SEGMENT_ERRORS = 6;
   const onSourceChangeRef = useRef(onSourceChange);
   useEffect(() => { onSourceChangeRef.current = onSourceChange; }, [onSourceChange]);
 
@@ -719,13 +720,27 @@ export default function MobileVideoPlayer({
           };
           checkAndPlay();
         });
+        hls.on(Hls.Events.FRAG_LOADED, () => {
+          networkRetryCountRef.current = 0;
+        });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
+            const isSegmentError =
+              data.details === 'fragLoadError' ||
+              data.details === 'fragLoadTimeOut' ||
+              data.details === 'fragParsingError' ||
+              data.details === 'levelLoadError' ||
+              data.details === 'levelLoadTimeOut' ||
+              data.details === 'bufferStalledError' ||
+              data.details === 'bufferAppendError';
+
+            const isManifestError =
+              data.details === 'manifestLoadError' ||
+              data.details === 'manifestLoadTimeOut';
+
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              networkRetryCountRef.current++;
-              if (networkRetryCountRef.current <= 2) {
-                hls.startLoad();
-              } else {
+              if (isManifestError) {
+                // Manifest unreachable — source is dead, switch immediately
                 const nextIndex = currentSourceIndex + 1;
                 if (nextIndex < availableSources.length) {
                   onSourceChangeRef.current?.(nextIndex, currentTime);
@@ -734,9 +749,41 @@ export default function MobileVideoPlayer({
                   setIsLoading(false);
                   onErrorRef.current?.('All sources failed with network errors');
                 }
+              } else if (isSegmentError) {
+                // Fragment/segment error — skip the bad segment, only escalate
+                // after many consecutive failures
+                networkRetryCountRef.current++;
+                if (networkRetryCountRef.current <= MAX_CONSECUTIVE_SEGMENT_ERRORS) {
+                  hls.startLoad();
+                } else {
+                  const nextIndex = currentSourceIndex + 1;
+                  if (nextIndex < availableSources.length) {
+                    onSourceChangeRef.current?.(nextIndex, currentTime);
+                  } else {
+                    setError('Stream unavailable. Try another source.');
+                    setIsLoading(false);
+                    onErrorRef.current?.('All sources failed with network errors');
+                  }
+                }
+              } else {
+                // Other network error — try fallback
+                networkRetryCountRef.current++;
+                if (networkRetryCountRef.current <= 2) {
+                  hls.startLoad();
+                } else {
+                  const nextIndex = currentSourceIndex + 1;
+                  if (nextIndex < availableSources.length) {
+                    onSourceChangeRef.current?.(nextIndex, currentTime);
+                  } else {
+                    setError('Stream unavailable. Try another source.');
+                    setIsLoading(false);
+                    onErrorRef.current?.('All sources failed with network errors');
+                  }
+                }
               }
-            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-            else {
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
+            } else {
               setError('Playback failed. Try another source.');
               setIsLoading(false);
               onErrorRef.current?.('Fatal playback error');

@@ -10,8 +10,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'edge';
-
 // Our CDN Live extractor worker URL
 const CDN_LIVE_WORKER = process.env.CDN_LIVE_WORKER_URL || 'https://cdn-live-extractor.vynx-3b3.workers.dev';
 

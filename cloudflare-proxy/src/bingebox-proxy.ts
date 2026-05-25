@@ -107,7 +107,6 @@ async function handleExtract(
   const res = await fetch(apiUrl, {
     headers: {
       'User-Agent': UA,
-      'Origin': ORIGIN,
       'Referer': `${BINGEBOX_BASE}/`,
       'Accept': 'application/json',
     },
@@ -152,7 +151,6 @@ async function handleStream(
     headers: {
       'User-Agent': UA,
       'Referer': `${BINGEBOX_BASE}/`,
-      'Origin': ORIGIN,
       'Accept': '*/*',
     },
   });

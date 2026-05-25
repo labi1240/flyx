@@ -291,46 +291,56 @@ function setRpiConfig(env: Env): void {
 }
 
 /**
- * Fetch a URL — CF direct first, RPI proxy fallback.
+ * Fetch a URL — Races CF-direct against RPI proxy.
  *
- * Strategy 1: Direct CF fetch (fastest, no RPI dependency)
- * Strategy 2: RPI proxy fallback (handles datacenter IP blocking)
+ * CF-direct is tried first with a short 2s timeout (pirate sites block
+ * datacenter IPs so CF-direct almost never works for extraction). RPI is
+ * fired simultaneously when configured and wins the race for blocked sites.
  */
 async function rpiFetch(url: string, headers: Record<string, string> = {}): Promise<Response> {
-  // Strategy 1: Try CF direct first
-  try {
-    const directRes = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
-    if (directRes.ok) return directRes;
-    console.log(`[rpiFetch] Direct fetch returned ${directRes.status}, trying RPI fallback`);
-  } catch (e) {
-    console.log(`[rpiFetch] Direct fetch error: ${(e as Error).message}, trying RPI fallback`);
-  }
+  // Fire CF-direct with a short fuse — if the site is reachable from CF
+  // (rare for pirate sites), we get a fast win. Otherwise RPI takes over.
+  const directPromise = fetch(url, { headers, signal: AbortSignal.timeout(2000) });
 
-  // Strategy 2: RPI proxy fallback
-  if (_rpiConfig) {
+  if (!_rpiConfig) {
+    // No RPI configured — CF-direct is the only path
     try {
-      const rpiParams = new URLSearchParams({
-        url,
-        key: _rpiConfig.key,
-      });
-      if (headers['User-Agent']) rpiParams.set('ua', headers['User-Agent']);
-
-      const rpiUrl = `${_rpiConfig.baseUrl}/hianime/stream?${rpiParams.toString()}`;
-      console.log(`[rpiFetch] Routing through RPI: ${url.substring(0, 80)}`);
-      const res = await fetch(rpiUrl, { signal: AbortSignal.timeout(20000) });
-      console.log(`[rpiFetch] RPI response: ${res.status} ${res.headers.get('content-type')}`);
-      if (res.ok) return res;
-      console.log(`[rpiFetch] RPI returned ${res.status}`);
+      const directRes = await directPromise;
+      if (directRes.ok) return directRes;
+      console.log(`[rpiFetch] Direct fetch returned ${directRes.status}, no RPI fallback available`);
     } catch (e) {
-      console.log(`[rpiFetch] RPI error: ${(e as Error).message}`);
+      console.log(`[rpiFetch] Direct fetch error (no RPI): ${(e as Error).message}`);
     }
-  } else {
-    console.log(`[rpiFetch] No RPI config for: ${url.substring(0, 80)}`);
+    // One more attempt with longer timeout
+    return fetch(url, { headers, signal: AbortSignal.timeout(12000) });
   }
 
-  // Both strategies failed — do one more direct attempt with longer timeout
-  console.log(`[rpiFetch] Final direct attempt: ${url.substring(0, 80)}`);
-  return fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  // Race CF-direct against RPI. RPI typically wins for pirate sites since
+  // CF-direct either hangs (TCP timeout) or returns 403/503.
+  const rpiParams = new URLSearchParams({ url, key: _rpiConfig.key });
+  if (headers['User-Agent']) rpiParams.set('ua', headers['User-Agent']);
+  const rpiUrl = `${_rpiConfig.baseUrl}/hianime/stream?${rpiParams.toString()}`;
+  const rpiPromise = fetch(rpiUrl, { signal: AbortSignal.timeout(20000) });
+
+  try {
+    const winner = await Promise.race([
+      directPromise.then(r => r.ok ? r : Promise.reject(`direct_${r.status}`)),
+      rpiPromise.then(r => r.ok ? r : Promise.reject(`rpi_${r.status}`)),
+    ]);
+    console.log(`[rpiFetch] Race winner: ${winner.url?.substring(0, 40) || 'unknown'}`);
+    return winner;
+  } catch (e) {
+    const errMsg = (e as Error).message || String(e);
+    console.log(`[rpiFetch] Race failed (${errMsg}), awaiting RPI...`);
+    // Both failed — wait for RPI as last resort (it may still succeed)
+    try {
+      const rpiRes = await rpiPromise.catch(() => null);
+      if (rpiRes && rpiRes.ok) return rpiRes;
+    } catch {}
+    // Absolute last resort: direct with longer timeout
+    console.log(`[rpiFetch] All strategies failed, final direct attempt`);
+    return fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  }
 }
 
 // ============================================================================

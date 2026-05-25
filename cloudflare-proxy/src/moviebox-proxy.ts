@@ -29,8 +29,6 @@ import {
 
 export interface Env {
   LOG_LEVEL?: string;
-  RPI_PROXY_URL?: string;
-  RPI_PROXY_KEY?: string;
 }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';

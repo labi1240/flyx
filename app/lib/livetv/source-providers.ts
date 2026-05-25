@@ -9,7 +9,7 @@
 
 import { getTvPlaylistUrl } from '@/app/lib/proxy-config';
 
-export type LiveTVSourceType = 'dlhd' | 'cdnlive' | 'ppv' | 'ufreetv' | 'globetv';
+export type LiveTVSourceType = 'dlhd' | 'cdnlive' | 'ppv' | 'ntv' | 'ufreetv' | 'globetv';
 
 export interface StreamSource {
   type: LiveTVSourceType;
@@ -29,6 +29,7 @@ export interface StreamResult {
 
 export interface ChannelMapping {
   dlhdId?: string;
+  ntvToken?: string;
   cdnliveId?: string;
   ppvSlug?: string;
 }
@@ -36,10 +37,11 @@ export interface ChannelMapping {
 // Source configuration - order determines fallback priority
 export const LIVE_TV_SOURCES: StreamSource[] = [
   { type: 'dlhd', name: 'DLHD', priority: 1, enabled: true },
-  { type: 'cdnlive', name: 'CDN Live', priority: 2, enabled: true },
-  { type: 'ppv', name: 'PPV.to', priority: 3, enabled: true },
-  { type: 'ufreetv', name: 'uFreeTV', priority: 4, enabled: true },
-  { type: 'globetv', name: 'GlobeTV', priority: 5, enabled: true },
+  { type: 'ntv', name: 'NTV', priority: 2, enabled: true },
+  { type: 'cdnlive', name: 'CDN Live', priority: 3, enabled: true },
+  { type: 'ppv', name: 'PPV.to', priority: 4, enabled: true },
+  { type: 'ufreetv', name: 'uFreeTV', priority: 5, enabled: true },
+  { type: 'globetv', name: 'GlobeTV', priority: 6, enabled: true },
 ];
 
 /**
@@ -174,6 +176,42 @@ export async function getPPVStream(ppvSlug: string): Promise<StreamResult> {
 }
 
 /**
+ * Get stream URL from NTV
+ *
+ * NTV streams require token resolution via /api/livetv/ntv-stream?t={token}.
+ * The token is an embed identifier from ntv.cx that resolves to an upstream
+ * stream URL (often vembed.net or similar).
+ */
+export async function getNTVStream(ntvToken: string): Promise<StreamResult> {
+  try {
+    const apiUrl = `/api/livetv/ntv-stream?t=${encodeURIComponent(ntvToken)}`;
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+
+    if (!data.success || !data.streamUrl) {
+      return {
+        success: false,
+        source: 'ntv',
+        error: data.error || 'NTV stream resolution failed',
+      };
+    }
+
+    return {
+      success: true,
+      streamUrl: data.streamUrl,
+      source: 'ntv',
+      isLive: true,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      source: 'ntv',
+      error: error.message || 'Failed to get NTV stream',
+    };
+  }
+}
+
+/**
  * Try multiple sources with automatic fallback
  */
 export async function getStreamWithFallback(
@@ -211,6 +249,14 @@ export async function getStreamWithFallback(
         }
         break;
         
+      case 'ntv':
+        if (channelMapping.ntvToken) {
+          result = await getNTVStream(channelMapping.ntvToken);
+          if (result.success) return result;
+          errors.push(`NTV: ${result.error}`);
+        }
+        break;
+
       case 'cdnlive':
         if (channelMapping.cdnliveId) {
           result = await getCDNLiveStream(channelMapping.cdnliveId);

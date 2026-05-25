@@ -31,13 +31,28 @@
       "Bash(ssh vynx@vynx-pi.local 'export NVM_DIR=\"\"$HOME/.nvm\"\" && source \"\"$NVM_DIR/nvm.sh\"\" && cd ~/rpi-proxy && ls node_modules/.bin/tsc 2>/dev/null && node_modules/.bin/tsc 2>&1 | tail -10')",
       "Bash(ssh vynx@vynx-pi.local 'export NVM_DIR=\"\"$HOME/.nvm\"\" && source \"\"$NVM_DIR/nvm.sh\"\" && cd ~/rpi-proxy && chmod +x node_modules/.bin/tsc && node node_modules/typescript/bin/tsc 2>&1 | tail -10 && echo \"\"BUILD OK\"\"')",
       "Bash(ssh vynx@vynx-pi.local 'sudo systemctl restart rpi-proxy')",
-      "Bash(curl -s -D - https://dlhd.vynx.workers.dev/key?url=https%3A%2F%2Fkey.keylocking.ru%2Fkey%2Fpremium44%2F5914677)",
+      "Bash(curl -s -D - https://dlhd.vynx-3b3.workers.dev/key?url=https%3A%2F%2Fkey.keylocking.ru%2Fkey%2Fpremium44%2F5914677)",
       "Bash(ssh vynx@vynx-pi.local 'sudo journalctl -u rpi-proxy --since \"\"\"\"15 sec ago\"\"\"\" --no-pager | grep -i \"\"\"\"dlhd\\\\|key\\\\|whitelist\\\\|proxy\"\"\"\" | head -20')",
       "Bash(ssh vynx@vynx-pi.local 'grep PROXY_SOCKS5 /etc/systemd/system/rpi-proxy.service')",
       "Bash(ssh vynx@vynx-pi.local 'sudo journalctl -u rpi-proxy --since \"\"2 min ago\"\" --no-pager | grep -i \"\"whitelist\\\\|fake\\\\|recaptcha\"\" | head -20')",
       "Bash(ssh vynx@vynx-pi.local 'grep \"\"PROXY_SOCKS5\\\\|rust-fetch.*proxy\\\\|--proxy\"\" ~/rpi-proxy/dist/routes/dlhd.js | head -10')",
       "Bash(ssh vynx@vynx-pi.local 'sudo journalctl -u rpi-proxy --since \"\"5 min ago\"\" --no-pager | grep -i \"\"action\\\\|recaptcha\\\\|puppeteer\\\\|verify\\\\|whitelist\"\" | tail -20')",
-      "Bash(ssh -o ConnectTimeout=10 vynx@vynx-pi.local 'sudo journalctl -u rpi-proxy -n 100 --no-pager | grep -i \"\"action\\\\|recaptcha\\\\|puppeteer\\\\|verify\\\\|whitelist\\\\|mismatch\"\" | tail -20')"
+      "Bash(ssh -o ConnectTimeout=10 vynx@vynx-pi.local 'sudo journalctl -u rpi-proxy -n 100 --no-pager | grep -i \"\"action\\\\|recaptcha\\\\|puppeteer\\\\|verify\\\\|whitelist\\\\|mismatch\"\" | tail -20')",
+      "PowerShell(Get-ChildItem *)",
+      "Bash(nslookup *)",
+      "PowerShell(Resolve-DnsName *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Test-Path *)",
+      "Bash(curl *)",
+      "Bash(npx wrangler dev --remote *)",
+      "Bash(npx wrangler deploy *)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(npx wrangler tail *)",
+      "Bash(node scripts/dlhd-*)",
+      "Bash(mkdir -p *)",
+      "Bash(npx next build *)",
+      "Bash(ssh *)",
+      "Bash(sshpass *)"
     ]
   }
 }
