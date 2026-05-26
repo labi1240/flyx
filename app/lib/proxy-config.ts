@@ -456,7 +456,7 @@ export function getFlixerStreamProxyUrl(url: string): string {
  */
 export function getHiAnimeStreamProxyUrl(url: string): string {
   const baseUrl = getFlixerProxyBaseUrl(); // same CF Worker base
-  return `${baseUrl}/hianime?url=${encodeURIComponent(url)}`;
+  return `${baseUrl}/hianime/stream?url=${encodeURIComponent(url)}`;
 }
 
 // ============================================================================

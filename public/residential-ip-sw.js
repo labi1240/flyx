@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v1';
+const SW_VERSION = 'v2';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -271,6 +271,86 @@ function extractTargetUrl(cfWorkerUrl) {
   }
 }
 
+// ── HLS Playlist URL Rewriting ───────────────────────────────────────────────
+// When the SW fetches an m3u8 directly from a CDN, relative segment URLs
+// must be resolved to absolute CDN URLs. Otherwise HLS.js resolves them
+// against the CF Worker proxy domain (media-proxy.vynx-3b3.workers.dev)
+// producing broken paths that neither the SW nor the CF Worker can handle.
+
+function resolveUrl(url, baseUrl, basePath) {
+  if (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) {
+    return url; // Already absolute
+  }
+  var origin = '';
+  try { origin = new URL(baseUrl).origin; } catch (e) { return url; }
+  if (url.charAt(0) === '/') {
+    return origin + url; // Absolute path on CDN domain
+  }
+  return origin + basePath + url; // Relative path
+}
+
+function rewritePlaylistUrls(playlist, cdnBaseUrl) {
+  var lines = playlist.split('\n');
+  var rewritten = [];
+  var basePath = '/';
+  try {
+    var parsed = new URL(cdnBaseUrl);
+    basePath = parsed.pathname.substring(0, parsed.pathname.lastIndexOf('/') + 1);
+  } catch (e) {}
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var trimmed = line.trim();
+
+    // Handle EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF tags with URI= attribute
+    if (line.indexOf('#EXT-X-MEDIA:') === 0 || line.indexOf('#EXT-X-I-FRAME-STREAM-INF:') === 0) {
+      var uriMatch = line.match(/URI="([^"]+)"/);
+      if (uriMatch) {
+        var resolved = resolveUrl(uriMatch[1], cdnBaseUrl, basePath);
+        rewritten.push(line.replace('URI="' + uriMatch[1] + '"', 'URI="' + resolved + '"'));
+      } else {
+        rewritten.push(line);
+      }
+      continue;
+    }
+
+    // Handle EXT-X-KEY tags with URI= attribute (decryption keys)
+    if (line.indexOf('#EXT-X-KEY:') === 0) {
+      var keyUriMatch = line.match(/URI="([^"]+)"/);
+      if (keyUriMatch) {
+        var resolvedKey = resolveUrl(keyUriMatch[1], cdnBaseUrl, basePath);
+        rewritten.push(line.replace('URI="' + keyUriMatch[1] + '"', 'URI="' + resolvedKey + '"'));
+      } else {
+        rewritten.push(line);
+      }
+      continue;
+    }
+
+    // Handle EXT-X-MAP tags with URI= attribute (fMP4 init segments)
+    if (line.indexOf('#EXT-X-MAP:') === 0) {
+      var mapUriMatch = line.match(/URI="([^"]+)"/);
+      if (mapUriMatch) {
+        var resolvedMap = resolveUrl(mapUriMatch[1], cdnBaseUrl, basePath);
+        rewritten.push(line.replace('URI="' + mapUriMatch[1] + '"', 'URI="' + resolvedMap + '"'));
+      } else {
+        rewritten.push(line);
+      }
+      continue;
+    }
+
+    // Keep comments and empty lines
+    if (trimmed === '' || line.charAt(0) === '#') {
+      rewritten.push(line);
+      continue;
+    }
+
+    // Segment URL — resolve to absolute CDN URL
+    rewritten.push(resolveUrl(trimmed, cdnBaseUrl, basePath));
+  }
+
+  return rewritten.join('\n');
+}
+
 // ── Proxying ─────────────────────────────────────────────────────────────────
 
 async function proxyWithResidentialIp(request) {
@@ -392,18 +472,35 @@ async function proxyWithResidentialIp(request) {
     responseHeaders.set('Access-Control-Expose-Headers',
       'Content-Length, Content-Range, Accept-Ranges, Content-Type');
 
+    // Detect playlist vs segment
+    var contentType = responseHeaders.get('Content-Type') || '';
+    var isPlaylist =
+      cdnUrl.indexOf('.m3u8') !== -1 ||
+      contentType.indexOf('mpegurl') !== -1 ||
+      contentType.indexOf('vnd.apple.mpegurl') !== -1;
+
     // Smart cache: short for playlists, long for segments
     if (!responseHeaders.has('Cache-Control')) {
-      var contentType = responseHeaders.get('Content-Type') || '';
-      var isPlaylist =
-        cdnUrl.indexOf('.m3u8') !== -1 ||
-        contentType.indexOf('mpegurl') !== -1 ||
-        contentType.indexOf('vnd.apple.mpegurl') !== -1;
       responseHeaders.set('Cache-Control',
         isPlaylist ? 'public, max-age=5' : 'public, max-age=3600');
     }
 
     responseHeaders.set('X-ResiSW', provider.label);
+
+    // ── Rewrite playlist segment URLs to absolute CDN URLs ──
+    // When the SW fetches an m3u8 directly from the CDN, any relative
+    // segment URLs in the playlist must be resolved to absolute CDN URLs.
+    // Otherwise HLS.js resolves them against the CF Worker proxy domain
+    // (media-proxy.vynx-3b3.workers.dev) producing broken paths.
+    if (isPlaylist) {
+      var rawText = await cdnResponse.text();
+      var rewritten = rewritePlaylistUrls(rawText, cdnUrl);
+      return new Response(rewritten, {
+        status: cdnResponse.status,
+        statusText: cdnResponse.statusText,
+        headers: responseHeaders,
+      });
+    }
 
     return new Response(cdnResponse.body, {
       status: cdnResponse.status,

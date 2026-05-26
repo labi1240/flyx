@@ -922,7 +922,7 @@ function decodeHexFormat(encoded) {
 // CF Worker route:
 export function getHiAnimeStreamProxyUrl(url: string): string {
   const baseUrl = getCfWorkerBaseUrl();
-  return \`\${baseUrl}/hianime?url=\${encodeURIComponent(url)}\`;
+  return \`\${baseUrl}/hianime/stream?url=\${encodeURIComponent(url)}\`;
 }
 
 // RPI proxy uses curl-impersonate-chrome:
