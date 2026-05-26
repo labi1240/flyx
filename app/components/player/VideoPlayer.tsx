@@ -1096,6 +1096,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName: 'miruro', data: { success: true, provider: 'miruro' }, sources };
         }
 
+        // Uflix: server-side extraction (TMDB→search→gStream×5→embed→m3u8) takes ~30s
+        if (providerName === 'uflix') {
+          const uflixUrl = buildApiUrl(providerName);
+          if (!uflixUrl) throw new Error('uflix: skipped (no API URL)');
+          console.log(`[VideoPlayer] Trying uflix (server-side, 35s timeout)...`);
+          const res = await fetchWithTimeout(uflixUrl, 35000);
+          if (!res || !res.ok) throw new Error(`uflix: ${res ? res.status : 'timeout'}`);
+          const d = await res.json();
+          if (!d.success || !d.sources?.length) throw new Error('uflix: no sources');
+          console.log(`[VideoPlayer] ✓ uflix: ${d.sources.length} source(s)`);
+          return { providerName: 'uflix', data: d, sources: d.sources };
+        }
+
         const apiUrl = buildApiUrl(providerName);
         if (!apiUrl) throw new Error(`${providerName}: skipped (no API URL)`);
 

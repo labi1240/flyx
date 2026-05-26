@@ -26,7 +26,7 @@
 
 import { createLogger, type LogLevel } from './logger';
 import { getHexaConfig, type HexaConfig, type ApiRoutes } from './hexa-config';
-import { getCachedCapToken, getCapToken, cacheCapToken } from './hexa-cap-solver';
+import { getCachedCapToken, getCapToken, cacheCapToken, refreshCapToken, solveCapChallenge } from './hexa-cap-solver';
 // Import WASM module - bundled at build time by wrangler
 import FLIXER_WASM from './flixer.wasm';
 
@@ -1639,6 +1639,30 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     });
   }
 
+  // Manual cap token refresh — called by external cron or for bootstrapping
+  if (path === '/flixer/refresh-cap') {
+    if (!env.HEXA_CONFIG) {
+      return jsonResponse({ error: 'HEXA_CONFIG KV not configured' }, 500);
+    }
+    try {
+      const wasFresh = !!(await getCachedCapToken(env.HEXA_CONFIG));
+      if (wasFresh) {
+        return jsonResponse({ success: true, message: 'Cap token still valid, no refresh needed' }, 200);
+      }
+      const { token, expires } = await solveCapChallenge();
+      await cacheCapToken(env.HEXA_CONFIG, token, expires);
+      logger.info('Cap token refreshed manually via /flixer/refresh-cap');
+      return jsonResponse({
+        success: true,
+        message: 'Cap token refreshed',
+        expires: new Date(expires).toISOString(),
+      }, 200);
+    } catch (e) {
+      logger.error('Manual cap refresh failed', { error: e instanceof Error ? e.message : String(e) });
+      return jsonResponse({ success: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  }
+
   // Batch extract ALL servers in one request
   if (path === '/flixer/extract-all') {
     const tmdbId = url.searchParams.get('tmdbId');
@@ -2111,4 +2135,14 @@ function rewriteFlixerPlaylist(playlist: string, baseUrl: string, proxyOrigin: s
 
 export default {
   fetch: handleFlixerRequest,
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    if (env.HEXA_CONFIG) {
+      try {
+        const refreshed = await refreshCapToken(env.HEXA_CONFIG);
+        console.log(refreshed ? '[Cap] Cron: token refreshed' : '[Cap] Cron: token still valid');
+      } catch (e) {
+        console.error('[Cap] Cron: refresh failed', e instanceof Error ? e.message : String(e));
+      }
+    }
+  },
 };

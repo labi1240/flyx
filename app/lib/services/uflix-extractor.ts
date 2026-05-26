@@ -40,7 +40,7 @@ interface ExtractionResult {
 
 const BASE = 'https://uflix.to';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
-const TIMEOUT = 12_000;
+const TIMEOUT = 15_000;
 
 export const UFLIX_ENABLED = true;
 
