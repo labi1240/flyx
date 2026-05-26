@@ -479,6 +479,9 @@ export async function extractAnimeKaiClient(
   const targetEp = episode || 1;
   console.log(`[AnimeKai] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref || 'sub'}`);
 
+  // Ensure Service Worker is in control before making cross-origin requests
+  if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+
   // Step 1: Find anime on AnimeKai by MAL ID
   const anime = await findAnimeByMalId(malId, title);
   if (!anime) {

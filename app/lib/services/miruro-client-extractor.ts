@@ -159,6 +159,10 @@ export async function extractMiruroClient(
   const targetEp = episode || 1;
   console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref}`);
 
+  // Ensure Service Worker is in control before making cross-origin requests.
+  // Without this, CORS preflight requests fire before SW activation and fail.
+  if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+
   // Step 1: MAL → AniList
   const anilistId = await getAnilistId(malId);
   if (!anilistId) {
