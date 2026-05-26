@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v3';
+const SW_VERSION = 'v5';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -65,6 +65,41 @@ function isOwnHostname(hostname) {
 //
 
 var CDN_PROVIDERS = [
+  // ── 0a. HiAnime Extraction API (aniwatchtv.to) ──────────────
+  {
+    label: 'HiAnimeAPI',
+    patterns: ['aniwatchtv.to'],
+    referer: 'https://aniwatchtv.to/',
+    origin: 'https://aniwatchtv.to',
+    isApiExtraction: true,
+  },
+
+  // ── 0b. Miruro Extraction API ───────────────────────────────
+  {
+    label: 'MiruroAPI',
+    patterns: ['miruro.to', 'miruro.tv', 'miruro.bz', 'miruro.ru'],
+    referer: 'https://miruro.to/',
+    origin: 'https://miruro.to',
+    isApiExtraction: true,
+  },
+
+  // ── 0c. AnimeKai Extraction API ─────────────────────────────
+  {
+    label: 'AnimeKaiAPI',
+    patterns: ['animekai.to', 'anikai.to'],
+    referer: 'https://animekai.to/',
+    origin: 'https://animekai.to',
+    isApiExtraction: true,
+  },
+
+  // ── 0d. AniList GraphQL API ──────────────────────────────────
+  {
+    label: 'AniListAPI',
+    patterns: ['graphql.anilist.co'],
+    origin: 'https://anilist.co',
+    isApiExtraction: true,
+  },
+
   // ── 1. Flixer / Hexa ─────────────────────────────────────────
   {
     label: 'Flixer',
@@ -316,6 +351,7 @@ function rewritePlaylistUrls(playlist, cdnBaseUrl) {
 
 async function proxyWithResidentialIp(request) {
   var requestUrl = request.url;
+  var reqMethod = request.method;
   var cdnUrl = null;
   var hostname;
 
@@ -371,12 +407,23 @@ async function proxyWithResidentialIp(request) {
     fetchHeaders['Range'] = range;
   }
 
+  // Forward Content-Type from original request (POST bodies)
+  var originalContentType = request.headers.get('Content-Type');
+  if (originalContentType && reqMethod === 'POST') {
+    fetchHeaders['Content-Type'] = originalContentType;
+  }
+
   var fetchOptions = {
-    method: 'GET',
+    method: reqMethod,
     headers: fetchHeaders,
     credentials: 'omit',
     // redirect: 'follow' is default — follow CDN redirects
   };
+
+  // Forward request body for POST requests (e.g., Miruro pipe API)
+  if (reqMethod === 'POST') {
+    fetchOptions.body = await request.clone().text();
+  }
 
   try {
     var cdnResponse = await fetch(cdnUrl, fetchOptions);
@@ -447,8 +494,9 @@ async function proxyWithResidentialIp(request) {
 self.addEventListener('fetch', function(event) {
   var url = event.request.url;
 
-  // Only GET requests
-  if (event.request.method !== 'GET') return;
+  // Only GET and POST requests
+  var method = event.request.method;
+  if (method !== 'GET' && method !== 'POST') return;
 
   // Only http/https
   if (url.indexOf('http') !== 0) return;
@@ -459,7 +507,6 @@ self.addEventListener('fetch', function(event) {
   if (url.indexOf('/_next/') !== -1) return;
   if (url.indexOf('image.tmdb.org') !== -1) return;
   if (url.indexOf('api.themoviedb.org') !== -1) return;
-  if (url.indexOf('graphql.anilist.co') !== -1) return;
 
   // Hostname quick check: does this URL look like it could be a CDN?
   var hostname;

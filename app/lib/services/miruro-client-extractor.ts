@@ -1,16 +1,13 @@
 /**
- * Miruro Client-Side Extractor
+ * Miruro Browser-Direct Extractor
  *
- * Calls CF Worker /miruro/* endpoints which handle XOR+gzip pipe encryption.
- * Browser calls CF Worker directly (browser → CF Worker → miruro.to).
- * MAL→AniList mapping done via malService or graphql.anilist.co from browser.
+ * Calls miruro.to API directly from the browser's residential IP.
+ * The Service Worker intercepts these requests, adds Referer/Origin headers,
+ * and returns responses with CORS headers.
+ *
+ * Pipe encryption: XOR with obfuscation key + gzip.
+ * Browser handles XOR and uses DecompressionStream for gzip.
  */
-
-import { malService } from '@/lib/services/mal';
-
-const CF_WORKER_BASE = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '')
-  : '';
 
 export interface MiruroSource {
   quality: string;
@@ -22,13 +19,6 @@ export interface MiruroSource {
   referer?: string;
 }
 
-interface MiruroEpisode {
-  id: string;
-  number: number;
-  title: string;
-  audio: 'sub' | 'dub';
-}
-
 interface MiruroStream {
   url: string;
   type: string;
@@ -38,42 +28,127 @@ interface MiruroStream {
   referer?: string;
 }
 
+const MIRURO_BASE = 'https://miruro.to';
+const PIPE_OBF_KEY = '71951034f8fbcf53d89db52ceb3dc22c';
 const PROVIDER_PRIORITY = ['kiwi', 'gogo', 'zoro', 'animepahe', 'kayo', 'hianime'];
 
-/**
- * Get AniList ID from MAL ID using malService.
- * Falls back to direct graphql.anilist.co call.
- */
-async function getAnilistId(malId: number): Promise<number | null> {
-  try {
-    const anime = await malService.getById(malId);
-    // malService stores AniList ID — check the returned object
-    const record = anime as any;
-    if (record?.id) return record.id;
-  } catch (e) {
-    console.warn('[Miruro] malService.getById failed, trying direct AniList:', e);
+// ═══════════════════════════════════════════════════════════════════════════
+// Pipe Encryption (XOR + gzip)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function xorEncrypt(data: string, key: string): Uint8Array {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(data);
+  const keyBytes = encoder.encode(key);
+  const result = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    result[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
   }
-  // Fallback: direct AniList query
-  try {
-    const query = `
-      query ($idMal: Int) {
-        Media(idMal: $idMal, type: ANIME) {
-          id
-        }
-      }`;
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables: { idMal: malId } }),
-      signal: AbortSignal.timeout(8000),
-    });
-    const json = await res.json();
-    return json?.data?.Media?.id || null;
-  } catch (e) {
-    console.warn('[Miruro] AniList direct query failed:', e);
-    return null;
-  }
+  return result;
 }
+
+function xorDecrypt(data: Uint8Array, key: string): Uint8Array {
+  const keyBytes = new TextEncoder().encode(key);
+  const result = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    result[i] = data[i] ^ keyBytes[i % keyBytes.length];
+  }
+  return result;
+}
+
+async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
+  const cs = new CompressionStream('gzip');
+  const writer = cs.writable.getWriter();
+  writer.write(data as BufferSource);
+  writer.close();
+  const reader = cs.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    result.set(c, offset);
+    offset += c.length;
+  }
+  return result;
+}
+
+async function gzipDecompress(data: Uint8Array): Promise<string> {
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  writer.write(data as BufferSource);
+  writer.close();
+  const reader = ds.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    result.set(c, offset);
+    offset += c.length;
+  }
+  return new TextDecoder().decode(result);
+}
+
+async function pipeRequest(endpoint: string, payload: Record<string, unknown>): Promise<unknown> {
+  const json = JSON.stringify(payload);
+  const encrypted = xorEncrypt(json, PIPE_OBF_KEY);
+  const compressed = await gzipCompress(encrypted);
+
+  const res = await fetch(`${MIRURO_BASE}/api/secure/pipe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Accept': '*/*',
+      'X-Api-Endpoint': endpoint,
+    },
+    body: compressed as BufferSource,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Miruro pipe ${endpoint}: ${res.status}`);
+  }
+
+  const respBuffer = new Uint8Array(await res.arrayBuffer());
+  const decrypted = xorDecrypt(respBuffer, PIPE_OBF_KEY);
+  const decompressed = await gzipDecompress(decrypted);
+  return JSON.parse(decompressed);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AniList ID Lookup
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function getAnilistId(malId: number): Promise<number | null> {
+  const query = `
+    query ($idMal: Int) {
+      Media(idMal: $idMal, type: ANIME) {
+        id
+      }
+    }`;
+  const res = await fetch('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: { idMal: malId } }),
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  return json?.data?.Media?.id || null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Main Extractor
+// ═══════════════════════════════════════════════════════════════════════════
 
 export async function extractMiruroClient(
   malId: number,
@@ -81,7 +156,8 @@ export async function extractMiruroClient(
   episode?: number,
   audioPref: 'sub' | 'dub' = 'sub',
 ): Promise<MiruroSource[]> {
-  console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${episode} pref=${audioPref}`);
+  const targetEp = episode || 1;
+  console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref}`);
 
   // Step 1: MAL → AniList
   const anilistId = await getAnilistId(malId);
@@ -91,26 +167,26 @@ export async function extractMiruroClient(
   }
   console.log(`[Miruro] AniList ID: ${anilistId}`);
 
-  // Step 2: Get episodes from CF Worker
-  const epRes = await fetch(`${CF_WORKER_BASE}/miruro/episodes?anilistId=${anilistId}`, {
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!epRes.ok) {
-    console.warn(`[Miruro] episodes ${epRes.status}`);
+  // Step 2: Get episodes via pipe API
+  let epData: {
+    providers: Record<string, { episodes: { sub: Array<{ id: string; number: number }>; dub: Array<{ id: string; number: number }> } }>;
+  };
+  try {
+    epData = await pipeRequest('episodes', {
+      anilistId,
+      type: 'anime',
+    }) as typeof epData;
+  } catch (e) {
+    console.warn('[Miruro] Pipe episodes failed:', e);
     return [];
   }
-
-  const epData = await epRes.json() as {
-    providers: Record<string, { episodes: { sub: MiruroEpisode[]; dub: MiruroEpisode[] } }>;
-  };
 
   if (!epData.providers) {
     console.warn('[Miruro] No providers in episodes response');
     return [];
   }
 
-  // Step 3: Find target episode — try each provider in priority order
-  const targetEp = episode || 1;
+  // Step 3: Try each provider in priority order
   const sources: MiruroSource[] = [];
 
   for (const providerId of PROVIDER_PRIORITY) {
@@ -125,30 +201,22 @@ export async function extractMiruroClient(
 
     console.log(`[Miruro] Found ep ${targetEp} on ${providerId} (${category}): ${ep.id}`);
 
-    // Step 4: Get stream sources
+    // Step 4: Get sources via pipe API
     try {
-      const srcRes = await fetch(
-        `${CF_WORKER_BASE}/miruro/sources?episodeId=${ep.id}&provider=${providerId}&category=${category}`,
-        { signal: AbortSignal.timeout(15000) },
-      );
+      const srcData = await pipeRequest('sources', {
+        episodeId: ep.id,
+        provider: providerId,
+        category,
+      }) as { streams?: MiruroStream[] };
 
-      if (!srcRes.ok) continue;
-
-      const srcData = await srcRes.json() as { streams?: MiruroStream[] };
       if (!srcData.streams?.length) continue;
 
       for (const stream of srcData.streams) {
         if (!stream.url || !stream.isActive) continue;
-
-        // SW method: return raw CDN URL — no CF Worker stream proxying.
-        // The Service Worker (residential-ip-sw.js) intercepts and fetches
-        // from the browser's residential IP with proper Referer/Origin.
-        const videoUrl = stream.url;
-
         sources.push({
           quality: stream.quality || stream.resolution?.height?.toString() || 'auto',
           title: `Miruro ${providerId} (${category})${stream.quality ? ' ' + stream.quality : ''}`,
-          url: videoUrl,
+          url: stream.url,
           type: 'hls',
           language: category === 'dub' ? 'en' : 'ja',
           requiresSegmentProxy: true,
