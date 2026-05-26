@@ -137,6 +137,13 @@ name = "media-proxy"
 # Uncomment and configure if you have a custom domain:
 # routes = [{ pattern = "proxy.yourdomain.com/*", zone_name = "yourdomain.com" }]
 
+[env.production.vars]
+LOG_LEVEL = "info"
+
+[[env.production.kv_namespaces]]
+binding = "HEXA_CONFIG"
+id = "99c9e959656047f4a5b561063b3fe66f"
+
 [env.production.observability]
 enabled = false
 
