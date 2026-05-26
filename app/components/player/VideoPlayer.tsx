@@ -121,7 +121,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
 
   // Flixer CDN blocks ALL proxy IPs (CF Worker datacenter + RPI residential).
   // Only the browser's own residential IP works. The Service Worker
-  // (flixer-cdn-sw.js) strips Referer and adds CORS headers for direct
+  // (residential-ip-sw.js) fetches CDN content directly from the browser
   // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
   if (providerName === 'flixer') return sourceUrl;
 
@@ -1778,7 +1778,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
     // Wait for Service Worker before loading Flixer CDN URLs.
     // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
-    // The SW (flixer-cdn-sw.js) strips Referer and adds CORS headers.
+    // The SW (residential-ip-sw.js) strips Referer and adds CORS headers.
     const isFlixerCdn = streamUrl.includes('.workers.dev') ||
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
       streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');

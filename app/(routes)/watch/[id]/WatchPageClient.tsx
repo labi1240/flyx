@@ -23,7 +23,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
 
   // Flixer CDN blocks ALL proxy IPs (CF Worker datacenter + RPI residential).
   // Only the browser's own residential IP works. The Service Worker
-  // (flixer-cdn-sw.js) strips Referer and adds CORS headers for direct
+  // (residential-ip-sw.js) strips Referer and adds CORS headers for direct
   // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
   if (providerName === 'flixer') return sourceUrl;
 

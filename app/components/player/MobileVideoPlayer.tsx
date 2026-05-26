@@ -805,7 +805,7 @@ export default function MobileVideoPlayer({
 
     // Wait for Service Worker before loading Flixer CDN URLs.
     // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
-    // The SW (flixer-cdn-sw.js) strips Referer and adds CORS headers.
+    // The SW (residential-ip-sw.js) strips Referer and adds CORS headers.
     const isFlixerCdn = streamUrl.includes('.workers.dev') ||
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
       streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');
