@@ -141,6 +141,10 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Service Worker intercepts it directly from the browser's residential IP.
   if (providerName === 'animekai') return sourceUrl;
 
+  // Miruro: RapidCloud CDN blocks datacenter IPs. Return raw CDN URL so the
+  // Service Worker intercepts it directly from the browser's residential IP.
+  if (providerName === 'miruro') return sourceUrl;
+
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -976,12 +980,13 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const disabledProviders = new Set(userProviderSettings.disabledProviders || []);
 
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
-      // For anime content: HiAnime/Miruro first (browser-direct via CF Worker),
+      // For anime content: HiAnime/Miruro/AnimeKai first (browser-direct via CF Worker),
       // then movie/TV providers as fallback (they may work for some anime via TMDB)
       const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
-      const defaultOrder: string[] = isMalDirect
-        ? ['hianime', 'miruro', ...movieTvOrder]
-        : movieTvOrder;
+      const animeOrder: string[] = ['hianime', 'miruro', 'animekai'];
+      const defaultOrder: string[] = isAnime
+        ? [...animeOrder, ...movieTvOrder]
+        : isMalDirect ? ['hianime', 'miruro'] : movieTvOrder;
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {
@@ -1089,6 +1094,20 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName: 'miruro', data: { success: true, provider: 'miruro' }, sources };
         }
 
+        // AnimeKai: server-side extraction via Next.js API (native crypto + MegaUp CDN)
+        if (providerName === 'animekai') {
+          if (!malId) throw new Error('animekai: requires malId');
+          const akUrl = buildApiUrl(providerName);
+          if (!akUrl) throw new Error('animekai: skipped (no API URL)');
+          console.log(`[VideoPlayer] Trying animekai (server-side, 45s timeout)...`);
+          const res = await fetchWithTimeout(akUrl, 45000);
+          if (!res || !res.ok) throw new Error(`animekai: ${res ? res.status : 'timeout'}`);
+          const d = await res.json();
+          if (!d.success || !d.sources?.length) throw new Error('animekai: no sources');
+          console.log(`[VideoPlayer] ✓ animekai: ${d.sources.length} source(s)`);
+          return { providerName: 'animekai', data: d, sources: d.sources };
+        }
+
         const apiUrl = buildApiUrl(providerName);
         if (!apiUrl) throw new Error(`${providerName}: skipped (no API URL)`);
 
@@ -1117,7 +1136,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         const { providerName, sources } = winner;
 
         // Pick best source — prefer audio-preference match for anime, then 'validated' status
-        const isAnimeProvider = providerName === 'hianime' || providerName === 'miruro';
+        const isAnimeProvider = providerName === 'animekai' || providerName === 'hianime' || providerName === 'miruro';
         let selectedIndex = 0;
         if (isAnimeProvider) {
           const matchingIdx = sources.findIndex((s: any) =>
@@ -1811,9 +1830,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
     const getImdbId = async () => {
       try {
-        // Skip TMDB lookup for MAL-direct anime (tmdbId=0)
+        // For MAL-direct anime (tmdbId=0), use title-based search via OpenSubtitles
         if (tmdbId === '0') {
-          console.log('[VideoPlayer] Skipping IMDB lookup for MAL-direct anime (tmdbId=0)');
+          if (malId && title) {
+            console.log('[VideoPlayer] MAL-direct anime — using title search for subtitles:', title);
+            await fetchSubtitles(title, true);
+          } else {
+            console.log('[VideoPlayer] Skipping IMDB lookup for MAL-direct anime (tmdbId=0, no title/malId)');
+          }
           return;
         }
         
@@ -3037,10 +3061,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
   };
 
-  const fetchSubtitles = async (imdbId: string) => {
+  const fetchSubtitles = async (imdbIdOrQuery: string, isQuery: boolean = false) => {
     try {
       setSubtitlesLoading(true);
-      const params = new URLSearchParams({ imdbId });
+      const params = isQuery
+        ? new URLSearchParams({ query: imdbIdOrQuery })
+        : new URLSearchParams({ imdbId: imdbIdOrQuery });
       if (mediaType === 'tv' && season && episode) {
         params.append('season', season.toString());
         params.append('episode', episode.toString());

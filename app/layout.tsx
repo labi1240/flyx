@@ -101,7 +101,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
 	if ('serviceWorker' in navigator) {
-	  navigator.serviceWorker.register('/residential-ip-sw.js?v=3', { scope: '/' })
+	  navigator.serviceWorker.register('/residential-ip-sw.js?v=4', { scope: '/' })
 	    .then(reg => console.log('[ResiSW] SW registered:', reg.scope))
 	    .catch(err => console.warn('[ResiSW] SW registration failed:', err));
 	}`,

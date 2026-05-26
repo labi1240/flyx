@@ -195,7 +195,7 @@ var CDN_PROVIDERS = [
     // NO origin — causes 403
   },
 
-  // ── 12. RapidVideo / RapidCloud (used by multiple providers) ──
+  // ── 12. RapidVideo / RapidCloud (Miruro CDN) ──
   {
     label: 'RapidCloud',
     patterns: [
@@ -205,7 +205,8 @@ var CDN_PROVIDERS = [
       'vidcloud',
       'dokicloud',
     ],
-    // NO referer, NO origin — blocks with both
+    referer: 'https://kwik.cx/',
+    origin: 'https://miruro.to',
   },
 
   // ── 13. Generic workers.dev CDN (catch-all for unknown providers) ──

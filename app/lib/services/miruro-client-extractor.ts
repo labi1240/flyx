@@ -140,16 +140,18 @@ export async function extractMiruroClient(
       for (const stream of srcData.streams) {
         if (!stream.url || !stream.isActive) continue;
 
-        // Proxy stream through /miruro/stream on CF Worker
-        const proxiedUrl = `${CF_WORKER_BASE}/miruro/stream?url=${encodeURIComponent(stream.url)}`;
+        // SW method: return raw CDN URL — no CF Worker stream proxying.
+        // The Service Worker (residential-ip-sw.js) intercepts and fetches
+        // from the browser's residential IP with proper Referer/Origin.
+        const videoUrl = stream.url;
 
         sources.push({
           quality: stream.quality || stream.resolution?.height?.toString() || 'auto',
           title: `Miruro ${providerId} (${category})${stream.quality ? ' ' + stream.quality : ''}`,
-          url: proxiedUrl,
+          url: videoUrl,
           type: 'hls',
           language: category === 'dub' ? 'en' : 'ja',
-          requiresSegmentProxy: false,
+          requiresSegmentProxy: true,
           referer: stream.referer || 'https://kwik.cx/',
         });
       }

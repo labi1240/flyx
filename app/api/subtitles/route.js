@@ -37,21 +37,31 @@ const languageMap = {
   'ukr': { name: 'Ukrainian', iso639: 'uk' },
 };
 
-async function fetchSubtitlesForLanguage(imdbId, languageId, season, episode) {
-  const numericImdbId = imdbId.replace(/^tt/, '');
-  
+async function fetchSubtitlesForLanguage(imdbId, languageId, season, episode, query) {
   try {
     // Build URL with parameters in alphabetical order
     const params = [];
-    
-    if (season && episode) {
-      params.push(`episode-${episode}`);
-      params.push(`imdbid-${numericImdbId}`);
-      params.push(`season-${season}`);
+
+    if (imdbId) {
+      const numericImdbId = imdbId.replace(/^tt/, '');
+      if (season && episode) {
+        params.push(`episode-${episode}`);
+        params.push(`imdbid-${numericImdbId}`);
+        params.push(`season-${season}`);
+        params.push(`sublanguageid-${languageId}`);
+      } else {
+        params.push(`imdbid-${numericImdbId}`);
+        params.push(`sublanguageid-${languageId}`);
+      }
+    } else if (query) {
+      params.push(`query-${encodeURIComponent(query)}`);
+      if (season && episode) {
+        params.push(`episode-${episode}`);
+        params.push(`season-${season}`);
+      }
       params.push(`sublanguageid-${languageId}`);
     } else {
-      params.push(`imdbid-${numericImdbId}`);
-      params.push(`sublanguageid-${languageId}`);
+      return [];
     }
     
     params.sort();
@@ -126,23 +136,24 @@ async function fetchSubtitlesForLanguage(imdbId, languageId, season, episode) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const imdbId = searchParams.get('imdbId');
+  const query = searchParams.get('query');
   const season = searchParams.get('season');
   const episode = searchParams.get('episode');
 
-  if (!imdbId) {
+  if (!imdbId && !query) {
     return NextResponse.json(
-      { success: false, error: 'IMDB ID is required' },
+      { success: false, error: 'IMDB ID or query is required' },
       { status: 400 }
     );
   }
 
   try {
-    console.log('[SUBTITLES] Request:', { imdbId, season, episode });
+    console.log('[SUBTITLES] Request:', { imdbId, query, season, episode });
 
     // Fetch subtitles for all languages in parallel
     const languageIds = Object.keys(languageMap);
     const results = await Promise.all(
-      languageIds.map(langId => fetchSubtitlesForLanguage(imdbId, langId, season, episode))
+      languageIds.map(langId => fetchSubtitlesForLanguage(imdbId, langId, season, episode, query))
     );
 
     // Flatten all subtitles
