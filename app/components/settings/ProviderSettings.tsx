@@ -54,28 +54,10 @@ const PROVIDERS: ProviderInfo[] = [
     icon: '⚡',
   },
   {
-    id: 'uflix',
-    name: 'Uflix',
-    description: '5 embed servers — direct fetch from API route',
-    icon: '🌐',
-  },
-  {
-    id: 'hexa',
-    name: 'Hexa',
-    description: 'Multi-embed aggregator — 8 servers',
-    icon: '🔷',
-  },
-  {
     id: 'vidsrc',
     name: 'VidSrc',
     description: 'RPI-dependent — currently unavailable',
     icon: '🎬',
-  },
-  {
-    id: 'multi-embed',
-    name: 'MultiEmbed',
-    description: 'Multi-source embed aggregator',
-    icon: '🔗',
   },
   {
     id: 'moviebox',

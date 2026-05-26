@@ -160,8 +160,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -409,7 +409,7 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { videasy: true, bingebox: true, hianime: true, miruro: true, primesrc: true, uflix: true, hexa: true, vidsrc: true, 'multi-embed': true, moviebox: true };
+      let providerAvailability = { videasy: true, bingebox: true, hianime: true, miruro: true, primesrc: true, vidsrc: true, moviebox: true };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
@@ -419,10 +419,7 @@ function WatchContent() {
           hianime: providerData.providers?.hianime?.enabled ?? true,
           miruro: providerData.providers?.miruro?.enabled ?? true,
           primesrc: providerData.providers?.primesrc?.enabled ?? true,
-          uflix: providerData.providers?.uflix?.enabled ?? true,
-          hexa: providerData.providers?.hexa?.enabled ?? true,
           vidsrc: providerData.providers?.vidsrc?.enabled ?? true,
-          'multi-embed': providerData.providers?.['multi-embed']?.enabled ?? true,
           moviebox: providerData.providers?.moviebox?.enabled ?? true,
         };
       } catch (e) {
@@ -433,17 +430,17 @@ function WatchContent() {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      type WatchProvider = 'vidsrc' | 'uflix' | 'hexa' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro';
+      type WatchProvider = 'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro';
       const providerOrder: WatchProvider[] = [];
 
-      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'hianime', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
         const provider = p as WatchProvider;
         if (providerOrder.includes(provider)) continue;
         if (disabledProviders.has(provider)) continue;
-        if (provider !== 'uflix' && !providerAvailability[provider as keyof typeof providerAvailability]) continue;
+        if (!providerAvailability[provider as keyof typeof providerAvailability]) continue;
         providerOrder.push(provider);
       }
 
@@ -591,7 +588,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'uflix' | 'hexa' | 'primesrc' | 'moviebox' | 'bingebox' | 'multi-embed' | 'hianime' | 'miruro', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'primesrc' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);

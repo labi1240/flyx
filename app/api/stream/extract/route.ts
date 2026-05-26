@@ -269,7 +269,7 @@ function getValidProviderNames(): string[] {
     new Set([
       ...registry.getAllEnabled().map((p: any) => p.name),
       // Include disabled providers too — they can be explicitly requested
-      'flixer', 'uflix', 'animekai', 'hianime', 'vidsrc', 'primesrc', 'multi-embed',
+      'flixer', 'animekai', 'hianime', 'vidsrc', 'primesrc',
       'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'moviebox', 'bingebox', 'ufreetv', 'globetv',
     ])
   );
@@ -414,7 +414,7 @@ export async function GET(request: NextRequest) {
 
     // GUARD: Reject TMDB-dependent providers when tmdbId=0 (MAL-direct anime)
     // These providers (flixer, vidlink, vidsrc, etc.) need a real TMDB ID to work
-    const tmdbDependentProviders = ['flixer', 'uflix', 'vidsrc', 'multi-embed', 'hexa', '1movies', 'primesrc', 'moviebox', 'bingebox'];
+    const tmdbDependentProviders = ['flixer', 'vidsrc', '1movies', 'primesrc', 'moviebox', 'bingebox'];
     if (tmdbId === '0' && tmdbDependentProviders.includes(providerParam)) {
       return NextResponse.json(
         { error: `${providerParam} requires a real TMDB ID (tmdbId=0 is MAL-direct anime)`, success: false },
@@ -817,8 +817,8 @@ async function directExtractWithFallback(
   // Priority order for anime vs movie/tv
   // Only Flixer is active for movies/TV until new sources are added
   const providerOrder = isAnime
-    ? ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox']
-    : ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+    ? ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox']
+    : ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
 

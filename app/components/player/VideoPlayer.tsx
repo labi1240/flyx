@@ -135,7 +135,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Only the browser's own residential IP works. The Service Worker
   // (residential-ip-sw.js) fetches CDN content directly from the browser
   // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
-  if (providerName === 'flixer' || providerName === 'hexa') return sourceUrl;
+  if (providerName === 'flixer') return sourceUrl;
 
   // AnimeKai: MegaUp CDN blocks datacenter IPs. Return raw CDN URL so the
   // Service Worker intercepts it directly from the browser's residential IP.
@@ -311,10 +311,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     flixer: true, // Browser-direct via CF Worker — WASM-based, 12 NATO servers
     bingebox: true, // Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)
     primesrc: true, // CF Worker /primesrc/extract — Turnstile handled client-side
-    uflix: true, // 5 embed servers — resolved via CF Worker /vidsrc/extract
-    hexa: true, // Multi-embed aggregator via CF Worker /flixer/extract-all
     vidsrc: true, // 2embed API via CF Worker /vidsrc/extract
-    'multi-embed': true, // Multi-source embed aggregator
     '1movies': false, // Disabled — complex obfuscation requires headless browser
     animekai: false, // AnimeKai requires RPI for full pipeline — dead without RPI
     hianime: true, // Browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
@@ -646,10 +643,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         throw new Error('No Videasy sources available');
       }
 
-      // HEXA: Browser-direct extraction — browser calls hexa.su directly so
-      // hexa sees the user's residential IP (no captcha needed). Same pattern as DLHD.
-      if (providerName === 'flixer' || providerName === 'hexa') {
-        console.log(`[VideoPlayer] Hexa: browser-direct extraction`);
+      // Flixer: Browser-direct extraction via CF Worker (WASM-based, 12 NATO servers)
+      if (providerName === 'flixer') {
+        console.log(`[VideoPlayer] Flixer: browser-direct extraction`);
         const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
         const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
         if (sources.length > 0) {
@@ -659,7 +655,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           }
           return sources;
         }
-        throw new Error('No Hexa sources available');
+        throw new Error('No Flixer sources available');
       }
 
       // BINGEBOX: Server-side extraction via Next.js API (bypasses CF Worker IP block)
@@ -811,20 +807,20 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       }
     }
 
-    // HEXA: Browser-direct extraction (fallback path)
-    if (providerName === 'flixer' || providerName === 'hexa') {
-      console.log(`[VideoPlayer] Hexa: browser-direct extraction (fallback)`);
+    // Flixer: Browser-direct extraction (fallback path)
+    if (providerName === 'flixer') {
+      console.log(`[VideoPlayer] Flixer: browser-direct extraction (fallback)`);
       try {
         const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
         const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
         if (sources.length > 0) {
-          console.log(`[VideoPlayer] ✓ Hexa returned ${sources.length} source(s)`);
+          console.log(`[VideoPlayer] ✓ Flixer returned ${sources.length} source(s)`);
           return { sources, provider: providerName };
         }
-        console.warn('[VideoPlayer] ✗ Hexa returned no sources');
+        console.warn('[VideoPlayer] ✗ Flixer returned no sources');
         return null;
       } catch (err) {
-        console.error('[VideoPlayer] ✗ Hexa error:', err);
+        console.error('[VideoPlayer] ✗ Flixer error:', err);
         return null;
       }
     }
@@ -960,10 +956,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             flixer: data.providers?.flixer?.enabled ?? prev.flixer ?? true,
             bingebox: data.providers?.bingebox?.enabled ?? prev.bingebox ?? true,
             primesrc: data.providers?.primesrc?.enabled ?? prev.primesrc ?? true,
-            uflix: data.providers?.uflix?.enabled ?? prev.uflix ?? true,
-            hexa: data.providers?.hexa?.enabled ?? prev.hexa ?? true,
             vidsrc: data.providers?.vidsrc?.enabled ?? prev.vidsrc ?? true,
-            'multi-embed': data.providers?.['multi-embed']?.enabled ?? prev['multi-embed'] ?? true,
             moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
             hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
             miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
@@ -985,7 +978,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
       // For anime content: HiAnime/Miruro first (browser-direct via CF Worker),
       // then movie/TV providers as fallback (they may work for some anime via TMDB)
-      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
       const defaultOrder: string[] = isMalDirect
         ? ['hianime', 'miruro', ...movieTvOrder]
         : movieTvOrder;
@@ -1038,7 +1031,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       const providerPromises = priorityOrder.map(async (providerName): Promise<ProviderResult> => {
         // Flixer: browser-direct extraction via CF Worker
-        if (providerName === 'flixer' || providerName === 'hexa') {
+        if (providerName === 'flixer') {
           console.log(`[VideoPlayer] Trying ${providerName} (browser-direct)...`);
           const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
           const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
@@ -1094,19 +1087,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           if (sources.length === 0) throw new Error('miruro: no sources');
           console.log(`[VideoPlayer] ✓ miruro: ${sources.length} source(s)`);
           return { providerName: 'miruro', data: { success: true, provider: 'miruro' }, sources };
-        }
-
-        // Uflix: server-side extraction (TMDB→search→gStream×5→embed→m3u8) takes ~30s
-        if (providerName === 'uflix') {
-          const uflixUrl = buildApiUrl(providerName);
-          if (!uflixUrl) throw new Error('uflix: skipped (no API URL)');
-          console.log(`[VideoPlayer] Trying uflix (server-side, 35s timeout)...`);
-          const res = await fetchWithTimeout(uflixUrl, 35000);
-          if (!res || !res.ok) throw new Error(`uflix: ${res ? res.status : 'timeout'}`);
-          const d = await res.json();
-          if (!d.success || !d.sources?.length) throw new Error('uflix: no sources');
-          console.log(`[VideoPlayer] ✓ uflix: ${d.sources.length} source(s)`);
-          return { providerName: 'uflix', data: d, sources: d.sources };
         }
 
         const apiUrl = buildApiUrl(providerName);
@@ -1287,14 +1267,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     const loadStream = () => {
     if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/vidsrc') || streamUrl.includes('workers.dev')) {
       if (Hls.isSupported()) {
-        // Check if this is a Hexa source (needs more aggressive buffering)
+        // Check if this is a Flixer source (needs more aggressive buffering)
         const isFlixerSource = streamUrl.includes('flixer') || streamUrl.includes('p.10015.workers.dev') || streamUrl.includes('afc7d47f');
         
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false, // Disable low latency for VOD - improves buffering
           backBufferLength: 90,
-          // Increase buffer sizes for Hexa sources to handle variable speeds
+          // Increase buffer sizes for Flixer sources to handle variable speeds
           maxBufferLength: isFlixerSource ? 60 : 30,
           maxMaxBufferLength: isFlixerSource ? 120 : 60,
           maxBufferSize: isFlixerSource ? 120 * 1000 * 1000 : 60 * 1000 * 1000,
@@ -1541,7 +1521,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                     }
 
                     // Source doesn't have URL - need to fetch it from API
-                    if (nextSource.title && (provider === 'uflix' || provider === 'animekai' || provider === 'hianime' || provider === 'flixer')) {
+                    if (nextSource.title && (provider === 'animekai' || provider === 'hianime' || provider === 'flixer')) {
                       console.log(`[VideoPlayer] Fetching source ${i}: ${nextSource.title}...`);
 
                       const sourceName = nextSource.title.split(' (')[0];
@@ -1603,10 +1583,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
                   if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
                   if (provider !== 'primesrc' && providerAvailability.primesrc) fallbackProviders.push('primesrc');
-                  if (provider !== 'uflix' && providerAvailability.uflix) fallbackProviders.push('uflix');
-                  if (provider !== 'hexa' && providerAvailability.hexa) fallbackProviders.push('hexa');
                   if (provider !== 'vidsrc' && providerAvailability.vidsrc) fallbackProviders.push('vidsrc');
-                  if (provider !== 'multi-embed' && providerAvailability['multi-embed']) fallbackProviders.push('multi-embed');
                   if (provider !== '1movies' && providerAvailability['1movies']) fallbackProviders.push('1movies');
                   if (provider !== 'moviebox' && providerAvailability.moviebox) fallbackProviders.push('moviebox');
                   if (provider !== 'bingebox' && providerAvailability.bingebox) fallbackProviders.push('bingebox');
@@ -4886,10 +4863,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                         flixer: 'Flixer',
                         bingebox: 'BingeBox',
                         primesrc: 'PrimeSrc',
-                        uflix: 'Uflix',
-                        hexa: 'Hexa',
                         vidsrc: 'VidSrc',
-                        'multi-embed': 'MultiEmbed',
                         moviebox: 'MovieBox',
                       };
                       return (
@@ -4945,7 +4919,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                           
                           // If source has "unknown" or "down" status (not yet fetched, or previously failed), fetch it
                           // "down" sources should be re-fetchable — the user explicitly clicked it, so give it another shot
-                          if ((source.status === 'unknown' || source.status === 'down') && (menuProvider === 'uflix' || menuProvider === 'animekai' || menuProvider === 'hianime' || menuProvider === 'flixer')) {
+                          if ((source.status === 'unknown' || source.status === 'down') && (menuProvider === 'animekai' || menuProvider === 'hianime' || menuProvider === 'flixer')) {
                             console.log(`[VideoPlayer] Fetching unknown source: ${source.title} from ${menuProvider}`);
                             setIsLoading(true);
                             setShowServerMenu(false);
@@ -5111,7 +5085,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   ) : (
                     <div style={{ padding: '1rem', textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
                       {loadingProviders[menuProvider] ? 'Loading sources...' : 
-                       sourcesCache[menuProvider]?.length === 0 ? `No sources from ${menuProvider === 'animekai' ? 'AnimeKai' : menuProvider === 'vidsrc' ? 'VidSrc' : menuProvider === '1movies' ? '1movies' : menuProvider === 'flixer' ? 'Flixer' : menuProvider === 'uflix' ? 'Uflix' : menuProvider}` :
+                       sourcesCache[menuProvider]?.length === 0 ? `No sources from ${menuProvider === 'animekai' ? 'AnimeKai' : menuProvider === 'vidsrc' ? 'VidSrc' : menuProvider === '1movies' ? '1movies' : menuProvider === 'flixer' ? 'Flixer' : menuProvider}` :
                        'Click to load sources'}
                     </div>
                   )}

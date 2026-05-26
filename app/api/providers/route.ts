@@ -33,29 +33,11 @@ export async function GET() {
         primary: false,
         description: 'Needs Turnstile token + embed CDNs block CF IPs',
       },
-      uflix: {
-        enabled: true,
-        name: 'Uflix',
-        primary: false,
-        description: '5 embed servers — direct fetch (unverified from CF IPs)',
-      },
-      hexa: {
-        enabled: true,
-        name: 'Hexa',
-        primary: false,
-        description: 'Multi-embed aggregator — direct fetch (unverified from CF IPs)',
-      },
       vidsrc: {
         enabled: false,
         name: 'VidSrc',
         primary: false,
         description: 'RPI-dependent — dead without RPI',
-      },
-      'multi-embed': {
-        enabled: true,
-        name: 'MultiEmbed',
-        primary: false,
-        description: 'Multi-source embed aggregator — direct fetch (unverified)',
       },
       hianime: {
         enabled: true,

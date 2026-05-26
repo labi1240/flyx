@@ -108,10 +108,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
         flixer: providersData.providers?.flixer?.enabled ?? true,
         bingebox: providersData.providers?.bingebox?.enabled ?? true,
         primesrc: providersData.providers?.primesrc?.enabled ?? true,
-        uflix: providersData.providers?.uflix?.enabled ?? true,
-        hexa: providersData.providers?.hexa?.enabled ?? true,
         vidsrc: providersData.providers?.vidsrc?.enabled ?? true,
-        'multi-embed': providersData.providers?.['multi-embed']?.enabled ?? true,
         moviebox: providersData.providers?.moviebox?.enabled ?? true,
         hianime: providersData.providers?.hianime?.enabled ?? true,
         miruro: providersData.providers?.miruro?.enabled ?? true,
@@ -127,26 +124,25 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       for (const p of userOrder) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
-        if (p !== 'uflix' && !availability[p as keyof typeof availability]) continue;
+        if (!availability[p as keyof typeof availability]) continue;
         providerOrder.push(p);
       }
 
       // Add any remaining available providers as fallback
-      const allProviders = ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'uflix', 'hexa', 'vidsrc', 'multi-embed', 'moviebox'];
+      const allProviders = ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;
-        if (!availability[p as keyof typeof availability] && p !== 'uflix') continue;
+        if (!availability[p as keyof typeof availability]) continue;
         providerOrder.push(p);
       }
 
       // Try each provider
       for (const provider of providerOrder) {
         try {
-          // FLIXER: Use browser-direct extraction via CF Worker (same as VideoPlayer.tsx)
-          // The server-side /api/stream/extract route can't call hexa.su directly
-          // because hexa.su blocks datacenter IPs. The CF Worker /flixer/extract-all
-          // handles everything server-side (WASM keygen, API call, decrypt).
+          // Flixer: Browser-direct extraction via CF Worker
+          // The CF Worker /flixer/extract-all handles everything server-side
+          // (WASM keygen, API call, decrypt).
           if (provider === 'flixer') {
             const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
             const flixerSources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
