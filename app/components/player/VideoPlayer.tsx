@@ -98,6 +98,12 @@ interface VideoPlayerProps {
   autoplay?: boolean; // Auto-start playback (used when navigating from previous episode)
   malId?: number; // MyAnimeList ID for anime (used for accurate episode mapping)
   malTitle?: string; // MAL title for the specific season/entry
+  // Pre-extracted stream (bypasses internal provider extraction)
+  // Used by AnimeWatchClient which handles its own extraction
+  externalStreamUrl?: string;
+  externalStreamSources?: Array<{ title: string; url: string; quality?: string; requiresSegmentProxy?: boolean; skipIntro?: [number, number]; skipOutro?: [number, number]; provider?: string }>;
+  externalStreamProvider?: string;
+  externalStreamSourceIndex?: number;
 }
 
 /**
@@ -159,7 +165,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   return sourceUrl;
 }
 
-export default function VideoPlayer({ tmdbId, mediaType, season, episode, title, nextEpisode, onNextEpisode, onBack, autoplay = false, malId, malTitle }: VideoPlayerProps) {
+export default function VideoPlayer({ tmdbId, mediaType, season, episode, title, nextEpisode, onNextEpisode, onBack, autoplay = false, malId, malTitle, externalStreamUrl, externalStreamSources, externalStreamProvider, externalStreamSourceIndex }: VideoPlayerProps) {
   // Debug: Log nextEpisode prop
   useEffect(() => {
     console.log('[VideoPlayer] nextEpisode prop received:', nextEpisode);
@@ -941,6 +947,27 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     let cancelled = false;
 
     const initializePlayer = async () => {
+      // Pre-extracted stream bypass (used by AnimeWatchClient)
+      // When externalStreamUrl is provided, skip all provider extraction
+      // and go straight to playback with the pre-extracted sources.
+      if (externalStreamUrl && externalStreamSources) {
+        console.log('[VideoPlayer] Using pre-extracted stream:', externalStreamProvider);
+        const prov = externalStreamProvider || 'anime';
+        const idx = externalStreamSourceIndex || 0;
+        setProvider(prov);
+        setMenuProvider(prov);
+        setSourcesCache(prev => ({ ...prev, [prov]: externalStreamSources }));
+        setAvailableSources(externalStreamSources);
+        setCurrentSourceIndex(idx);
+        const src = externalStreamSources[idx];
+        if (src?.skipIntro) setSkipIntro(src.skipIntro);
+        if (src?.skipOutro) setSkipOutro(src.skipOutro);
+        setStreamUrl(applyStreamProxy(src.url, prov, src.requiresSegmentProxy));
+        setProviderTabOrder([prov]);
+        setIsLoading(false);
+        return;
+      }
+
       // ================================================================
       // SEQUENTIAL PROVIDER FETCH (same approach as mobile player)
       // Try providers one at a time in priority order.

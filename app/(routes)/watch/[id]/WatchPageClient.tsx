@@ -160,8 +160,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -588,7 +588,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'primesrc' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'primesrc' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);

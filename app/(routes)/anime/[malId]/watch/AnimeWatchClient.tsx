@@ -68,7 +68,7 @@ export default function AnimeWatchClient() {
   // Mobile player detection - lock once set
   const [useMobilePlayer, setUseMobilePlayer] = useState<boolean | null>(null);
   const hasSetMobilePlayerRef = useRef(false);
-  
+
   useEffect(() => {
     if (!hasSetMobilePlayerRef.current && mobileInfo.screenWidth > 0) {
       const shouldUseMobile = mobileInfo.isMobile || mobileInfo.screenWidth < 768;
@@ -77,19 +77,18 @@ export default function AnimeWatchClient() {
     }
   }, [mobileInfo.isMobile, mobileInfo.screenWidth]);
 
-  // Mobile player state
-  const [mobileStreamUrl, setMobileStreamUrl] = useState<string | null>(null);
-  const [mobileSources, setMobileSources] = useState<Array<{ title: string; url: string; quality?: string; provider?: string; skipIntro?: [number, number]; skipOutro?: [number, number] }>>([]);
-  const [mobileSourceIndex, setMobileSourceIndex] = useState(0);
-  const [mobileLoading, setMobileLoading] = useState(true);
-  const [mobileError, setMobileError] = useState<string | null>(null);
-  const [mobileResumeTime, setMobileResumeTime] = useState(0);
-  
+  // Shared stream state (used by both desktop and mobile paths)
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamSources, setStreamSources] = useState<Array<{ title: string; url: string; quality?: string; provider?: string; requiresSegmentProxy?: boolean; skipIntro?: [number, number]; skipOutro?: [number, number] }>>([]);
+  const [streamSourceIndex, setStreamSourceIndex] = useState(0);
+  const [streamLoading, setStreamLoading] = useState(true);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamResumeTime, setStreamResumeTime] = useState(0);
+
   // Provider state
-  const [currentProvider, setCurrentProvider] = useState<'hianime' | 'miruro' | 'videasy' | 'bingebox' | 'vidsrc' | 'primesrc' | 'moviebox' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'hianime' | 'miruro' | 'videasy' | 'bingebox' | 'vidsrc' | 'primesrc' | 'moviebox'>>([]);
-  const [loadingProvider, setLoadingProvider] = useState(false);
-  
+  const [currentProvider, setCurrentProvider] = useState<string>('hianime');
+  const [availableProviders, setAvailableProviders] = useState<Array<string>>([]);
+
   // Audio preference for anime
   const [audioPref, setAudioPref] = useState<AnimeAudioPreference>(() => getProviderSettings().animeAudioPreference);
 
@@ -130,28 +129,30 @@ export default function AnimeWatchClient() {
     return sourceMatchesAudioPreference(sourceTitle, pref);
   }, []);
 
-  // Fetch stream for mobile player
-  const fetchMobileStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: string) => {
+  // Fetch stream — shared by both desktop and mobile paths
+  const fetchStream = useCallback(async (audioPreference?: AnimeAudioPreference, provider?: string) => {
     if (!malId || !anime) return;
 
-    setMobileLoading(true);
-    setMobileError(null);
+    setStreamLoading(true);
+    setStreamError(null);
 
     const currentAudioPref = audioPreference || audioPref;
     const useProvider = provider || 'hianime';
     const animeTitle = anime.title_english || anime.title;
     const targetEp = anime.type === 'Movie' ? undefined : episode;
 
-    // Build fallback order: try requested provider first, then the other anime provider
-    const fallbackProviders: Array<'hianime' | 'miruro'> = useProvider === 'miruro'
-      ? ['miruro', 'hianime']
-      : ['hianime', 'miruro'];
+    // Build fallback order: try requested provider first, then the other anime providers
+    const allAnimeProviders: Array<string> = useProvider === 'miruro'
+      ? ['miruro', 'hianime', 'animekai']
+      : useProvider === 'animekai'
+      ? ['animekai', 'hianime', 'miruro']
+      : ['hianime', 'miruro', 'animekai'];
 
-    let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
+    let sources: Array<{ title: string; url: string; quality?: string; provider: string; requiresSegmentProxy?: boolean; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
     let activeProvider: string = useProvider;
 
     try {
-      for (const fbProvider of fallbackProviders) {
+      for (const fbProvider of allAnimeProviders) {
         try {
           if (fbProvider === 'hianime') {
             const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
@@ -162,6 +163,7 @@ export default function AnimeWatchClient() {
                 url: s.url,
                 quality: s.quality,
                 provider: 'hianime',
+                requiresSegmentProxy: s.requiresSegmentProxy,
                 skipIntro: s.skipIntro,
                 skipOutro: s.skipOutro,
               }));
@@ -177,9 +179,26 @@ export default function AnimeWatchClient() {
                 url: s.url,
                 quality: s.quality,
                 provider: 'miruro',
+                requiresSegmentProxy: s.requiresSegmentProxy,
               }));
               activeProvider = 'miruro';
               break;
+            }
+          } else if (fbProvider === 'animekai') {
+            const akRes = await fetch(`/api/stream/extract?tmdbId=0&type=${anime.type === 'Movie' ? 'movie' : 'tv'}&provider=animekai&malId=${malId}&malTitle=${encodeURIComponent(animeTitle)}${targetEp ? `&season=1&episode=${targetEp}` : ''}`);
+            if (akRes.ok) {
+              const akData = await akRes.json();
+              if (akData.success && akData.sources?.length > 0) {
+                sources = akData.sources.map((s: any) => ({
+                  title: s.title || 'AnimeKai Source',
+                  url: s.url,
+                  quality: s.quality,
+                  provider: 'animekai',
+                  requiresSegmentProxy: s.requiresSegmentProxy,
+                }));
+                activeProvider = 'animekai';
+                break;
+              }
             }
           }
         } catch (e) {
@@ -188,9 +207,9 @@ export default function AnimeWatchClient() {
       }
 
       if (sources.length > 0) {
-        setMobileSources(sources);
-        setCurrentProvider(activeProvider as any);
-        setAvailableProviders(['hianime', 'miruro']);
+        setStreamSources(sources);
+        setCurrentProvider(activeProvider);
+        setAvailableProviders(allAnimeProviders.filter(p => sources.some((s: any) => s.provider === p) || p === activeProvider));
 
         let selectedIndex = 0;
         const matchingIndex = sources.findIndex((s: any) =>
@@ -198,103 +217,52 @@ export default function AnimeWatchClient() {
         );
         if (matchingIndex >= 0) selectedIndex = matchingIndex;
 
-        setMobileStreamUrl(sources[selectedIndex].url);
-        setMobileSourceIndex(selectedIndex);
-        setMobileLoading(false);
+        setStreamUrl(sources[selectedIndex].url);
+        setStreamSourceIndex(selectedIndex);
+        setStreamLoading(false);
         return;
       }
 
-      setMobileError('No streams available from any anime provider');
-      setMobileLoading(false);
+      setStreamError('No streams available from any anime provider');
+      setStreamLoading(false);
     } catch (e) {
-      setMobileError('Failed to load video');
-      setMobileLoading(false);
+      setStreamError('Failed to load video');
+      setStreamLoading(false);
     }
   }, [malId, episode, audioPref, sourceMatchesAudioPref, anime]);
 
-  // Fetch mobile stream on mount
+  // Fetch stream on mount (both desktop and mobile)
   const lastFetchedRef = useRef<string | null>(null);
   useEffect(() => {
     const key = `${malId}-${episode}`;
-    if (useMobilePlayer && lastFetchedRef.current !== key) {
+    if (useMobilePlayer !== null && lastFetchedRef.current !== key) {
       lastFetchedRef.current = key;
-      fetchMobileStream();
+      fetchStream();
     }
-  }, [useMobilePlayer, malId, episode, fetchMobileStream]);
+  }, [useMobilePlayer, malId, episode, fetchStream]);
 
   // Handle audio preference change
   const handleAudioPrefChange = useCallback((newPref: AnimeAudioPreference, currentTime: number = 0) => {
-    setMobileResumeTime(currentTime);
+    setStreamResumeTime(currentTime);
     setAudioPref(newPref);
     saveProviderSettings({ animeAudioPreference: newPref });
-    fetchMobileStream(newPref, currentProvider);
-  }, [fetchMobileStream, currentProvider]);
+    fetchStream(newPref, currentProvider);
+  }, [fetchStream, currentProvider]);
 
-  // Handle provider change - supports hianime and animekai
+  // Handle provider change
   const handleProviderChange = useCallback(async (_provider: string, currentTime: number = 0) => {
-    if (!malId || !anime) return;
-    setMobileResumeTime(currentTime);
-    setLoadingProvider(true);
-
-    const animeTitle = anime.title_english || anime.title;
-    const targetEp = anime.type === 'Movie' ? undefined : episode;
-
-    // Build fallback order: try requested provider first, then the other anime provider
-    const fallbackProviders: Array<'hianime' | 'miruro'> = _provider === 'miruro'
-      ? ['miruro', 'hianime']
-      : ['hianime', 'miruro'];
-
-    let sources: Array<{ title: string; url: string; quality?: string; provider: string; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
-    let activeProvider: string = _provider;
-
-    try {
-      for (const fbProvider of fallbackProviders) {
-        try {
-          if (fbProvider === 'hianime') {
-            const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
-            const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
-            if (hiSources.length > 0) {
-              sources = hiSources.map((s: any) => ({ title: s.title || 'HiAnime Source', url: s.url, quality: s.quality, provider: 'hianime', skipIntro: s.skipIntro, skipOutro: s.skipOutro }));
-              activeProvider = 'hianime';
-              break;
-            }
-          } else if (fbProvider === 'miruro') {
-            const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
-            const miSources = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
-            if (miSources.length > 0) {
-              sources = miSources.map((s: any) => ({ title: s.title || 'Miruro Source', url: s.url, quality: s.quality, provider: 'miruro' }));
-              activeProvider = 'miruro';
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn(`[AnimeWatch] Provider change ${fbProvider} failed:`, e);
-        }
-      }
-
-      if (sources.length > 0) {
-        setMobileSources(sources);
-        setCurrentProvider(activeProvider as any);
-        const matchingIndex = sources.findIndex((s: any) => s.title && sourceMatchesAudioPref(s.title, audioPref));
-        const selectedIndex = matchingIndex >= 0 ? matchingIndex : 0;
-        setMobileStreamUrl(sources[selectedIndex].url);
-        setMobileSourceIndex(selectedIndex);
-      }
-    } catch (e) {
-      console.error(`[AnimeWatch] Provider change failed:`, e);
-    } finally {
-      setLoadingProvider(false);
-    }
-  }, [malId, episode, anime, audioPref, sourceMatchesAudioPref]);
+    setStreamResumeTime(currentTime);
+    fetchStream(audioPref, _provider);
+  }, [fetchStream, audioPref]);
 
   // Handle source change
-  const handleMobileSourceChange = useCallback((index: number, currentTime: number = 0) => {
-    if (index >= 0 && index < mobileSources.length) {
-      setMobileResumeTime(currentTime);
-      setMobileSourceIndex(index);
-      setMobileStreamUrl(mobileSources[index].url);
+  const handleSourceChange = useCallback((index: number, currentTime: number = 0) => {
+    if (index >= 0 && index < streamSources.length) {
+      setStreamResumeTime(currentTime);
+      setStreamSourceIndex(index);
+      setStreamUrl(streamSources[index].url);
     }
-  }, [mobileSources]);
+  }, [streamSources]);
 
   const handleBack = () => {
     router.push(`/anime/${malId}`);
@@ -358,37 +326,39 @@ export default function AnimeWatchClient() {
     title: nextEpisode.title,
   } : null;
 
+  // Loading state (shared)
+  if (streamLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.playerWrapper}>
+          <div className={styles.loading}>
+            <div className={styles.spinner} />
+            <p>Finding best source...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state (shared)
+  if (streamError || !streamUrl) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.playerWrapper}>
+          <div className={styles.error}>
+            <h2>Playback Error</h2>
+            <p>{streamError || 'Failed to load video'}</p>
+            <button onClick={() => fetchStream()} className={styles.backButton}>
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Mobile player
   if (useMobilePlayer) {
-    if (mobileLoading) {
-      return (
-        <div className={styles.container}>
-          <div className={styles.playerWrapper}>
-            <div className={styles.loading}>
-              <div className={styles.spinner} />
-              <p>Finding best source...</p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (mobileError || !mobileStreamUrl) {
-      return (
-        <div className={styles.container}>
-          <div className={styles.playerWrapper}>
-            <div className={styles.error}>
-              <h2>Playback Error</h2>
-              <p>{mobileError || 'Failed to load video'}</p>
-              <button onClick={() => fetchMobileStream()} className={styles.backButton}>
-                Try Again
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className={styles.container}>
         <MobileVideoPlayer
@@ -397,32 +367,31 @@ export default function AnimeWatchClient() {
           season={isMovie ? undefined : 1}
           episode={isMovie ? undefined : episode}
           title={title}
-          streamUrl={mobileStreamUrl}
-          availableSources={mobileSources}
-          currentSourceIndex={mobileSourceIndex}
-          onSourceChange={handleMobileSourceChange}
+          streamUrl={streamUrl}
+          availableSources={streamSources}
+          currentSourceIndex={streamSourceIndex}
+          onSourceChange={handleSourceChange}
           onBack={handleBack}
           nextEpisode={nextEpisodeProp}
           onNextEpisode={handleNextEpisode}
-          initialTime={mobileResumeTime}
-          onError={(err) => setMobileError(err)}
+          initialTime={streamResumeTime}
+          onError={(err) => setStreamError(err)}
           isAnime={true}
           audioPref={audioPref}
           onAudioPrefChange={handleAudioPrefChange}
-          availableProviders={availableProviders}
-          currentProvider={currentProvider}
+          availableProviders={availableProviders as any}
+          currentProvider={currentProvider as any}
           onProviderChange={handleProviderChange}
-          loadingProvider={loadingProvider}
-          skipIntro={mobileSources[mobileSourceIndex]?.skipIntro}
-          skipOutro={mobileSources[mobileSourceIndex]?.skipOutro}
+          loadingProvider={false}
+          skipIntro={streamSources[streamSourceIndex]?.skipIntro}
+          skipOutro={streamSources[streamSourceIndex]?.skipOutro}
         />
       </div>
     );
   }
 
-  // Desktop player - use the same VideoPlayer as regular watch page
-  // IMPORTANT: Pass malId as tmdbId="0" (placeholder) since we're using MAL ID directly
-  // The VideoPlayer will use malId for the actual extraction
+  // Desktop player — pass pre-extracted stream via externalStreamUrl to bypass
+  // VideoPlayer's internal provider extraction (which would try movie/TV providers).
   return (
     <div className={styles.container}>
       <DesktopVideoPlayer
@@ -437,6 +406,10 @@ export default function AnimeWatchClient() {
         autoplay={shouldAutoplay}
         malId={malId}
         malTitle={title}
+        externalStreamUrl={streamUrl}
+        externalStreamSources={streamSources}
+        externalStreamProvider={currentProvider}
+        externalStreamSourceIndex={streamSourceIndex}
       />
     </div>
   );
