@@ -7,22 +7,40 @@
  * Generated from TABLES.TXT with 183 substitution tables.
  */
 
-// URL-safe Base64 functions
-function urlSafeBase64Decode(str: string): Buffer {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-  return Buffer.from(padded, 'base64');
+// Browser-compatible hex decode → Uint8Array
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
 }
 
-function urlSafeBase64Encode(buffer: Buffer): string {
-  return buffer.toString('base64')
+// Browser-compatible Base64 functions (Uint8Array, no Node.js Buffer)
+function urlSafeBase64Decode(str: string): Uint8Array {
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+  const binaryStr = atob(padded);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function urlSafeBase64Encode(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
 }
 
 // Constants
-const HEADER = Buffer.from('c509bdb497cbc06873ff412af12fd8007624c29faa', 'hex');
+const HEADER = hexToBytes('c509bdb497cbc06873ff412af12fd8007624c29faa');
 const HEADER_LEN = 21;
 
 // Constant padding bytes in the cipher structure
@@ -257,10 +275,10 @@ export function encryptAnimeKai(plaintext: string): string {
   
   // Total buffer: header + encrypted block
   const totalLen = HEADER_LEN + encryptedBlockLen;
-  const cipher = Buffer.alloc(totalLen);
-  
+  const cipher = new Uint8Array(totalLen);
+
   // Copy header at the start
-  HEADER.copy(cipher, 0);
+  cipher.set(HEADER, 0);
   
   // Set constant bytes in the encrypted block (offset by HEADER_LEN)
   for (const [pos, val] of Object.entries(CONSTANT_BYTES)) {

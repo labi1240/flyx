@@ -9,9 +9,9 @@
  * - MAL IDs are unique identifiers that don't change
  * - Avoids issues with title variations (e.g., "JJK" vs "Jujutsu Kaisen")
  * 
- * *** MegaUp decryption uses enc-dec.app API ***
+ * *** Native decryption throughout ***
  * - AnimeKai crypto: Native implementation (183 substitution tables)
- * - MegaUp decryption: enc-dec.app API (keystream is video-specific, native XOR impossible)
+ * - MegaUp decryption: Native XOR with pre-computed keystream (no external API)
  * 
  * Flow:
  * 1. Determine MAL ID (from parameter or TMDB → MAL lookup via ARM API)

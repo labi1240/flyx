@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v5';
+const SW_VERSION = 'v6';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -375,6 +375,16 @@ async function proxyWithResidentialIp(request) {
 
   console.log('[ResiSW] ' + provider.label + ' ← ' + cdnUrl.substring(0, 100));
 
+  // ── Handle CORS preflight (OPTIONS) ────────────────────────
+  if (reqMethod === 'OPTIONS') {
+    var preflightHeaders = new Headers();
+    preflightHeaders.set('Access-Control-Allow-Origin', '*');
+    preflightHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    preflightHeaders.set('Access-Control-Allow-Headers', request.headers.get('Access-Control-Request-Headers') || 'Content-Type');
+    preflightHeaders.set('Access-Control-Max-Age', '86400');
+    return new Response(null, { status: 204, headers: preflightHeaders });
+  }
+
   // ── Build fetch headers ────────────────────────────────────
   var fetchHeaders = {};
 
@@ -494,9 +504,9 @@ async function proxyWithResidentialIp(request) {
 self.addEventListener('fetch', function(event) {
   var url = event.request.url;
 
-  // Only GET and POST requests
+  // Only GET, POST, and OPTIONS (CORS preflight) requests
   var method = event.request.method;
-  if (method !== 'GET' && method !== 'POST') return;
+  if (method !== 'GET' && method !== 'POST' && method !== 'OPTIONS') return;
 
   // Only http/https
   if (url.indexOf('http') !== 0) return;

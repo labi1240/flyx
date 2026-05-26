@@ -30,6 +30,7 @@ import {
   buildStreamResponseFromFetch,
 } from './shared';
 import { decryptAnimeKai } from './animekai-crypto';
+import { decryptMegaUp, MEGAUP_USER_AGENT } from './megaup-crypto';
 
 export interface Env {
   LOG_LEVEL?: string;
@@ -663,7 +664,7 @@ async function fetchMegaUpMediaFromCF(
 
     // Try CF direct — no Referer (MegaUp blocks it), no Origin
     const headers: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'User-Agent': MEGAUP_USER_AGENT,
       'Accept': '*/*',
       'Accept-Encoding': 'identity',
     };
@@ -722,13 +723,15 @@ async function fetchMegaUpMediaFromCF(
       return null;
     }
 
-    // MegaUp decryption requires enc-dec.app (keystream is video-specific).
-    // We can't do it natively. Return the encrypted result — the client
-    // must handle MegaUp decryption via enc-dec.app or its own crypto.
-    // For now, the stream URL is embedded in the decrypted result.
-    // Actually: we need to call enc-dec.app for MegaUp decryption.
-    // As a fallback, return null so the caller falls through to RPI.
-    logger.warn('MegaUp /media/ fetched but decryption requires enc-dec.app — deferring to RPI');
+    // Native XOR decryption with pre-computed keystream
+    logger.info('Decrypting MegaUp /media/ response natively');
+    const decrypted = decryptMegaUp(mediaData.result);
+    const parsed = JSON.parse(decrypted);
+    const streamUrl = parsed?.sources?.[0]?.file || parsed?.sources?.[0]?.url || parsed?.file || parsed?.url || '';
+    if (streamUrl) {
+      return streamUrl;
+    }
+    logger.warn('MegaUp decrypted but no stream URL found');
     return null;
 
   } catch (error) {

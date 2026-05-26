@@ -185,20 +185,20 @@ export default function AnimeWatchClient() {
               break;
             }
           } else if (fbProvider === 'animekai') {
-            const akRes = await fetch(`/api/stream/extract?tmdbId=0&type=${anime.type === 'Movie' ? 'movie' : 'tv'}&provider=animekai&malId=${malId}&malTitle=${encodeURIComponent(animeTitle)}${targetEp ? `&season=1&episode=${targetEp}` : ''}`);
-            if (akRes.ok) {
-              const akData = await akRes.json();
-              if (akData.success && akData.sources?.length > 0) {
-                sources = akData.sources.map((s: any) => ({
-                  title: s.title || 'AnimeKai Source',
-                  url: s.url,
-                  quality: s.quality,
-                  provider: 'animekai',
-                  requiresSegmentProxy: s.requiresSegmentProxy,
-                }));
-                activeProvider = 'animekai';
-                break;
-              }
+            const { extractAnimeKaiClient } = await import('@/app/lib/services/animekai-client-extractor');
+            const akSources = await extractAnimeKaiClient(malId, animeTitle, targetEp, currentAudioPref);
+            if (akSources.length > 0) {
+              sources = akSources.map((s: any) => ({
+                title: s.title || 'AnimeKai Source',
+                url: s.url,
+                quality: s.quality,
+                provider: 'animekai',
+                requiresSegmentProxy: s.requiresSegmentProxy,
+                skipIntro: s.skipIntro,
+                skipOutro: s.skipOutro,
+              }));
+              activeProvider = 'animekai';
+              break;
             }
           }
         } catch (e) {
