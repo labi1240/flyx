@@ -234,12 +234,13 @@ export default function AnimeWatchClient() {
   // Fetch stream on mount (both desktop and mobile)
   const lastFetchedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (useMobilePlayer === null || !anime) return;
     const key = `${malId}-${episode}`;
-    if (useMobilePlayer !== null && lastFetchedRef.current !== key) {
+    if (lastFetchedRef.current !== key) {
       lastFetchedRef.current = key;
       fetchStream();
     }
-  }, [useMobilePlayer, malId, episode, fetchStream]);
+  }, [useMobilePlayer, malId, episode, fetchStream, anime]);
 
   // Handle audio preference change
   const handleAudioPrefChange = useCallback((newPref: AnimeAudioPreference, currentTime: number = 0) => {

@@ -14,39 +14,46 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { malId: malIdStr } = await params;
   const malId = parseInt(malIdStr);
-  
+
   if (isNaN(malId) || malId <= 0) {
     return {
       title: 'Invalid Anime | Flyx',
       description: 'The requested anime ID is invalid.',
     };
   }
-  
-  const anime = await malService.getById(malId);
-  
-  if (!anime) {
-    return {
-      title: 'Anime Not Found | Flyx',
-      description: 'The requested anime could not be found.',
-    };
+
+  try {
+    const anime = await malService.getById(malId);
+
+    if (anime) {
+      return {
+        title: `${anime.title} | Flyx Anime`,
+        description: anime.synopsis || `Watch ${anime.title} on Flyx`,
+        openGraph: {
+          title: anime.title,
+          description: anime.synopsis || undefined,
+          images: anime.images?.jpg?.large_image_url ? [anime.images.jpg.large_image_url] : undefined,
+          type: 'video.tv_show',
+          siteName: 'Flyx',
+        },
+        twitter: {
+          card: 'summary_large_image',
+          title: anime.title,
+          description: anime.synopsis || undefined,
+          images: anime.images?.jpg?.large_image_url ? [anime.images.jpg.large_image_url] : undefined,
+        },
+      };
+    }
+  } catch (e) {
+    console.warn(`[AnimeMetadata] getById failed for ${malId}:`, e instanceof Error ? e.message : String(e));
   }
 
+  // Server fetch failed or returned null — page will retry client-side.
+  // Use a neutral title instead of "Anime Not Found" since the data
+  // may load successfully from the browser.
   return {
-    title: `${anime.title} | Flyx Anime`,
-    description: anime.synopsis || `Watch ${anime.title} on Flyx`,
-    openGraph: {
-      title: anime.title,
-      description: anime.synopsis || undefined,
-      images: anime.images?.jpg?.large_image_url ? [anime.images.jpg.large_image_url] : undefined,
-      type: 'video.tv_show',
-      siteName: 'Flyx',
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title: anime.title,
-      description: anime.synopsis || undefined,
-      images: anime.images?.jpg?.large_image_url ? [anime.images.jpg.large_image_url] : undefined,
-    },
+    title: `Anime ${malId} | Flyx`,
+    description: 'Watch anime on Flyx',
   };
 }
 
