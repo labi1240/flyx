@@ -869,9 +869,9 @@ async function makeFlixerRequest(
   
   const response = await fetch(url, {
     headers,
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(15000),
   });
-  
+
   if (!response.ok) {
     const errorText = await response.text();
     // Detect Cloudflare infrastructure errors (1016 = DNS error, 1015 = rate limited, etc.)
@@ -1372,7 +1372,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
         const fetchViaCdn = async (targetUrl: string): Promise<Response> => {
           // Try direct first
           try {
-            const directRes = await fetch(targetUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(6000) });
+            const directRes = await fetch(targetUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(15000) });
             if (directRes.ok) return directRes;
           } catch {}
           // RPI rust-fetch
@@ -1817,7 +1817,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     // Test Strategy 1: Direct
     try {
       const t0 = Date.now();
-      const directRes = await fetch(targetUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(8000) });
+      const directRes = await fetch(targetUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(15000) });
       const body = await directRes.text();
       results.direct = { status: directRes.status, ms: Date.now() - t0, bodyLen: body.length, bodyPreview: body.substring(0, 100), contentType: directRes.headers.get('content-type') };
     } catch (e) { results.direct = { error: e instanceof Error ? e.message : String(e) }; }
@@ -1888,7 +1888,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     // but CF Workers can strip the Origin header. The CDN may still block by
     // IP range, but we try direct first for speed.
     try {
-      const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(10000) });
+      const directRes = await fetch(decodedUrl, { headers: cdnHeaders, signal: AbortSignal.timeout(15000) });
       if (directRes.ok) {
         logger.info('Flixer stream: CF direct succeeded');
         return handleFlixerStreamResponse(directRes, decodedUrl, url.origin, 'cf-direct', logger);

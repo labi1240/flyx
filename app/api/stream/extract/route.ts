@@ -111,6 +111,18 @@ function maybeProxyUrl(source: any, provider: string): string {
     return source.url; // Return direct URL - browser will fetch directly
   }
 
+  // Skip wrapping if URL is already proxied through our CF Worker
+  if (source.url.includes('/bingebox/stream') ||
+      source.url.includes('/flixer/stream') ||
+      source.url.includes('/animekai') ||
+      source.url.includes('/hianime/') ||
+      source.url.includes('/vidsrc/') ||
+      source.url.includes('/primesrc/') ||
+      source.url.includes('/stream?url=') ||
+      source.url.includes('media-proxy.vynx-3b3.workers.dev')) {
+    return source.url;
+  }
+
   try {
     // These providers/CDNs block datacenter IPs (Cloudflare, AWS, etc.)
     // They MUST go through /animekai route -> proxying
@@ -240,7 +252,7 @@ function buildSuccessResponse(sources: any[], provider: string, opts: {
 // PROVIDER NAME MAPPING (backward compat: 'hexa' → 'multi-embed', etc.)
 // ============================================================================
 const PROVIDER_ALIASES: Record<string, string> = {
-  'hexa': 'multi-embed',
+  'hexa': 'flixer',
   'multiembed': 'multi-embed',
 };
 

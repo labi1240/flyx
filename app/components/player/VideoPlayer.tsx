@@ -135,7 +135,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Only the browser's own residential IP works. The Service Worker
   // (residential-ip-sw.js) fetches CDN content directly from the browser
   // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
-  if (providerName === 'flixer') return sourceUrl;
+  if (providerName === 'flixer' || providerName === 'hexa') return sourceUrl;
 
   // AnimeKai: MegaUp CDN blocks datacenter IPs. Return raw CDN URL so the
   // Service Worker intercepts it directly from the browser's residential IP.
@@ -648,12 +648,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       // HEXA: Browser-direct extraction — browser calls hexa.su directly so
       // hexa sees the user's residential IP (no captcha needed). Same pattern as DLHD.
-      if (providerName === 'flixer') {
+      if (providerName === 'flixer' || providerName === 'hexa') {
         console.log(`[VideoPlayer] Hexa: browser-direct extraction`);
         const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
         const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
         if (sources.length > 0) {
-          setSourcesCache(prev => ({ ...prev, flixer: sources }));
+          setSourcesCache(prev => ({ ...prev, [providerName]: sources }));
           if (providerName === provider) {
             setAvailableSources(sources);
           }
@@ -812,14 +812,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
 
     // HEXA: Browser-direct extraction (fallback path)
-    if (providerName === 'flixer') {
-      console.log(`[VideoPlayer] Hexa: browser-direct extraction (fallback path)`);
+    if (providerName === 'flixer' || providerName === 'hexa') {
+      console.log(`[VideoPlayer] Hexa: browser-direct extraction (fallback)`);
       try {
         const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
         const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
         if (sources.length > 0) {
           console.log(`[VideoPlayer] ✓ Hexa returned ${sources.length} source(s)`);
-          return { sources, provider: 'flixer' };
+          return { sources, provider: providerName };
         }
         console.warn('[VideoPlayer] ✗ Hexa returned no sources');
         return null;
@@ -1038,13 +1038,13 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
 
       const providerPromises = priorityOrder.map(async (providerName): Promise<ProviderResult> => {
         // Flixer: browser-direct extraction via CF Worker
-        if (providerName === 'flixer') {
-          console.log(`[VideoPlayer] Trying flixer (browser-direct)...`);
+        if (providerName === 'flixer' || providerName === 'hexa') {
+          console.log(`[VideoPlayer] Trying ${providerName} (browser-direct)...`);
           const { extractFlixerClient } = await import('@/app/lib/services/flixer-client-extractor');
           const sources = await extractFlixerClient(tmdbId, mediaType as 'movie' | 'tv', season, episode);
-          if (sources.length === 0) throw new Error('flixer: no sources');
-          console.log(`[VideoPlayer] ✓ flixer: ${sources.length} source(s)`);
-          return { providerName: 'flixer', data: { success: true, provider: 'flixer' }, sources };
+          if (sources.length === 0) throw new Error(providerName + ': no sources');
+          console.log(`[VideoPlayer] ✓ ${providerName}: ${sources.length} source(s)`);
+          return { providerName, data: { success: true, provider: providerName }, sources };
         }
 
         // Videasy: browser-direct extraction via CF Worker

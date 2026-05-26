@@ -69,7 +69,7 @@ export async function extractFlixerClient(
   }
 
   const sources: FlixerSource[] = data.sources
-    .filter(s => s.url && (s.status === 'working' || s.status === 'validated'))
+    .filter(s => s.url)
     .sort((a, b) => {
       // Validated sources first
       if (a.status === 'validated' && b.status !== 'validated') return -1;
