@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
-import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import { useAnalytics } from '../analytics/AnalyticsProvider';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
 import { trackWatchStart, trackWatchProgress, trackWatchPause, trackWatchComplete } from '@/lib/utils/live-activity';
@@ -109,6 +109,18 @@ interface VideoPlayerProps {
  */
 function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy?: boolean): string {
   if (!sourceUrl) return sourceUrl;
+
+  // HiAnime: the CF Worker /hianime/extract returns already-proxied URLs like
+  //   https://media-proxy.../hianime/stream?url=ENCODED_CDN_URL
+  // Unwrap them to raw CDN URLs so the Service Worker intercepts them directly
+  // from the browser's residential IP (MegaCloud CDN blocks CF Worker IPs).
+  if (providerName === 'hianime' && sourceUrl.includes('/hianime/stream?url=')) {
+    try {
+      var rawCdnUrl = new URL(sourceUrl).searchParams.get('url');
+      if (rawCdnUrl) return rawCdnUrl;
+    } catch (e) {}
+  }
+
   // Already proxied — don't double-wrap
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
@@ -125,6 +137,10 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
   if (providerName === 'flixer') return sourceUrl;
 
+  // AnimeKai: MegaUp CDN blocks datacenter IPs. Return raw CDN URL so the
+  // Service Worker intercepts it directly from the browser's residential IP.
+  if (providerName === 'animekai') return sourceUrl;
+
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -135,7 +151,6 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (!needsProxy) return sourceUrl;
 
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
-  if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
   if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
   return sourceUrl;
 }

@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v2';
+const SW_VERSION = 'v3';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -55,35 +55,6 @@ function isOwnHostname(hostname) {
   if (hostname.endsWith('.vynx-3b3.workers.dev')) return true;
   if (hostname.endsWith('.vynx.cc')) return true;
   return false;
-}
-
-// ── CF Worker extraction paths (MUST NOT intercept — complex server logic) ──
-
-const EXTRACTION_PATHS = [
-  '/flixer/extract', '/flixer/extract-all', '/flixer/sign',
-  '/flixer/decrypt', '/flixer/health', '/flixer/monitor',
-  '/flixer/stream-debug', '/flixer/validate',
-  '/animekai/extract', '/animekai/full-extract', '/animekai/health',
-  '/hianime/extract', '/hianime/health', '/hianime/debug',
-  '/bingebox/extract', '/bingebox/health',
-  '/ufreetv/channels', '/ufreetv/health',
-  '/ppv/health', '/ppv/test',
-  '/viprow/health', '/viprow/stream',
-  '/primesrc/extract', '/primesrc/health',
-  '/dlhd/', '/iptv/token', '/iptv/create-link',
-  '/health', '/decode',
-  '/init', '/challenge',
-  '/v3/', '/v2/', '/quantum/',
-  '/recon/', '/analytics/', '/tmdb/',
-  '/globetv/channels', '/ntv/channels', '/ntv/matches',
-  '/moviebox/session', '/miruro/search',
-  '/videasy/extract',
-];
-
-function isExtractionPath(pathname) {
-  return EXTRACTION_PATHS.some(function(p) {
-    return pathname.startsWith(p);
-  });
 }
 
 // ── CDN Provider Configurations ─────────────────────────────────────────────
@@ -260,17 +231,6 @@ function findProvider(cdnUrl) {
   return null;
 }
 
-function extractTargetUrl(cfWorkerUrl) {
-  try {
-    var url = new URL(cfWorkerUrl);
-    // searchParams.get() returns the decoded value
-    var target = url.searchParams.get('url');
-    return target || null;
-  } catch (e) {
-    return null;
-  }
-}
-
 // ── HLS Playlist URL Rewriting ───────────────────────────────────────────────
 // When the SW fetches an m3u8 directly from a CDN, relative segment URLs
 // must be resolved to absolute CDN URLs. Otherwise HLS.js resolves them
@@ -299,7 +259,7 @@ function rewritePlaylistUrls(playlist, cdnBaseUrl) {
   } catch (e) {}
 
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
+    var line = lines[i].replace(/\r$/, '');
     var trimmed = line.trim();
 
     // Handle EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF tags with URI= attribute
@@ -364,46 +324,13 @@ async function proxyWithResidentialIp(request) {
     return null;
   }
 
-  // Never intercept our own infrastructure
+  // Never intercept our own infrastructure (including CF Worker proxy URLs)
+  // The CF Worker handles its own proxy routes — the SW only intercepts
+  // direct CDN requests from the browser's residential IP.
   if (isOwnHostname(hostname)) return null;
 
-  // ── CASE 1: CF Worker proxy URL ──
-  // url looks like: media-proxy.vynx-3b3.workers.dev/provider/stream?url=CDN_URL
-  if (hostname === 'media-proxy.vynx-3b3.workers.dev' || hostname === 'localhost') {
-    var pathname = new URL(requestUrl).pathname;
-
-    // Never intercept extraction endpoints (complex server logic)
-    if (isExtractionPath(pathname)) return null;
-
-    // LIST OF PURE STREAM PROXY PATHS — these are just header-injection proxies
-    // that forward to CDNs. Safe to intercept.
-    var isStreamProxyPath =
-      pathname.startsWith('/flixer/stream') ||
-      pathname.startsWith('/animekai') ||
-      pathname.startsWith('/hianime') ||
-      pathname.startsWith('/bingebox/stream') ||
-      pathname.startsWith('/ufreetv/stream') ||
-      pathname.startsWith('/cdn-live/stream') ||
-      pathname.startsWith('/vidsrc/stream') ||
-      pathname.startsWith('/viprow/manifest') ||
-      pathname.startsWith('/viprow/segment') ||
-      pathname.startsWith('/viprow/key') ||
-      pathname.startsWith('/ppv/stream') ||
-      pathname.startsWith('/iptv/stream') ||
-      pathname.startsWith('/tv/iptv/stream') ||
-      pathname.startsWith('/stream') ||
-      pathname === '/segment';
-
-    if (!isStreamProxyPath) return null;
-
-    cdnUrl = extractTargetUrl(requestUrl);
-    if (!cdnUrl) return null;
-  }
-  // ── CASE 2: Direct CDN URL ──
-  // url is already pointing to a CDN domain
-  else {
-    cdnUrl = requestUrl;
-  }
+  // Only intercept direct CDN URLs
+  cdnUrl = requestUrl;
 
   // Find matching provider
   var provider = findProvider(cdnUrl);
@@ -537,27 +464,22 @@ self.addEventListener('fetch', function(event) {
   var hostname;
   try { hostname = new URL(url).hostname; } catch (e) { return; }
 
-  // Skip our own domains (but NOT media-proxy — we intercept its stream routes)
-  if (isOwnHostname(hostname) && hostname !== 'media-proxy.vynx-3b3.workers.dev') {
-    return;
-  }
+  // Skip ALL our own domains — the CF Worker handles its own proxy routes.
+  // The SW only intercepts direct CDN requests from the browser.
+  if (isOwnHostname(hostname)) return;
 
-  // Only intercept:
-  //   a) CF Worker proxy URLs, or
-  //   b) URLs matching known CDN patterns
-  if (hostname !== 'media-proxy.vynx-3b3.workers.dev' && hostname !== 'localhost') {
-    var matchesProvider = false;
-    for (var i = 0; i < CDN_PROVIDERS.length; i++) {
-      for (var j = 0; j < CDN_PROVIDERS[i].patterns.length; j++) {
-        if (url.indexOf(CDN_PROVIDERS[i].patterns[j]) !== -1) {
-          matchesProvider = true;
-          break;
-        }
+  // Only intercept URLs matching known CDN patterns
+  var matchesProvider = false;
+  for (var i = 0; i < CDN_PROVIDERS.length; i++) {
+    for (var j = 0; j < CDN_PROVIDERS[i].patterns.length; j++) {
+      if (url.indexOf(CDN_PROVIDERS[i].patterns[j]) !== -1) {
+        matchesProvider = true;
+        break;
       }
-      if (matchesProvider) break;
     }
-    if (!matchesProvider) return;
+    if (matchesProvider) break;
   }
+  if (!matchesProvider) return;
 
   // Intercept!
   event.respondWith(
