@@ -1007,13 +1007,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const disabledProviders = new Set(userProviderSettings.disabledProviders || []);
 
       const isMalDirect = tmdbId === '0' || (isAnime && (!tmdbId || tmdbId === '0'));
-      // For anime content: HiAnime/Miruro/AnimeKai first (browser-direct via CF Worker),
+      // HiAnime shut down March 2026 — removed from provider order
+      // For anime content: Miruro/AnimeKai first (browser-direct via CF Worker),
       // then movie/TV providers as fallback (they may work for some anime via TMDB)
       const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
-      const animeOrder: string[] = ['hianime', 'miruro', 'animekai'];
+      const animeOrder: string[] = ['miruro', 'animekai'];
       const defaultOrder: string[] = isAnime
         ? [...animeOrder, ...movieTvOrder]
-        : isMalDirect ? ['hianime', 'miruro'] : movieTvOrder;
+        : isMalDirect ? ['miruro'] : movieTvOrder;
 
       const priorityOrder: string[] = [];
       for (const p of userOrder) {

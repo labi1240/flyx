@@ -129,7 +129,7 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
       }
 
       // Add any remaining available providers as fallback
-      const allProviders = ['videasy', 'flixer', 'bingebox', 'hianime', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
+      const allProviders = ['videasy', 'flixer', 'bingebox', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
       for (const p of allProviders) {
         if (providerOrder.includes(p)) continue;
         if (disabledProviders.has(p)) continue;

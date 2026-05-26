@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v6';
+const SW_VERSION = 'v7';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -511,12 +511,8 @@ self.addEventListener('fetch', function(event) {
   // Only http/https
   if (url.indexOf('http') !== 0) return;
 
-  // Quick skip: our own page assets and API calls
-  // These never need residential IP proxying
-  if (url.indexOf('/api/') !== -1 && url.indexOf('media-proxy') === -1) return;
-  if (url.indexOf('/_next/') !== -1) return;
-  if (url.indexOf('image.tmdb.org') !== -1) return;
-  if (url.indexOf('api.themoviedb.org') !== -1) return;
+  // Quick skips are now hostname-aware (applied below only for OWN_HOSTNAMES)
+  // This avoids accidentally skipping upstream CDN URLs like miruro.to/api/secure/pipe
 
   // Hostname quick check: does this URL look like it could be a CDN?
   var hostname;
@@ -524,7 +520,16 @@ self.addEventListener('fetch', function(event) {
 
   // Skip ALL our own domains — the CF Worker handles its own proxy routes.
   // The SW only intercepts direct CDN requests from the browser.
-  if (isOwnHostname(hostname)) return;
+  if (isOwnHostname(hostname)) {
+    // Quick skip our own page assets and API calls (never need residential IP)
+    if (url.indexOf('/api/') !== -1 && url.indexOf('media-proxy') === -1) return;
+    if (url.indexOf('/_next/') !== -1) return;
+    return;
+  }
+
+  // Quick skip known third-party APIs (not CDNs, no residential IP needed)
+  if (url.indexOf('image.tmdb.org') !== -1) return;
+  if (url.indexOf('api.themoviedb.org') !== -1) return;
 
   // Only intercept URLs matching known CDN patterns
   var matchesProvider = false;

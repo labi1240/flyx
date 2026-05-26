@@ -86,7 +86,7 @@ export default function AnimeWatchClient() {
   const [streamResumeTime, setStreamResumeTime] = useState(0);
 
   // Provider state
-  const [currentProvider, setCurrentProvider] = useState<string>('hianime');
+  const [currentProvider, setCurrentProvider] = useState<string>('miruro');
   const [availableProviders, setAvailableProviders] = useState<Array<string>>([]);
 
   // Audio preference for anime
@@ -137,16 +137,16 @@ export default function AnimeWatchClient() {
     setStreamError(null);
 
     const currentAudioPref = audioPreference || audioPref;
-    const useProvider = provider || 'hianime';
+    const useProvider = provider || 'miruro';
     const animeTitle = anime.title_english || anime.title;
     const targetEp = anime.type === 'Movie' ? undefined : episode;
 
     // Build fallback order: try requested provider first, then the other anime providers
     const allAnimeProviders: Array<string> = useProvider === 'miruro'
-      ? ['miruro', 'hianime', 'animekai']
+      ? ['miruro', 'animekai']
       : useProvider === 'animekai'
-      ? ['animekai', 'hianime', 'miruro']
-      : ['hianime', 'miruro', 'animekai'];
+      ? ['animekai', 'miruro']
+      : ['miruro', 'animekai'];
 
     let sources: Array<{ title: string; url: string; quality?: string; provider: string; requiresSegmentProxy?: boolean; skipIntro?: [number, number]; skipOutro?: [number, number] }> = [];
     let activeProvider: string = useProvider;
@@ -154,23 +154,7 @@ export default function AnimeWatchClient() {
     try {
       for (const fbProvider of allAnimeProviders) {
         try {
-          if (fbProvider === 'hianime') {
-            const { extractHiAnimeClient } = await import('@/app/lib/services/hianime-client-extractor');
-            const hiSources = await extractHiAnimeClient(malId, animeTitle, targetEp);
-            if (hiSources.length > 0) {
-              sources = hiSources.map((s: any) => ({
-                title: s.title || 'HiAnime Source',
-                url: s.url,
-                quality: s.quality,
-                provider: 'hianime',
-                requiresSegmentProxy: s.requiresSegmentProxy,
-                skipIntro: s.skipIntro,
-                skipOutro: s.skipOutro,
-              }));
-              activeProvider = 'hianime';
-              break;
-            }
-          } else if (fbProvider === 'miruro') {
+          if (fbProvider === 'miruro') {
             const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
             const miSources = await extractMiruroClient(malId, animeTitle, targetEp, currentAudioPref);
             if (miSources.length > 0) {

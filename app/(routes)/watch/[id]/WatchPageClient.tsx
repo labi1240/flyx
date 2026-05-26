@@ -433,7 +433,7 @@ function WatchContent() {
       type WatchProvider = 'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro';
       const providerOrder: WatchProvider[] = [];
 
-      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'hianime', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
+      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
