@@ -12,7 +12,23 @@
  * Repeat views of the same video bypass the API entirely.
  */
 
-import { getCachedKeystream, setCachedKeystream } from './megaup-keystream-cache';
+// Lazy-loaded keystream cache — avoids bundling node:fs into client components.
+// Only works server-side; browser calls silently no-op.
+let _cacheModule: { getCachedKeystream: Function; setCachedKeystream: Function } | null = null;
+async function loadCacheModule() {
+  if (!_cacheModule) {
+    try {
+      _cacheModule = await import('./megaup-keystream-cache');
+    } catch {
+      // Browser/client context — node:fs not available
+      _cacheModule = {
+        getCachedKeystream: () => null,
+        setCachedKeystream: () => {},
+      };
+    }
+  }
+  return _cacheModule;
+}
 
 // Fixed User-Agent for MegaUp requests
 export const MEGAUP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
@@ -141,7 +157,8 @@ function decryptNative(encryptedBase64: string): string {
 export async function decryptMegaUp(encryptedBase64: string, videoId?: string): Promise<string> {
   // Strategy 0: Local keystream cache (when videoId known)
   if (videoId) {
-    const cached = getCachedKeystream(videoId, MEGAUP_USER_AGENT);
+    const cache = await loadCacheModule();
+    const cached = cache.getCachedKeystream(videoId, MEGAUP_USER_AGENT);
     if (cached) {
       const encBytes = base64ToBytes(encryptedBase64);
       const decLen = Math.min(cached.length, encBytes.length);
@@ -174,7 +191,8 @@ export async function decryptMegaUp(encryptedBase64: string, videoId?: string): 
         for (let i = 0; i < ksLen; i++) {
           ks[i] = encBytes[i] ^ plainBytes[i];
         }
-        setCachedKeystream(videoId, MEGAUP_USER_AGENT, ks);
+        const cache = await loadCacheModule();
+        cache.setCachedKeystream(videoId, MEGAUP_USER_AGENT, ks);
       } catch { /* caching failure is non-fatal */ }
     }
     return result;
