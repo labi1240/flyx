@@ -34,13 +34,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // Get sync context to reload when sync completes
-  let syncContext: { isInitialSyncComplete: boolean; lastSyncTime: number | null } | null = null;
-  try {
-    syncContext = useSyncContext();
-  } catch {
-    // SyncProvider might not be available in all contexts
-  }
+  // Sync context — always call the hook unconditionally.
+  // SyncContext has a default value, so useContext never throws
+  // even when SyncProvider is not in the tree.
+  const syncContext = useSyncContext();
 
   // Load from localStorage on mount
   useEffect(() => {
