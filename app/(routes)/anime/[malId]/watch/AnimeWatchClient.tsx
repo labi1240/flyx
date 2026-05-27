@@ -268,6 +268,13 @@ export default function AnimeWatchClient() {
     }
   }, [malId, nextEpisode, anime, router]);
 
+  // Set document title for client-side navigations — MUST be before any early returns
+  const title = anime ? (anime.title_english || anime.title) : '';
+  useEffect(() => {
+    if (!title) return;
+    document.title = `${isMovie ? '' : `E${episode} - `}${title} | Flyx`;
+  }, [title, episode, isMovie]);
+
   // Wait for mobile detection
   if (useMobilePlayer === null) {
     return (
@@ -304,13 +311,6 @@ export default function AnimeWatchClient() {
       </div>
     );
   }
-
-  const title = anime.title_english || anime.title;
-
-  // Set document title for client-side navigations
-  useEffect(() => {
-    document.title = `${isMovie ? '' : `E${episode} - `}${title} | Flyx`;
-  }, [title, episode, isMovie]);
 
   const nextEpisodeProp = nextEpisode && !nextEpisode.isLastEpisode ? {
     season: 1,
