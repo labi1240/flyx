@@ -83,6 +83,7 @@ export interface MALSeason {
   synopsis: string | null;
   imageUrl: string;
   seasonOrder: number; // Order in the series (1, 2, 3...)
+  year?: number; // Release year for sorting
 }
 
 export interface MALAnimeDetails {
@@ -485,9 +486,10 @@ async function collectSequelChain(
     const relations = await getMALAnimeRelations(startId);
     
     for (const relation of relations) {
-      // ONLY follow SEQUEL relations to get subsequent parts
-      // Do NOT follow PREQUEL to avoid including the original series
-      if (relation.relation === 'Sequel') {
+      // Follow BOTH Sequel AND Prequel to ensure complete series discovery
+      // regardless of which entry point is used (start, middle, or end of series).
+      // Title-keyword filtering in getMALSeriesSeasons() prevents unrelated entries.
+      if (relation.relation === 'Sequel' || relation.relation === 'Prequel') {
         for (const entry of relation.entry) {
           if (entry.type === 'anime' && !collected.has(entry.mal_id)) {
             console.log(`[MAL] Following ${relation.relation}: ${entry.name} (${entry.mal_id})`);

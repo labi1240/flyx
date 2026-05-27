@@ -70,7 +70,7 @@ const ANIME_DETAIL_QUERY = `
       relations {
         edges {
           relationType
-          node { id idMal type format title { romaji english } }
+          node { id idMal type format status episodes title { romaji english } coverImage { extraLarge large } startDate { year month day } seasonYear averageScore }
         }
       }
     }
@@ -105,7 +105,13 @@ interface RawMediaDetail {
         idMal: number | null;
         type: string;
         format: string | null;
+        status: string | null;
+        episodes: number | null;
         title: { romaji: string | null; english: string | null };
+        coverImage: { extraLarge: string | null; large: string | null };
+        startDate: { year: number | null; month: number | null; day: number | null } | null;
+        seasonYear: number | null;
+        averageScore: number | null;
       };
     }>;
   } | null;
@@ -207,7 +213,6 @@ function buildSeasons(main: RawMediaDetail, relatedEdges: NonNullable<RawMediaDe
 
   // Add related entries that are sequels/prequels
   const relevantTypes = new Set(['SEQUEL', 'PREQUEL', 'SIDE_STORY', 'ALTERNATIVE', 'SPIN_OFF']);
-  let order = 2;
   for (const edge of relatedEdges) {
     if (!edge.node.idMal) continue;
     if (!relevantTypes.has(edge.relationType) && edge.node.type !== 'ANIME') continue;
@@ -217,15 +222,16 @@ function buildSeasons(main: RawMediaDetail, relatedEdges: NonNullable<RawMediaDe
       malId: edge.node.idMal,
       title: edge.node.title?.romaji || edge.node.title?.english || 'Unknown',
       titleEnglish: edge.node.title?.english || edge.node.title?.romaji || null,
-      imageUrl: '',
-      episodes: null,
-      score: null,
-      status: 'Unknown',
+      imageUrl: edge.node.coverImage?.extraLarge || edge.node.coverImage?.large || '',
+      episodes: edge.node.episodes ?? null,
+      score: edge.node.averageScore != null ? Math.round(edge.node.averageScore) / 10 : null,
+      status: edge.node.status ? (STS[edge.node.status] ?? 'Unknown') : 'Unknown',
       type: edge.node.format ? (FMT[edge.node.format] ?? 'TV') : 'TV',
       aired: '',
       synopsis: null,
       members: null,
-      seasonOrder: order++,
+      seasonOrder: 0, // Assigned after sorting
+      year: edge.node.seasonYear ?? edge.node.startDate?.year ?? undefined,
     } as MALSeason);
   }
 
@@ -236,6 +242,11 @@ function buildSeasons(main: RawMediaDetail, relatedEdges: NonNullable<RawMediaDe
       type: 'TV', aired: '', synopsis: null, members: null, seasonOrder: 1,
     } as MALSeason);
   }
+
+  // Sort by year (ascending), then assign seasonOrder
+  seasons.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+  seasons.forEach((s, i) => { s.seasonOrder = i + 1; });
+
   return seasons;
 }
 
