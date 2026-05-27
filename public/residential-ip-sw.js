@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v7';
+const SW_VERSION = 'v10';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -100,6 +100,15 @@ var CDN_PROVIDERS = [
     isApiExtraction: true,
   },
 
+  // ── 0e. enc-dec.app Decryption API ─────────────────────────
+  {
+    label: 'EncDecAPI',
+    patterns: ['enc-dec.app'],
+    origin: 'https://enc-dec.app',
+    referer: 'https://enc-dec.app/',
+    isApiExtraction: true,
+  },
+
   // ── 1. Flixer / Hexa ─────────────────────────────────────────
   {
     label: 'Flixer',
@@ -136,6 +145,10 @@ var CDN_PROVIDERS = [
       'megaup.live',
     ],
     // NO referer, NO origin — both cause 403 on MegaUp CDN
+    // Use original request: MegaUp/Cloudflare blocks the SW's
+    // stripped-down headers (Accept: */* w/o Sec-* headers looks
+    // like a bot). The page's full browser headers pass through.
+    useOriginalRequest: true,
   },
 
   // ── 3. MegaCloud CDN (HiAnime) ───────────────────────────────
@@ -388,6 +401,88 @@ async function proxyWithResidentialIp(request) {
   // ── Build fetch headers ────────────────────────────────────
   var fetchHeaders = {};
 
+  // Providers with useOriginalRequest need the page's real browser
+  // headers (Sec-*, Accept-Language, etc.) to pass Cloudflare bot
+  // detection, but the page's Referer and Origin are wrong (localhost).
+  // We build a new request copying safe browser headers, setting a
+  // clean Referer, and omitting the page's Origin.
+  if (provider.useOriginalRequest) {
+    try {
+      // Build a clean set of headers from the original request
+      var cleanHeaders = new Headers();
+
+      // Copy over safe browser headers that Cloudflare wants to see
+      request.headers.forEach(function(value, key) {
+        var lowerKey = key.toLowerCase();
+        // Skip headers that would reveal localhost or trigger bot detection
+        if (lowerKey === 'referer' || lowerKey === 'origin') return;
+        // Skip CORS headers — we add our own
+        if (lowerKey === 'access-control-request-headers') return;
+        if (lowerKey === 'access-control-request-method') return;
+        cleanHeaders.set(key, value);
+      });
+
+      // Set a clean Referer — MegaUp expects requests to come from its own pages
+      try {
+        var reqUrl = new URL(cdnUrl);
+        cleanHeaders.set('Referer', 'https://' + reqUrl.hostname + '/');
+      } catch (e) {}
+
+      // Build a new request WITHOUT the page's Origin header.
+      // By NOT setting Origin and using mode:'cors', the browser adds Origin
+      // automatically, but we'd rather have no Origin than localhost.
+      // Actually, for cors mode the browser always adds Origin. To avoid that
+      // we use no-cors and accept the opaque response... which is unreadable.
+      // So instead: use cors mode and hope a clean Referer + full browser
+      // headers is enough for MegaUp to accept localhost Origin.
+      var cleanRequest = new Request(cdnUrl, {
+        method: reqMethod,
+        headers: cleanHeaders,
+        mode: 'cors',
+        credentials: 'omit',
+      });
+
+      if (reqMethod === 'POST') {
+        cleanRequest = new Request(cdnUrl, {
+          method: reqMethod,
+          headers: cleanHeaders,
+          mode: 'cors',
+          credentials: 'omit',
+          body: await request.clone().text(),
+        });
+      }
+
+      console.log('[ResiSW] ' + provider.label + ' useOriginalRequest (clean headers) → ' + cdnUrl.substring(0, 60));
+
+      var originalResponse = await fetch(cleanRequest);
+
+      if (!originalResponse.ok) {
+        console.warn('[ResiSW] ' + provider.label + ' clean fetch returned ' + originalResponse.status);
+        return null;
+      }
+
+      console.log('[ResiSW] ' + provider.label + ' ✓ (clean) ' + originalResponse.status);
+
+      var corsHeaders = new Headers(originalResponse.headers);
+      if (!corsHeaders.has('Access-Control-Allow-Origin')) {
+        corsHeaders.set('Access-Control-Allow-Origin', '*');
+      }
+      corsHeaders.set('Access-Control-Expose-Headers',
+        'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+      corsHeaders.set('X-ResiSW', provider.label);
+
+      return new Response(originalResponse.body, {
+        status: originalResponse.status,
+        statusText: originalResponse.statusText,
+        headers: corsHeaders,
+      });
+    } catch (err) {
+      console.warn('[ResiSW] ' + provider.label + ' clean fetch ✗ ' +
+        (err.message || err));
+      return null;
+    }
+  }
+
   // User-Agent: use the browser's default (don't override)
   // The SW can't access navigator.userAgent directly in all browsers,
   // so we let the browser set its default User-Agent by not setting it.
@@ -395,6 +490,12 @@ async function proxyWithResidentialIp(request) {
   // Accept-Encoding: identity prevents the CDN from sending compressed
   // content that the SW would need to decompress
   fetchHeaders['Accept'] = '*/*';
+
+  // API extraction providers: forward X-Requested-With so the upstream
+  // server recognizes the request as AJAX and returns JSON (not HTML)
+  if (provider.isApiExtraction) {
+    fetchHeaders['X-Requested-With'] = 'XMLHttpRequest';
+  }
 
   // Referer
   if (provider.referer) {

@@ -44,110 +44,77 @@ const MIRURO_REFERER = 'https://kwik.cx/';
 // ============================================================================
 
 /**
- * XOR a string with a repeating key, returning the XOR'd string.
+ * Miruro Pipe Protocol v2 (reverse-engineered May 2026)
+ *
+ * REQUEST encoding:
+ *   JSON.stringify → encodeURIComponent → replace %XX with raw bytes → base64url
+ *   Pass as /api/secure/pipe?e={encoded}
+ *
+ * RESPONSE decoding (x-obfuscated: 2):
+ *   base64url decode → XOR bytes with hex-parsed 16-byte key → gunzip → JSON.parse
+ *
+ * The obfuscation key is the same hex string, but Miruro now parses it as
+ * hex pairs → 16 bytes (not ASCII). The old XOR+gzip on the request side
+ * has been removed — requests are now sent in plain base64url.
  */
-function xorString(input: string, key: string): string {
-  let result = '';
-  for (let i = 0; i < input.length; i++) {
-    result += String.fromCharCode(input.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-  }
-  return result;
+
+// Parse PIPE_OBF_KEY as hex bytes (16 bytes) — NOT as ASCII
+const PIPE_KEY_BYTES: number[] = [];
+for (let i = 0; i < PIPE_OBF_KEY.length; i += 2) {
+  PIPE_KEY_BYTES.push(parseInt(PIPE_OBF_KEY.substring(i, i + 2), 16));
 }
 
-/**
- * Convert a string to a Uint8Array
- */
-function stringToBytes(str: string): Uint8Array {
-  const bytes = new Uint8Array(str.length);
-  for (let i = 0; i < str.length; i++) {
-    bytes[i] = str.charCodeAt(i) & 0xff;
-  }
-  return bytes;
-}
-
-/**
- * Convert a Uint8Array to a string
- */
-function bytesToString(bytes: Uint8Array): string {
-  let str = '';
-  for (let i = 0; i < bytes.length; i++) {
-    str += String.fromCharCode(bytes[i]);
-  }
-  return str;
-}
-
-/**
- * Base64url encode (URL-safe base64 without padding)
- */
 function base64urlEncode(str: string): string {
   const base64 = btoa(str);
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/**
- * Base64url decode
- */
 function base64urlDecode(str: string): string {
-  // Restore padding
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) base64 += '=';
   return atob(base64);
 }
 
 /**
- * Gzip compress a Uint8Array using CompressionStream
+ * Encode a request envelope — NO encryption, just URI-encoding + base64url.
  */
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data as BlobPart]).stream();
-  const compressed = stream.pipeThrough(new CompressionStream('gzip'));
-  const blob = await new Response(compressed).blob();
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-/**
- * Gunzip decompress a Uint8Array using DecompressionStream
- */
-async function gunzipDecompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data as BlobPart]).stream();
-  const decompressed = stream.pipeThrough(new DecompressionStream('gzip'));
-  const blob = await new Response(decompressed).blob();
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-/**
- * Encode a request envelope through the Miruro pipe:
- * JSON.stringify → base64url → XOR → gzip → base64url
- */
-async function encodePipeEnvelope(envelope: Record<string, unknown>): Promise<string> {
+function encodePipeEnvelope(envelope: Record<string, unknown>): string {
   const json = JSON.stringify(envelope);
-  const b64 = base64urlEncode(json);
-  const xored = xorString(b64, PIPE_OBF_KEY);
-  const bytes = stringToBytes(xored);
-  const compressed = await gzipCompress(bytes);
-  // Convert compressed bytes to base64url (via string conversion)
-  const compressedStr = bytesToString(compressed);
-  return base64urlEncode(compressedStr);
+  // encodeURIComponent then convert %XX hex sequences back to raw bytes
+  const encoded = encodeURIComponent(json).replace(
+    /%([0-9A-F]{2})/g,
+    (_, hex: string) => String.fromCharCode(parseInt(hex, 16))
+  );
+  return base64urlEncode(encoded);
 }
 
 /**
- * Decode a Miruro pipe response:
- * base64url → gunzip → XOR → base64url → JSON.parse
+ * Decode a pipe response with x-obfuscated: 2
+ *   base64url decode → XOR bytes with 16-byte hex key → gunzip → JSON.parse
  */
 async function decodePipeResponse(data: string): Promise<any> {
-  // Step 1: base64url decode the response
-  const compressed = base64urlDecode(data);
-  const compressedBytes = stringToBytes(compressed);
+  // Step 1: base64url decode → Uint8Array
+  const base64Str = base64urlDecode(data);
+  const bytes = new Uint8Array(base64Str.length);
+  for (let i = 0; i < base64Str.length; i++) {
+    bytes[i] = base64Str.charCodeAt(i);
+  }
 
-  // Step 2: gunzip
-  const decompressedBytes = await gunzipDecompress(compressedBytes);
-  const decompressedStr = bytesToString(decompressedBytes);
+  // Step 2: XOR with hex-parsed key bytes
+  const xored = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    xored[i] = bytes[i] ^ PIPE_KEY_BYTES[i % PIPE_KEY_BYTES.length];
+  }
 
-  // Step 3: XOR decrypt
-  const unxored = xorString(decompressedStr, PIPE_OBF_KEY);
+  // Step 3: gunzip decompress
+  const stream = new Blob([xored as BlobPart]).stream();
+  const decompressed = stream.pipeThrough(new DecompressionStream('gzip'));
+  const blob = await new Response(decompressed).blob();
+  const decompressedBytes = new Uint8Array(await blob.arrayBuffer());
 
-  // Step 4: base64url decode → JSON
-  const json = base64urlDecode(unxored);
-  return JSON.parse(json);
+  // Step 4: decode → JSON
+  const text = new TextDecoder().decode(decompressedBytes);
+  return JSON.parse(text);
 }
 
 // ============================================================================
@@ -170,7 +137,7 @@ async function miruroGet(
     version: '0.2.0',
   };
 
-  const encrypted = await encodePipeEnvelope(envelope);
+  const encrypted = encodePipeEnvelope(envelope);
   const apiUrl = `${MIRURO_BASE}/api/secure/pipe?e=${encodeURIComponent(encrypted)}`;
 
   logger.info(`Miruro API call: ${path}`, { params });
@@ -185,7 +152,10 @@ async function miruroGet(
   });
 
   if (!res.ok) {
-    throw new Error(`Miruro ${path} returned ${res.status}`);
+    let errorBody = '';
+    try { errorBody = await res.text(); } catch {}
+    logger.error(`Miruro ${path} returned ${res.status}`, { body: errorBody.substring(0, 300) });
+    throw new Error(`Miruro ${path} returned ${res.status}: ${errorBody.substring(0, 150)}`);
   }
 
   const responseText = await res.text();

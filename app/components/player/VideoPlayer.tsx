@@ -1132,8 +1132,39 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           if (!res || !res.ok) throw new Error(`animekai: ${res ? res.status : 'timeout'}`);
           const d = await res.json();
           if (!d.success || !d.sources?.length) throw new Error('animekai: no sources');
-          console.log(`[VideoPlayer] ✓ animekai: ${d.sources.length} source(s)`);
-          return { providerName: 'animekai', data: d, sources: d.sources };
+
+          // Resolve any intermediate URLs (iframe pages, MegaUp embeds) to final HLS.
+          // The server can't fetch animekai.to or MegaUp from its datacenter IP,
+          // so the browser handles the last mile via fetch() — no JS/ad execution.
+          const { resolveAnimeKaiStream, resolveMegaUpStream } = await import('@/app/lib/services/animekai-client-iframe');
+          const resolvedSources: any[] = [];
+          for (const s of d.sources) {
+            if (!s.url) continue;
+            let finalUrl = s.url;
+            if (finalUrl.includes('animekai.to/iframe')) {
+              const hls = await resolveAnimeKaiStream(finalUrl);
+              if (hls) {
+                finalUrl = hls;
+                console.log(`[VideoPlayer] AnimeKai resolved iframe: ${hls.substring(0, 80)}...`);
+              } else {
+                console.log(`[VideoPlayer] AnimeKai iframe resolution failed for: ${s.title}`);
+                continue;
+              }
+            } else if (finalUrl.includes('megaup') && finalUrl.includes('/e/')) {
+              const hls = await resolveMegaUpStream(finalUrl);
+              if (hls) {
+                finalUrl = hls;
+                console.log(`[VideoPlayer] AnimeKai resolved MegaUp: ${hls.substring(0, 80)}...`);
+              } else {
+                console.log(`[VideoPlayer] AnimeKai MegaUp resolution failed for: ${s.title}`);
+                continue;
+              }
+            }
+            resolvedSources.push({ ...s, url: finalUrl });
+          }
+          if (resolvedSources.length === 0) throw new Error('animekai: no playable sources');
+          console.log(`[VideoPlayer] ✓ animekai: ${resolvedSources.length} source(s)`);
+          return { providerName: 'animekai', data: d, sources: resolvedSources };
         }
 
         const apiUrl = buildApiUrl(providerName);

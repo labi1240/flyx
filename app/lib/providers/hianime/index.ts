@@ -22,7 +22,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['anime'];
 export class HiAnimeProvider implements Provider {
   readonly name = 'hianime';
   readonly priority = 35;
-  readonly enabled = true;
+  readonly enabled = false; // HiAnime shut down March 2026
 
   supportsContent(_mediaType: MediaType, metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {
     if (metadata?.isAnime) return true;

@@ -1,11 +1,11 @@
 /**
- * Miruro Extractor — Thin client
+ * Miruro Extractor
  *
- * ALL extraction and pipe encryption happens on the Cloudflare Worker.
- * This module just calls the worker's /miruro endpoints and returns
- * clean results in the standard StreamSource format.
+ * Uses the Miruro Pipe Protocol v2 for direct API access (bypasses CF Worker).
+ * Falls back to CF Worker only when direct pipe is unavailable (e.g. datacenter IPs).
  */
 
+import { gunzipSync } from 'zlib';
 import type { StreamSource, SubtitleTrack } from '../providers/types';
 
 interface MiruroEpisode {
@@ -95,18 +95,86 @@ function getWorkerBaseUrl(): string {
   return cfProxyUrl.replace(/\/stream\/?$/, '');
 }
 
-/**
- * Fetch Miruro episodes via CF Worker (handles pipe encryption server-side)
- */
-export async function extractMiruroEpisodes(anilistId: number): Promise<MiruroEpisodesResponse> {
-  const baseUrl = getWorkerBaseUrl();
-  const url = `${baseUrl}/miruro/episodes?anilistId=${anilistId}`;
+// ═══════════════════════════════════════════════════════════════════════════════
+// Miruro Pipe Protocol v2 — direct API access (bypasses CF Worker)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  console.log(`[Miruro] Fetching episodes for AniList ID ${anilistId}`);
+const MIRURO_BASE = 'https://miruro.to';
+const PIPE_KEY_HEX = '71951034f8fbcf53d89db52ceb3dc22c';
+const PIPE_KEY_BYTES = new Uint8Array(
+  PIPE_KEY_HEX.match(/.{2}/g)!.map(h => parseInt(h, 16))
+);
+
+function base64urlEncode(str: string): string {
+  const base64 = Buffer.from(str, 'binary').toString('base64');
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function encodePipeEnvelope(envelope: Record<string, unknown>): string {
+  const json = JSON.stringify(envelope);
+  const encoded = encodeURIComponent(json).replace(
+    /%([0-9A-F]{2})/g,
+    (_, hex: string) => String.fromCharCode(parseInt(hex, 16))
+  );
+  return base64urlEncode(encoded);
+}
+
+async function decodePipeResponse(text: string): Promise<any> {
+  // base64url → bytes
+  let base64 = text.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  const bytes = Buffer.from(base64, 'base64');
+
+  // XOR with 16-byte hex key
+  const xored = Buffer.alloc(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    xored[i] = bytes[i] ^ PIPE_KEY_BYTES[i % PIPE_KEY_BYTES.length];
+  }
+
+  // Gunzip → JSON
+  const decompressed = gunzipSync(xored);
+  return JSON.parse(decompressed.toString('utf8'));
+}
+
+async function miruroDirectGet(path: string, params: Record<string, string>): Promise<any> {
+  const envelope = {
+    path,
+    method: 'GET',
+    query: params,
+    body: null,
+    version: '0.2.0',
+  };
+
+  const e = encodePipeEnvelope(envelope);
+  const url = `${MIRURO_BASE}/api/secure/pipe?e=${encodeURIComponent(e)}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Origin': MIRURO_BASE,
+      'Referer': `${MIRURO_BASE}/`,
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Miruro ${path} returned ${res.status}`);
+  }
+
+  const text = await res.text();
+  return decodePipeResponse(text);
+}
+
+async function miruroGetViaWorker(path: string, params: Record<string, string>): Promise<any> {
+  const baseUrl = getWorkerBaseUrl();
+  const searchParams = new URLSearchParams(params);
+  const url = `${baseUrl}/miruro/${path}?${searchParams.toString()}`;
+
   const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
 
   if (!res.ok) {
-    throw new Error(`Miruro episodes fetch failed: ${res.status}`);
+    throw new Error(`Miruro ${path} fetch failed: ${res.status}`);
   }
 
   const data = await res.json();
@@ -114,7 +182,33 @@ export async function extractMiruroEpisodes(anilistId: number): Promise<MiruroEp
     throw new Error(data.error);
   }
 
-  return data as MiruroEpisodesResponse;
+  return data;
+}
+
+/**
+ * Miruro API call — tries direct pipe first (faster, no dependency on CF Worker
+ * which is blocked by Miruro's anti-bot). Falls back to CF Worker if direct pipe
+ * fails (e.g. from datacenter IPs like Vercel where Miruro might block the request).
+ */
+async function miruroSmartGet(path: string, params: Record<string, string>): Promise<any> {
+  // Always try direct pipe first — no cached failure state.
+  // Miruro blocks CF Worker IPs (returns fake 400 "Invalid envelope format"),
+  // so the worker fallback is only useful from datacenter IPs where the
+  // Next.js server can't reach Miruro directly either.
+  try {
+    return await miruroDirectGet(path, params);
+  } catch (err) {
+    console.log('[Miruro] Direct pipe failed, trying CF Worker:', (err as Error).message);
+    return miruroGetViaWorker(path, params);
+  }
+}
+
+/**
+ * Fetch Miruro episodes
+ */
+export async function extractMiruroEpisodes(anilistId: number): Promise<MiruroEpisodesResponse> {
+  console.log(`[Miruro] Fetching episodes for AniList ID ${anilistId}`);
+  return miruroSmartGet('episodes', { anilistId: String(anilistId) });
 }
 
 /**
@@ -125,23 +219,8 @@ export async function extractMiruroSources(
   provider: string = 'kiwi',
   category: 'sub' | 'dub' = 'sub',
 ): Promise<MiruroSourcesResponse> {
-  const baseUrl = getWorkerBaseUrl();
-  const params = new URLSearchParams({ episodeId, provider, category });
-  const url = `${baseUrl}/miruro/sources?${params.toString()}`;
-
   console.log(`[Miruro] Fetching sources: provider=${provider}, category=${category}`);
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-
-  if (!res.ok) {
-    throw new Error(`Miruro sources fetch failed: ${res.status}`);
-  }
-
-  const data = await res.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-
-  return data as MiruroSourcesResponse;
+  return miruroSmartGet('sources', { episodeId, provider, category });
 }
 
 /**
@@ -153,7 +232,7 @@ const ARM_API = 'https://arm.haglund.dev/api/v2/ids';
 async function resolveAnilistId(malId: number): Promise<number | null> {
   // Strategy 1: ARM API (community ID mapping, doesn't block CF edge IPs)
   // Try multiple source identifiers — ARM may use "mal" or "myanimelist"
-  for (const source of ['mal', 'myanimelist']) {
+  for (const source of ['myanimelist']) {
     try {
       const res = await fetch(`${ARM_API}?source=${source}&id=${malId}`, {
         signal: AbortSignal.timeout(5000),

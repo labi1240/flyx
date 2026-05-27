@@ -1,12 +1,9 @@
 /**
  * Miruro Browser-Direct Extractor
  *
- * Calls miruro.to API directly from the browser's residential IP.
- * The Service Worker intercepts these requests, adds Referer/Origin headers,
- * and returns responses with CORS headers.
- *
- * Pipe encryption: XOR with obfuscation key + gzip.
- * Browser handles XOR and uses DecompressionStream for gzip.
+ * API extraction routes through the CF Worker (/miruro/episodes, /miruro/sources)
+ * which handles pipe encryption server-side. CDN streaming still goes through the
+ * Service Worker for residential IP (Referer/Origin headers).
  */
 
 export interface MiruroSource {
@@ -28,101 +25,13 @@ interface MiruroStream {
   referer?: string;
 }
 
-const MIRURO_BASE = 'https://miruro.to';
-const PIPE_OBF_KEY = '71951034f8fbcf53d89db52ceb3dc22c';
-const PROVIDER_PRIORITY = ['kiwi', 'gogo', 'zoro', 'animepahe', 'kayo', 'hianime'];
+const PROVIDER_PRIORITY = ['kiwi', 'bee', 'ally', 'dune', 'hop'];
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Pipe Encryption (XOR + gzip)
-// ═══════════════════════════════════════════════════════════════════════════
-
-function xorEncrypt(data: string, key: string): Uint8Array {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(data);
-  const keyBytes = encoder.encode(key);
-  const result = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) {
-    result[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+function getCfWorkerBase(): string {
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CF_STREAM_PROXY_URL) {
+    return process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL.replace(/\/stream\/?$/, '');
   }
-  return result;
-}
-
-function xorDecrypt(data: Uint8Array, key: string): Uint8Array {
-  const keyBytes = new TextEncoder().encode(key);
-  const result = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    result[i] = data[i] ^ keyBytes[i % keyBytes.length];
-  }
-  return result;
-}
-
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const cs = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  writer.write(data as BufferSource);
-  writer.close();
-  const reader = cs.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
-  const result = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const c of chunks) {
-    result.set(c, offset);
-    offset += c.length;
-  }
-  return result;
-}
-
-async function gzipDecompress(data: Uint8Array): Promise<string> {
-  const ds = new DecompressionStream('gzip');
-  const writer = ds.writable.getWriter();
-  writer.write(data as BufferSource);
-  writer.close();
-  const reader = ds.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
-  const result = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const c of chunks) {
-    result.set(c, offset);
-    offset += c.length;
-  }
-  return new TextDecoder().decode(result);
-}
-
-async function pipeRequest(endpoint: string, payload: Record<string, unknown>): Promise<unknown> {
-  const json = JSON.stringify(payload);
-  const encrypted = xorEncrypt(json, PIPE_OBF_KEY);
-  const compressed = await gzipCompress(encrypted);
-
-  const res = await fetch(`${MIRURO_BASE}/api/secure/pipe`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      'Accept': '*/*',
-      'X-Api-Endpoint': endpoint,
-    },
-    body: compressed as BufferSource,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Miruro pipe ${endpoint}: ${res.status}`);
-  }
-
-  const respBuffer = new Uint8Array(await res.arrayBuffer());
-  const decrypted = xorDecrypt(respBuffer, PIPE_OBF_KEY);
-  const decompressed = await gzipDecompress(decrypted);
-  return JSON.parse(decompressed);
+  return 'https://media-proxy.vynx-3b3.workers.dev';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -160,8 +69,9 @@ export async function extractMiruroClient(
   console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref}`);
 
   // Ensure Service Worker is in control before making cross-origin requests.
-  // Without this, CORS preflight requests fire before SW activation and fail.
   if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+
+  const cfBase = getCfWorkerBase();
 
   // Step 1: MAL → AniList
   const anilistId = await getAnilistId(malId);
@@ -171,17 +81,19 @@ export async function extractMiruroClient(
   }
   console.log(`[Miruro] AniList ID: ${anilistId}`);
 
-  // Step 2: Get episodes via pipe API
+  // Step 2: Get episodes via CF Worker (handles pipe encryption server-side)
   let epData: {
     providers: Record<string, { episodes: { sub: Array<{ id: string; number: number }>; dub: Array<{ id: string; number: number }> } }>;
   };
   try {
-    epData = await pipeRequest('episodes', {
-      anilistId,
-      type: 'anime',
-    }) as typeof epData;
+    const epRes = await fetch(`${cfBase}/miruro/episodes?anilistId=${anilistId}`);
+    if (!epRes.ok) {
+      console.warn(`[Miruro] Episodes fetch failed: ${epRes.status}`);
+      return [];
+    }
+    epData = await epRes.json() as typeof epData;
   } catch (e) {
-    console.warn('[Miruro] Pipe episodes failed:', e);
+    console.warn('[Miruro] Episodes fetch error:', e);
     return [];
   }
 
@@ -205,13 +117,14 @@ export async function extractMiruroClient(
 
     console.log(`[Miruro] Found ep ${targetEp} on ${providerId} (${category}): ${ep.id}`);
 
-    // Step 4: Get sources via pipe API
+    // Step 4: Get sources via CF Worker (handles pipe encryption server-side)
     try {
-      const srcData = await pipeRequest('sources', {
-        episodeId: ep.id,
-        provider: providerId,
-        category,
-      }) as { streams?: MiruroStream[] };
+      const srcRes = await fetch(
+        `${cfBase}/miruro/sources?episodeId=${encodeURIComponent(ep.id)}&provider=${providerId}&category=${category}`
+      );
+      if (!srcRes.ok) continue;
+
+      const srcData = await srcRes.json() as { streams?: MiruroStream[] };
 
       if (!srcData.streams?.length) continue;
 

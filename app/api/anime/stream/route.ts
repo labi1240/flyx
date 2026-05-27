@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const malId = searchParams.get('malId') ? parseInt(searchParams.get('malId')!) : undefined;
     const episode = searchParams.get('episode') ? parseInt(searchParams.get('episode')!) : undefined;
-    const requestedProvider = (searchParams.get('provider') as Provider) || 'hianime';
+    const requestedProvider = (searchParams.get('provider') as Provider) || 'animekai';
     // Client can pass these directly so we don't need AniList at all
     const titleParam = searchParams.get('title') || undefined;
     const typeParam = searchParams.get('type') || undefined;
@@ -80,7 +80,16 @@ export async function GET(request: NextRequest) {
       
       const sources = result.sources.map(source => {
         if (requestedProvider === 'animekai') {
-          return { ...source, url: getAnimeKaiProxyUrl(source.url), title: `${source.title || 'AnimeKai'} [AnimeKai]` };
+          // Don't proxy iframe URLs or MegaUp embed URLs — they need browser-side extraction
+          // (residential IP), not datacenter IP.
+          const url = source.url;
+          const needsProxy = url &&
+            !url.includes('animekai.to/iframe') &&
+            !url.includes('/iframe/') &&
+            !(url.includes('megaup') && url.includes('/e/'));
+          const finalUrl = needsProxy ? getAnimeKaiProxyUrl(url) : url;
+          const needsLabel = !source.title?.includes('[AnimeKai]');
+          return { ...source, url: finalUrl, title: needsLabel ? `${source.title || 'AnimeKai'} [AnimeKai]` : source.title };
         }
         if (requestedProvider === 'miruro') {
           return { ...source, title: `${source.title || 'Miruro'} [Miruro]` };
@@ -112,7 +121,7 @@ export async function GET(request: NextRequest) {
     console.log(`[ANIME-STREAM] ❌ ${providerLabel} failed: ${error}`);
 
     return NextResponse.json(
-      { error: `No streams found from ${providerLabel}`, provider: requestedProvider, success: false },
+      { error: `${providerLabel}: ${error}`, details: error, provider: requestedProvider, success: false },
       { status: 404 }
     );
   } catch (error) {

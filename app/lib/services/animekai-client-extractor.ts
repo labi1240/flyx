@@ -61,7 +61,6 @@ const KAI_DOMAINS = ['https://animekai.to', 'https://anikai.to'];
 
 const AJAX_HEADERS: Record<string, string> = {
   'Accept': 'application/json, text/javascript, */*; q=0.01',
-  'X-Requested-With': 'XMLHttpRequest',
 };
 
 const PAGE_HEADERS: Record<string, string> = {
@@ -320,12 +319,11 @@ async function getEncryptedEmbed(lid: string): Promise<string | null> {
 }
 
 /**
- * Native MegaUp /media/ decryption — XOR with pre-computed keystream.
- * No external API dependency. Keystream is constant for our fixed User-Agent.
+ * Native MegaUp /media/ decryption with keystream cache.
  */
-function decryptMegaUpMedia(encryptedBase64: string): string | null {
+async function decryptMegaUpMedia(encryptedBase64: string, videoId: string): Promise<string | null> {
   try {
-    return decryptMegaUp(encryptedBase64);
+    return await decryptMegaUp(encryptedBase64, videoId);
   } catch (e) {
     console.warn('[AnimeKai] MegaUp native decrypt error:', e);
     return null;
@@ -365,8 +363,8 @@ async function extractMegaUpMedia(embedUrl: string): Promise<string | null> {
 
     console.log(`[AnimeKai] Got encrypted MegaUp data (${data.result.length} chars), decrypting...`);
 
-    // Decrypt via native keystream
-    const decrypted = await decryptMegaUpMedia(data.result);
+    // Decrypt via native keystream (with cache)
+    const decrypted = await decryptMegaUpMedia(data.result, videoId);
     if (!decrypted) return null;
 
     // Parse decrypted JSON

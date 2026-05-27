@@ -1,15 +1,22 @@
 /**
  * MegaUp Native Decryption (Cloudflare Worker version)
  *
- * XOR stream cipher with a pre-computed keystream.
- * For a fixed User-Agent, the keystream is constant across all videos.
- * Pre-computed once, used forever — no external API dependency.
+ * Uses enc-dec.app API as the primary decryption oracle (handles the
+ * per-video XOR keystream that is derived from User-Agent + video ID).
+ * Falls back to a pre-computed keystream when the API is unreachable.
+ *
+ * The keystream is NOT constant across videos — it's derived per-video
+ * from the UA and video ID. enc-dec.app knows the derivation algorithm.
  */
 
 // Fixed User-Agent for MegaUp requests
 export const MEGAUP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
-// Pre-computed keystream for the fixed UA above (521 bytes)
+// enc-dec.app API for MegaUp decryption
+const ENCDEC_API = 'https://enc-dec.app/api/dec-mega';
+
+// Fallback keystream — only used when enc-dec.app is unreachable.
+// This is a 521-byte pre-computed keystream that may become stale.
 const KEYSTREAM_HEX =
   'cd04e9c92863097ef5e0b5010d2d7bb7ff8e3efd831d83da12a45a1aca29d195' +
   '3c552272fdb39a789049975aa97586781074b4a13d841e7945e2f0c5b632b420' +
@@ -47,11 +54,48 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
+function findJsonBoundary(result: string): string {
+  for (let i = result.length; i > 0; i--) {
+    const substr = result.substring(0, i);
+    if (substr.endsWith('}')) {
+      try {
+        JSON.parse(substr);
+        return substr;
+      } catch { /* keep searching */ }
+    }
+  }
+  return result;
+}
+
 /**
- * Native MegaUp decryption — XOR with pre-computed keystream.
- * No external API dependency.
+ * Decrypt via enc-dec.app API (primary method).
+ * Handles per-video keystream correctly.
  */
-export function decryptMegaUp(encryptedBase64: string): string {
+async function decryptViaApi(encryptedBase64: string): Promise<string> {
+  const res = await fetch(ENCDEC_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: encryptedBase64, agent: MEGAUP_USER_AGENT }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`enc-dec.app returned ${res.status}`);
+  }
+
+  const data = await res.json() as { status?: number; result?: unknown };
+  if (data.status !== 200 || !data.result) {
+    throw new Error(`enc-dec.app error: ${JSON.stringify(data).substring(0, 200)}`);
+  }
+
+  return JSON.stringify(data.result);
+}
+
+/**
+ * Native XOR decryption with pre-computed keystream (fallback).
+ * Only works when the keystream matches the current server key.
+ */
+function decryptNative(encryptedBase64: string): string {
   const keystream = getKeystream();
 
   // URL-safe base64 → standard base64 → bytes
@@ -70,18 +114,28 @@ export function decryptMegaUp(encryptedBase64: string): string {
     decBytes[i] = encBytes[i] ^ keystream[i];
   }
 
-  const result = new TextDecoder().decode(decBytes);
+  return new TextDecoder().decode(decBytes);
+}
 
-  // Find last valid JSON boundary (handles keystream truncation)
-  for (let i = result.length; i > 0; i--) {
-    const substr = result.substring(0, i);
-    if (substr.endsWith('}')) {
-      try {
-        JSON.parse(substr);
-        return substr;
-      } catch { /* keep searching */ }
-    }
+/**
+ * Decrypt MegaUp encrypted payload.
+ *
+ * Tries enc-dec.app API first (handles per-video keystream correctly),
+ * falls back to native XOR with hardcoded keystream.
+ *
+ * @param encryptedBase64 - URL-safe base64 encrypted payload from /media/ endpoint
+ * @param _videoId - Optional video ID (unused in CF Worker — no filesystem for cache)
+ * @returns Decrypted JSON string
+ */
+export async function decryptMegaUp(encryptedBase64: string, _videoId?: string): Promise<string> {
+  // Strategy 1: enc-dec.app API (handles per-video keystream correctly)
+  try {
+    return await decryptViaApi(encryptedBase64);
+  } catch {
+    // Fall through to native
   }
 
-  return result;
+  // Strategy 2: Native XOR with hardcoded keystream (fallback)
+  const result = decryptNative(encryptedBase64);
+  return findJsonBoundary(result);
 }

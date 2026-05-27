@@ -51,10 +51,11 @@ interface ParsedServerEntry {
   [key: string]: any;
 }
 
-// Servers structure: { sub: { "1": { lid: "...", name: "..." } }, dub: { ... } }
+// Servers structure: { sub: { "1": { lid: "...", name: "..." } }, dub: { ... }, softsub: { ... } }
 interface ParsedServers {
   sub?: Record<string, ParsedServerEntry>;
   dub?: Record<string, ParsedServerEntry>;
+  softsub?: Record<string, ParsedServerEntry>;
 }
 
 // API Configuration
@@ -264,20 +265,26 @@ function parseEpisodesHtml(html: string): ParsedEpisodes | null {
 function parseServersHtml(html: string): ParsedServers | null {
   try {
     const servers: ParsedServers = {};
-    
+
     // Parse sub servers
     const subMatch = html.match(/<div[^>]*data-id="sub"[^>]*>([\s\S]*?)<\/div>/i);
     if (subMatch) {
       servers.sub = parseServerGroup(subMatch[1]);
     }
-    
+
     // Parse dub servers
     const dubMatch = html.match(/<div[^>]*data-id="dub"[^>]*>([\s\S]*?)<\/div>/i);
     if (dubMatch) {
       servers.dub = parseServerGroup(dubMatch[1]);
     }
-    
-    return (servers.sub || servers.dub) ? servers : null;
+
+    // Parse softsub servers (soft subtitles - may be embedded in sub section)
+    const softsubMatch = html.match(/<div[^>]*data-id="softsub"[^>]*>([\s\S]*?)<\/div>/i);
+    if (softsubMatch) {
+      servers.softsub = parseServerGroup(softsubMatch[1]);
+    }
+
+    return (servers.sub || servers.dub || servers.softsub) ? servers : null;
   } catch (error) {
     console.log(`[AnimeKai] Native servers parse error:`, error);
     return null;
@@ -1034,53 +1041,44 @@ async function extractMegaUpSourcesManually(embedUrl: string): Promise<string | 
     const mediaUrl = `${baseUrl}/media/${videoId}`;
     
     console.log(`[AnimeKai] Fetching MegaUp /media/ endpoint: ${mediaUrl}`);
-    
-    // MegaUp blocks datacenter IPs - we need to route through residential proxy
-    // Use the Cloudflare Worker's /animekai route which forwards to RPI proxy
-    // Try both NEXT_PUBLIC_ (client-side) and server-side env vars
+
     const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || process.env.CF_STREAM_PROXY_URL;
-    
-    console.log(`[AnimeKai] CF Proxy URL configured: ${cfProxyUrl ? 'YES' : 'NO'}`);
-    
+
     let mediaResponse: Response;
-    
-    if (cfProxyUrl) {
-      // Route through Cloudflare Worker -> RPI residential proxy
+
+    // Strategy 1: Direct fetch first — server runs on residential IP, should work
+    // MegaUp only blocks datacenter IPs (CF Workers, AWS, etc.)
+    console.log(`[AnimeKai] Trying direct fetch for MegaUp /media/...`);
+    try {
+      mediaResponse = await fetch(mediaUrl, {
+        headers: {
+          'User-Agent': MEGAUP_USER_AGENT,
+          'Accept': 'application/json',
+          'Referer': embedUrl,
+          'Origin': `https://${host}`,
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (directError) {
+      console.log(`[AnimeKai] Direct fetch error:`, directError);
+      mediaResponse = null as any;
+    }
+
+    // Strategy 2: If direct fetch got blocked (403), try CF Worker proxy
+    if ((!mediaResponse || !mediaResponse.ok) && cfProxyUrl) {
+      const status = mediaResponse?.status;
+      console.log(`[AnimeKai] Direct fetch failed (${status || 'network error'}), trying CF Worker proxy...`);
       const proxyBaseUrl = cfProxyUrl.replace(/\/stream\/?$/, '');
-      // Note: Don't pass referer for MegaUp /media/ endpoint - MegaUp blocks requests with Referer header
-      // The CF Worker and RPI proxy will handle this correctly
       const proxiedMediaUrl = `${proxyBaseUrl}/animekai?url=${encodeURIComponent(mediaUrl)}&ua=${encodeURIComponent(MEGAUP_USER_AGENT)}`;
-      
-      console.log(`[AnimeKai] Routing MegaUp /media/ through residential proxy: ${proxiedMediaUrl.substring(0, 100)}...`);
-      
+
       try {
-        // Use cfFetch to route through RPI when on CF Pages
         mediaResponse = await cfFetch(proxiedMediaUrl, {
-          headers: {
-            'Accept': 'application/json',
-          },
+          headers: { 'Accept': 'application/json' },
           signal: AbortSignal.timeout(15000),
         });
         console.log(`[AnimeKai] Proxy response status: ${mediaResponse.status}`);
-      } catch (fetchError) {
-        console.log(`[AnimeKai] Proxy fetch error:`, fetchError);
-        return null;
-      }
-    } else {
-      // Fallback: Direct fetch (will likely fail due to datacenter IP blocking)
-      console.log(`[AnimeKai] WARNING: No CF proxy configured (NEXT_PUBLIC_CF_STREAM_PROXY_URL not set), trying direct fetch (may fail)...`);
-      
-      try {
-        mediaResponse = await fetch(mediaUrl, {
-          headers: {
-            'User-Agent': MEGAUP_USER_AGENT,
-            'Referer': embedUrl,
-            'Accept': 'application/json',
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-      } catch (fetchError) {
-        console.log(`[AnimeKai] Direct fetch error:`, fetchError);
+      } catch (proxyError) {
+        console.log(`[AnimeKai] Proxy fetch error:`, proxyError);
         return null;
       }
     }
@@ -1117,7 +1115,7 @@ async function extractMegaUpSourcesManually(embedUrl: string): Promise<string | 
       return null;
     }
     
-    console.log(`[AnimeKai] Got encrypted media data (${mediaData.result.length} chars), decrypting via enc-dec.app...`);
+    console.log(`[AnimeKai] Got encrypted media data (${mediaData.result.length} chars), decrypting...`);
     
     // Decrypt using enc-dec.app API (keystream is video-specific, native XOR doesn't work)
     let decrypted: string;
@@ -1238,34 +1236,63 @@ async function getStreamFromServer(lid: string, serverName: string): Promise<Str
       }
       
       const streamUrl = extractData.streamUrl;
-      console.log(`[AnimeKai] ✓ Got stream URL from RPI:`, streamUrl.substring(0, 80));
-      
+      console.log(`[AnimeKai] ✓ Got URL from CF Worker:`, streamUrl.substring(0, 80));
+
+      // If the CF worker returned an iframe URL (couldn't fetch it from datacenter IP),
+      // try extracting locally via cfFetch (which may route through RPI or direct)
+      let finalUrl = streamUrl;
+      if (streamUrl.includes('animekai.to/iframe')) {
+        console.log(`[AnimeKai] CF Worker returned iframe URL, trying local extraction...`);
+        const extracted = await extractFromKaiIframe(streamUrl);
+        if (extracted) {
+          finalUrl = extracted;
+          console.log(`[AnimeKai] Extracted from iframe:`, finalUrl.substring(0, 80));
+        } else {
+          console.log(`[AnimeKai] Iframe extraction failed — will try MegaUp handling chain`);
+          // Don't fail — the URL will go through the embed/MegaUp handling below
+        }
+      }
+
+      // Handle MegaUp embed URLs extracted from iframe
+      if (finalUrl.includes('megaup') && finalUrl.includes('/e/')) {
+        console.log(`[AnimeKai] Detected MegaUp embed URL, decrypting...`);
+        const hlsUrl = await decryptMegaUpEmbed(finalUrl);
+        if (hlsUrl) {
+          finalUrl = hlsUrl;
+          console.log(`[AnimeKai] ✓ Got HLS stream from MegaUp:`, finalUrl.substring(0, 100));
+        }
+      } else if (finalUrl.includes('/e/') && !finalUrl.includes('.m3u8') && !finalUrl.includes('.mp4')) {
+        console.log(`[AnimeKai] Unknown embed type, trying generic extraction...`);
+        const hlsUrl = await extractMegaUpSourcesManually(finalUrl);
+        if (hlsUrl) finalUrl = hlsUrl;
+      }
+
       // Extract skip intro/outro data if available
       const skipIntro = extractData.skip?.intro as [number, number] | undefined;
       const skipOutro = extractData.skip?.outro as [number, number] | undefined;
-      
+
       if (skipIntro) {
         console.log(`[AnimeKai] Skip intro: ${skipIntro[0]}s - ${skipIntro[1]}s`);
       }
       if (skipOutro) {
         console.log(`[AnimeKai] Skip outro: ${skipOutro[0]}s - ${skipOutro[1]}s`);
       }
-      
+
       // Extract the proper referer from the stream URL's origin
       let referer = `${KAI_BASE}/`;
       try {
-        const streamOrigin = new URL(streamUrl).origin;
+        const streamOrigin = new URL(finalUrl).origin;
         referer = streamOrigin + '/';
       } catch {}
-      
+
       return {
         quality: 'auto',
         title: `AnimeKai - ${serverName}`,
-        url: streamUrl,
+        url: finalUrl,
         type: 'hls',
         referer,
         requiresSegmentProxy: true,
-        skipOrigin: isMegaUpCdnUrl(streamUrl),
+        skipOrigin: isMegaUpCdnUrl(finalUrl),
         status: 'working',
         language: 'ja',
         skipIntro,
@@ -1285,34 +1312,151 @@ async function getStreamFromServer(lid: string, serverName: string): Promise<Str
 }
 
 /**
+ * Clean decrypted AnimeKai embed data.
+ * The decryptAnimeKai() cipher produces valid }XX-encoded JSON followed by
+ * binary garbage bytes (cipher over-reads the plaintext). This function:
+ *   1. Scans for valid }XX sequences and decodes them
+ *   2. Passes through valid JSON structural chars
+ *   3. Stops at the first non-}XX, non-JSON garbage byte
+ *   4. Tracks brace/bracket depth to find where valid JSON ends
+ *   5. Closes any unclosed brackets
+ */
+function cleanDecryptedJson(raw: string): string {
+  // Step 1: Decode valid }XX sequences, pass through JSON chars, stop at garbage
+  let decoded = '';
+  let pos = 0;
+  while (pos < raw.length) {
+    if (raw[pos] === '}' && pos + 2 < raw.length) {
+      const h1 = raw[pos + 1];
+      const h2 = raw[pos + 2];
+      if (/[0-9A-Fa-f]/.test(h1) && /[0-9A-Fa-f]/.test(h2)) {
+        decoded += String.fromCharCode(parseInt(h1 + h2, 16));
+        pos += 3;
+        continue;
+      }
+    }
+    const ch = raw[pos];
+    if (/[{}\[\]:"\\\/\w\d.\-\s]/.test(ch)) {
+      decoded += ch;
+      pos++;
+    } else {
+      // Skip garbage byte (control chars, non-ASCII) — don't break,
+      // the decryption may produce interspersed garbage in the data
+      pos++;
+    }
+  }
+
+  // Step 2: Find where valid JSON ends (balanced braces/brackets)
+  let braceStack = 0;
+  let bracketStack = 0;
+  let inString = false;
+  let escape = false;
+  let jsonEnd = 0;
+
+  for (let i = 0; i < decoded.length; i++) {
+    const c = decoded[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') braceStack++;
+    if (c === '}') braceStack--;
+    if (c === '[') bracketStack++;
+    if (c === ']') bracketStack--;
+    if (braceStack === 0 && bracketStack === 0 && i > 0) {
+      jsonEnd = i + 1;
+    }
+  }
+
+  let json = decoded.substring(0, jsonEnd || decoded.length);
+  // Strip trailing comma before closing brackets
+  json = json.replace(/,+$/, '');
+  while (braceStack > 0) { json += '}'; braceStack--; }
+  while (bracketStack > 0) { json += ']'; bracketStack--; }
+
+  return json;
+}
+
+/**
+ * Fetch an animekai.to/iframe/... URL and extract the actual video source.
+ * The iframe page typically contains a MegaUp embed URL or direct m3u8/mp4.
+ */
+async function extractFromKaiIframe(iframeUrl: string): Promise<string | null> {
+  console.log(`[AnimeKai] Fetching iframe: ${iframeUrl}`);
+  try {
+    const res = await cfFetch(iframeUrl, {
+      headers: {
+        ...HEADERS,
+        'Referer': `${KAI_BASE}/`,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      console.log(`[AnimeKai] Iframe fetch failed: ${res.status}`);
+      return null;
+    }
+    const html = await res.text();
+    console.log(`[AnimeKai] Iframe HTML length: ${html.length}`);
+
+    // Try extracting MegaUp /e/ URL
+    const megaupMatch = html.match(/https?:\/\/[^"'\s]*megaup[^"'\s]*\/e\/[^"'\s]+/i);
+    if (megaupMatch) {
+      console.log(`[AnimeKai] Found MegaUp URL in iframe: ${megaupMatch[0]}`);
+      return megaupMatch[0];
+    }
+
+    // Try extracting any video source (m3u8/mp4)
+    const srcMatch = html.match(/(?:src|file|url)\s*[=:]\s*["']([^"']*(?:m3u8|mp4)[^"']*)["']/i);
+    if (srcMatch) {
+      console.log(`[AnimeKai] Found video source in iframe: ${srcMatch[1]}`);
+      return srcMatch[1];
+    }
+
+    // Try iframe src
+    const iframeMatch = html.match(/<iframe[^>]*src=["']([^"']+)["']/i);
+    if (iframeMatch) {
+      console.log(`[AnimeKai] Found nested iframe: ${iframeMatch[1]}`);
+      return iframeMatch[1];
+    }
+
+    console.log(`[AnimeKai] No video source found in iframe HTML`);
+    return null;
+  } catch (e) {
+    console.log(`[AnimeKai] Iframe extraction error:`, e);
+    return null;
+  }
+}
+
+/**
  * Local extraction fallback (when RPI is not available)
  * This may fail due to datacenter IP blocking
  */
 async function getStreamFromServerLocal(_lid: string, serverName: string, encryptedEmbed: string): Promise<StreamSource | null> {
   try {
     console.log(`[AnimeKai] Falling back to local extraction...`);
-    
+
     // Decrypt the response locally
-    let decrypted = decrypt(encryptedEmbed);
-    if (!decrypted) {
+    const rawDecrypted = decrypt(encryptedEmbed);
+    if (!rawDecrypted) {
       console.log(`[AnimeKai] Failed to decrypt embed`);
       return null;
     }
 
-    // Decode }XX format (AnimeKai's custom URL encoding)
-    decrypted = decrypted.replace(/}([0-9A-Fa-f]{2})/g, (_, hex) => 
-      String.fromCharCode(parseInt(hex, 16))
-    );
+    // Clean decryption garbage and parse
+    const cleanJson = cleanDecryptedJson(rawDecrypted);
+    console.log(`[AnimeKai] Cleaned JSON (${cleanJson.length} chars):`, cleanJson.substring(0, 200));
 
-    // Parse the decrypted data
     let streamData: any;
     try {
-      streamData = typeof decrypted === 'string' ? JSON.parse(decrypted) : decrypted;
+      streamData = JSON.parse(cleanJson);
     } catch {
-      if (typeof decrypted === 'string' && decrypted.startsWith('http')) {
-        streamData = { url: decrypted };
+      // JSON parse can fail if decryption produced mid-stream garbage.
+      // Try regex-extracting the URL from the cleaned data — it's usually intact.
+      const urlMatch = cleanJson.match(/"url"\s*:\s*"([^"]+)"/);
+      if (urlMatch) {
+        streamData = { url: urlMatch[1].replace(/\\\//g, '/') };
       } else {
-        console.log(`[AnimeKai] Failed to parse decrypted data:`, decrypted.substring(0, 100));
+        console.log(`[AnimeKai] Failed to parse cleaned JSON:`, cleanJson.substring(0, 100));
         return null;
       }
     }
@@ -1334,6 +1478,20 @@ async function getStreamFromServerLocal(_lid: string, serverName: string, encryp
 
     console.log(`[AnimeKai] ✓ Got URL from ${serverName}:`, streamUrl);
 
+    // Handle animekai.to/iframe/... URLs (new format)
+    // Datacenter IPs are often blocked by animekai.to, so extraction may fail.
+    // Don't hard-fail — the URL will continue through the embed/MegaUp handling chain.
+    if (streamUrl.includes('animekai.to/iframe')) {
+      console.log(`[AnimeKai] Detected AnimeKai iframe URL, extracting video source...`);
+      const extractedUrl = await extractFromKaiIframe(streamUrl);
+      if (extractedUrl) {
+        streamUrl = extractedUrl;
+        console.log(`[AnimeKai] Extracted from iframe:`, streamUrl.substring(0, 100));
+      } else {
+        console.log(`[AnimeKai] Iframe extraction failed — deferring to downstream handlers`);
+      }
+    }
+
     // Check if this is an embed URL that needs further decryption
     if (streamUrl.includes('megaup') && streamUrl.includes('/e/')) {
       console.log(`[AnimeKai] Detected MegaUp embed URL, decrypting to get HLS stream...`);
@@ -1342,8 +1500,10 @@ async function getStreamFromServerLocal(_lid: string, serverName: string, encryp
         streamUrl = hlsUrl;
         console.log(`[AnimeKai] ✓ Got HLS stream from MegaUp:`, streamUrl.substring(0, 100));
       } else {
-        console.log(`[AnimeKai] MegaUp extraction failed - cannot play embed URL directly`);
-        return null;
+        console.log(`[AnimeKai] MegaUp server-side resolution failed — deferring to client-side handler`);
+        // Don't hard-fail. The VideoPlayer's browser-side resolver
+        // (animekai-client-iframe.ts) runs from a residential IP and
+        // can resolve MegaUp where the server can't.
       }
     }
     else if (streamUrl.includes('rapid') && streamUrl.includes('/e/')) {
@@ -1561,6 +1721,21 @@ export async function extractAnimeKaiStreams(
         serverTasks.push({
           lid: server.lid,
           displayName: `${serverName} (sub)`,
+          type: 'sub',
+        });
+      }
+    }
+
+    // Add softsub servers (treated as sub — soft subtitles)
+    const softsubServerList = servers.softsub;
+    if (softsubServerList) {
+      for (const [serverKey, serverData] of Object.entries(softsubServerList)) {
+        const server = serverData as any;
+        if (!server.lid) continue;
+        const serverName = server.name || `Server ${serverKey}`;
+        serverTasks.push({
+          lid: server.lid,
+          displayName: `${serverName} (softsub)`,
           type: 'sub',
         });
       }

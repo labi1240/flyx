@@ -541,14 +541,132 @@ async function fetchViaRpiProxy(
 // ============================================================================
 
 /**
+ * Clean decrypted AnimeKai embed data.
+ * The decryptAnimeKai() cipher produces valid }XX-encoded JSON followed by
+ * binary garbage bytes. This function:
+ *   1. Scans for valid }XX sequences and decodes them
+ *   2. Passes through valid JSON structural chars
+ *   3. Stops at the first non-}XX, non-JSON garbage byte
+ *   4. Tracks brace/bracket depth to find where valid JSON ends
+ *   5. Closes any unclosed brackets
+ */
+function cleanDecryptedJson(raw: string): string {
+  let decoded = '';
+  let pos = 0;
+  while (pos < raw.length) {
+    if (raw[pos] === '}' && pos + 2 < raw.length) {
+      const h1 = raw[pos + 1];
+      const h2 = raw[pos + 2];
+      if (/[0-9A-Fa-f]/.test(h1) && /[0-9A-Fa-f]/.test(h2)) {
+        decoded += String.fromCharCode(parseInt(h1 + h2, 16));
+        pos += 3;
+        continue;
+      }
+    }
+    const ch = raw[pos];
+    if (/[{}\[\]:"\\\/\w\d.\-\s]/.test(ch)) {
+      decoded += ch;
+      pos++;
+    } else {
+      // Skip garbage byte (control chars, non-ASCII) — don't break,
+      // the decryption may produce interspersed garbage in the data
+      pos++;
+    }
+  }
+
+  let braceStack = 0;
+  let bracketStack = 0;
+  let inString = false;
+  let escape = false;
+  let jsonEnd = 0;
+
+  for (let i = 0; i < decoded.length; i++) {
+    const c = decoded[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') braceStack++;
+    if (c === '}') braceStack--;
+    if (c === '[') bracketStack++;
+    if (c === ']') bracketStack--;
+    if (braceStack === 0 && bracketStack === 0 && i > 0) {
+      jsonEnd = i + 1;
+    }
+  }
+
+  let json = decoded.substring(0, jsonEnd || decoded.length);
+  // Strip trailing comma before closing brackets
+  json = json.replace(/,+$/, '');
+  while (braceStack > 0) { json += '}'; braceStack--; }
+  while (bracketStack > 0) { json += ']'; bracketStack--; }
+
+  return json;
+}
+
+/**
+ * Fetch an animekai.to/iframe/... URL and extract the actual video source.
+ */
+async function extractFromKaiIframe(
+  iframeUrl: string,
+  logger: ReturnType<typeof createLogger>,
+): Promise<string | null> {
+  logger.info('Fetching AnimeKai iframe', { url: iframeUrl });
+  try {
+    const res = await fetch(iframeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://animekai.to/',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      logger.warn('AnimeKai iframe fetch failed', { status: res.status });
+      return null;
+    }
+    const html = await res.text();
+
+    // Try extracting MegaUp /e/ URL
+    const megaupMatch = html.match(/https?:\/\/[^"'\s]*megaup[^"'\s]*\/e\/[^"'\s]+/i);
+    if (megaupMatch) {
+      logger.info('Found MegaUp URL in iframe', { url: megaupMatch[0] });
+      return megaupMatch[0];
+    }
+
+    // Try extracting video source (m3u8/mp4)
+    const srcMatch = html.match(/(?:src|file|url)\s*[=:]\s*["']([^"']*(?:m3u8|mp4)[^"']*)["']/i);
+    if (srcMatch) {
+      logger.info('Found video source in iframe', { url: srcMatch[1] });
+      return srcMatch[1];
+    }
+
+    // Try nested iframe
+    const iframeMatch = html.match(/<iframe[^>]*src=["']([^"']+)["']/i);
+    if (iframeMatch) {
+      logger.info('Found nested iframe', { url: iframeMatch[1] });
+      return iframeMatch[1];
+    }
+
+    logger.warn('No video source found in iframe HTML');
+    return null;
+  } catch (e) {
+    logger.error('AnimeKai iframe extraction error', e as Error);
+    return null;
+  }
+}
+
+/**
  * Extract stream URL from encrypted AnimeKai embed — locally in CF Worker.
  *
  * Flow:
  *   1. Decrypt embed using native AnimeKai cipher
- *   2. Decode }XX URL encoding
+ *   2. Clean decryption garbage and decode }XX URL encoding
  *   3. Parse the result (JSON or direct URL)
- *   4. If MegaUp embed URL → try CF direct fetch of /media/ endpoint
- *   5. Return stream URL
+ *   4. If AnimeKai iframe URL → fetch and extract video source
+ *   5. If MegaUp embed URL → try CF direct fetch of /media/ endpoint
+ *   6. Return stream URL
  */
 async function extractStreamLocally(
   encryptedEmbed: string,
@@ -558,17 +676,14 @@ async function extractStreamLocally(
 ): Promise<{ success: boolean; streamUrl?: string; skip?: { intro?: [number, number]; outro?: [number, number] }; error?: string }> {
   try {
     // Step 1: Decrypt the embed
-    let decrypted = decryptAnimeKai(encryptedEmbed);
-    if (!decrypted) {
+    const rawDecrypted = decryptAnimeKai(encryptedEmbed);
+    if (!rawDecrypted) {
       return { success: false, error: 'Failed to decrypt AnimeKai embed' };
     }
 
-    // Step 2: Decode }XX format (AnimeKai's custom URL encoding)
-    decrypted = decrypted.replace(/}([0-9A-Fa-f]{2})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
-
-    logger.debug('Decrypted embed', { decrypted: decrypted.substring(0, 200) });
+    // Step 2: Clean garbage and decode }XX
+    const cleanJson = cleanDecryptedJson(rawDecrypted);
+    logger.debug('Cleaned decrypted embed', { json: cleanJson.substring(0, 200) });
 
     // Step 3: Parse the decrypted data
     let streamUrl = '';
@@ -576,13 +691,11 @@ async function extractStreamLocally(
     let skipOutro: [number, number] | undefined;
 
     try {
-      const streamData = JSON.parse(decrypted);
+      const streamData = JSON.parse(cleanJson);
 
-      // Extract skip markers
       if (streamData.skip?.intro) skipIntro = streamData.skip.intro;
       if (streamData.skip?.outro) skipOutro = streamData.skip.outro;
 
-      // Extract URL
       if (streamData.url) {
         streamUrl = streamData.url;
       } else if (streamData.sources?.[0]) {
@@ -591,11 +704,17 @@ async function extractStreamLocally(
         streamUrl = streamData.file;
       }
     } catch {
-      // Not JSON — might be a direct URL
-      if (decrypted.startsWith('http')) {
-        streamUrl = decrypted;
+      if (cleanJson.startsWith('http')) {
+        streamUrl = cleanJson;
       } else {
-        return { success: false, error: `Decrypted data is not JSON or URL: ${decrypted.substring(0, 100)}` };
+        // JSON parse can fail if decryption produced mid-stream garbage.
+        // Regex-extract the URL — it's usually intact at the start of the data.
+        const urlMatch = cleanJson.match(/"url"\s*:\s*"([^"]+)"/);
+        if (urlMatch) {
+          streamUrl = urlMatch[1].replace(/\\\//g, '/');
+        } else {
+          return { success: false, error: `Decrypted data is not JSON or URL: ${cleanJson.substring(0, 100)}` };
+        }
       }
     }
 
@@ -605,7 +724,22 @@ async function extractStreamLocally(
 
     logger.info('Extracted URL from decrypted embed', { url: streamUrl.substring(0, 80) });
 
-    // Step 4: If this is a MegaUp embed URL (/e/...), fetch the actual stream
+    // Step 4: If this is an AnimeKai iframe URL, try to extract the real video source.
+    // CF Worker datacenter IPs are often blocked by animekai.to, so we try
+    // but fall back to returning the iframe URL for client-side extraction.
+    if (streamUrl.includes('animekai.to/iframe')) {
+      logger.info('Detected AnimeKai iframe URL, attempting extraction...');
+      const extractedUrl = await extractFromKaiIframe(streamUrl, logger);
+      if (extractedUrl) {
+        streamUrl = extractedUrl;
+        logger.info('Extracted from iframe', { url: streamUrl.substring(0, 80) });
+      } else {
+        // Return the iframe URL — client (browser with residential IP) can fetch it
+        logger.warn('Iframe extraction failed from CF Worker, returning iframe URL for client-side handling');
+      }
+    }
+
+    // Step 5: If this is a MegaUp embed URL (/e/...), fetch the actual stream
     if (streamUrl.includes('megaup') && streamUrl.includes('/e/')) {
       logger.info('Detected MegaUp embed, fetching /media/ endpoint...');
 
@@ -614,13 +748,9 @@ async function extractStreamLocally(
         streamUrl = hlsUrl;
         logger.info('MegaUp extraction succeeded', { url: streamUrl.substring(0, 80) });
       } else {
-        // MegaUp fetch failed — return the embed URL so the client can try
-        // through the stream proxy (which also tries CF direct first)
         logger.warn('MegaUp /media/ fetch failed from CF, returning embed URL for stream proxy fallback');
-        // Don't fail — let the client handle it through stream proxy
       }
     } else if (streamUrl.includes('/e/') && !streamUrl.includes('.m3u8') && !streamUrl.includes('.mp4')) {
-      // Generic embed URL — try to extract
       logger.info('Detected generic embed URL, attempting extraction...');
       const hlsUrl = await fetchMegaUpMediaFromCF(streamUrl, env, logger);
       if (hlsUrl) {
@@ -723,9 +853,9 @@ async function fetchMegaUpMediaFromCF(
       return null;
     }
 
-    // Native XOR decryption with pre-computed keystream
-    logger.info('Decrypting MegaUp /media/ response natively');
-    const decrypted = decryptMegaUp(mediaData.result);
+    // Decrypt MegaUp /media/ response (enc-dec.app API with native fallback)
+    logger.info('Decrypting MegaUp /media/ response');
+    const decrypted = await decryptMegaUp(mediaData.result, videoId);
     const parsed = JSON.parse(decrypted);
     const streamUrl = parsed?.sources?.[0]?.file || parsed?.sources?.[0]?.url || parsed?.file || parsed?.url || '';
     if (streamUrl) {

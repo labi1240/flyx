@@ -59,6 +59,7 @@
     "jsonwebtoken": "^9.0.3",
     "linkedom": "^0.18.12",
     "lucide-react": "^0.561.0",
+    "mersenne-twister": "^1.1.0",
     "mpegts.js": "^1.8.0",
     "nanoid": "^5.1.6",
     "next": "^16.0.10",

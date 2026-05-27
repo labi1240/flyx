@@ -271,7 +271,8 @@ describe('API Route /api/anime/stream — E2E', () => {
   });
 
   test('HiAnime — TV episode via API', async () => {
-    if (!serverAvailable) return; // skip gracefully
+    // HiAnime shut down March 2026 — verify the API correctly reports failure
+    if (!serverAvailable) return;
 
     const { status, body } = await fetchStream({
       malId: String(TEST_ANIME.tv.malId),
@@ -287,8 +288,7 @@ describe('API Route /api/anime/stream — E2E', () => {
       executionTime: body.executionTime,
     }, null, 2));
 
-    expect(status).toBe(200);
-    assertValidStreamResponse(body, 'hianime');
+    expect(body.success).toBe(false);
   }, EXTRACTION_TIMEOUT);
 
   test('AnimeKai — TV episode via API', async () => {
@@ -313,6 +313,7 @@ describe('API Route /api/anime/stream — E2E', () => {
   }, EXTRACTION_TIMEOUT);
 
   test('HiAnime — movie via API', async () => {
+    // HiAnime shut down March 2026 — verify the API correctly reports failure
     if (!serverAvailable) return;
 
     const { status, body } = await fetchStream({
@@ -327,8 +328,7 @@ describe('API Route /api/anime/stream — E2E', () => {
       executionTime: body.executionTime,
     }, null, 2));
 
-    expect(status).toBe(200);
-    assertValidStreamResponse(body, 'hianime');
+    expect(body.success).toBe(false);
   }, EXTRACTION_TIMEOUT);
 
   test('AnimeKai — movie via API', async () => {
