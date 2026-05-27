@@ -147,9 +147,14 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Service Worker intercepts it directly from the browser's residential IP.
   if (providerName === 'animekai') return sourceUrl;
 
-  // Miruro: RapidCloud CDN blocks datacenter IPs. Return raw CDN URL so the
-  // Service Worker intercepts it directly from the browser's residential IP.
-  if (providerName === 'miruro') return sourceUrl;
+  // Miruro: HLS.js uses XHR (not fetch), so the SW can't intercept segment
+  // requests. Route raw CDN URLs through the CF Worker's /miruro/stream
+  // endpoint which does M3U8 rewriting + CORS headers.
+  if (providerName === 'miruro') {
+    if (sourceUrl.includes('/miruro/')) return sourceUrl; // Already proxied
+    const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+    return `${baseUrl}/miruro/stream?url=${encodeURIComponent(sourceUrl)}`;
+  }
 
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||

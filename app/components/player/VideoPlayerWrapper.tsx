@@ -258,13 +258,14 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
             const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
             const miSources = await extractMiruroClient(malId, contentTitle, episode);
             if (miSources.length > 0) {
+              const cfBase = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
               setStreamData({
-                url: miSources[0].url,
+                url: miSources[0].url.includes('/miruro/') ? miSources[0].url : `${cfBase}/miruro/stream?url=${encodeURIComponent(miSources[0].url)}`,
                 sources: miSources.map((s: any) => ({
                   title: s.title || s.quality || 'Source',
-                  url: s.url,
+                  url: s.url.includes('/miruro/') ? s.url : `${cfBase}/miruro/stream?url=${encodeURIComponent(s.url)}`,
                   quality: s.quality,
-                  requiresSegmentProxy: s.requiresSegmentProxy,
+                  requiresSegmentProxy: false, // Already proxied through CF Worker
                 })),
                 currentIndex: 0,
                 provider: 'miruro',
@@ -366,11 +367,15 @@ export default function VideoPlayerWrapper(props: VideoPlayerWrapperProps) {
     if (source.requiresSegmentProxy) {
       const isAlreadyProxied = sourceUrl.includes('/api/stream-proxy') ||
         sourceUrl.includes('/stream/') ||
-        sourceUrl.includes('/flixer/stream');
+        sourceUrl.includes('/flixer/stream') ||
+        sourceUrl.includes('/miruro/');
 
       if (!isAlreadyProxied) {
         if (streamData.provider === 'flixer') {
           sourceUrl = getFlixerStreamProxyUrl(sourceUrl);
+        } else if (streamData.provider === 'miruro') {
+          const cfBase = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+          sourceUrl = `${cfBase}/miruro/stream?url=${encodeURIComponent(sourceUrl)}`;
         } else {
           sourceUrl = getAnimeKaiProxyUrl(sourceUrl);
         }

@@ -158,12 +158,13 @@ export default function AnimeWatchClient() {
             const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
             const miSources = await extractMiruroClient(malId, animeTitle, targetEp, currentAudioPref);
             if (miSources.length > 0) {
+              const cfBase = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
               sources = miSources.map((s: any) => ({
                 title: s.title || 'Miruro Source',
-                url: s.url,
+                url: s.url.includes('/miruro/') ? s.url : `${cfBase}/miruro/stream?url=${encodeURIComponent(s.url)}`,
                 quality: s.quality,
                 provider: 'miruro',
-                requiresSegmentProxy: s.requiresSegmentProxy,
+                requiresSegmentProxy: false, // Already proxied through CF Worker
               }));
               activeProvider = 'miruro';
               break;

@@ -247,6 +247,7 @@ var CDN_PROVIDERS = [
   {
     label: 'RapidCloud',
     patterns: [
+      'uwucdn',
       'rapid-cloud',
       'rapidshare',
       'rabbitstream',
