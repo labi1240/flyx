@@ -7,28 +7,8 @@
  *
  * The keystream is NOT constant across videos — it's derived per-video
  * from the UA and video ID. enc-dec.app knows the derivation algorithm.
- *
- * Successful decryptions are cached to .cache/megaup-keystreams.json.
- * Repeat views of the same video bypass the API entirely.
  */
 
-// Lazy-loaded keystream cache — avoids bundling node:fs into client components.
-// Only works server-side; browser calls silently no-op.
-let _cacheModule: { getCachedKeystream: Function; setCachedKeystream: Function } | null = null;
-async function loadCacheModule() {
-  if (!_cacheModule) {
-    try {
-      _cacheModule = await import('./megaup-keystream-cache');
-    } catch {
-      // Browser/client context — node:fs not available
-      _cacheModule = {
-        getCachedKeystream: () => null,
-        setCachedKeystream: () => {},
-      };
-    }
-  }
-  return _cacheModule;
-}
 
 // Fixed User-Agent for MegaUp requests
 export const MEGAUP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
@@ -146,55 +126,17 @@ function decryptNative(encryptedBase64: string): string {
  * Decrypt MegaUp encrypted payload.
  *
  * Tries (in order):
- *   1. Local keystream cache (when videoId is provided)
- *   2. enc-dec.app API (handles per-video keystream correctly, caches result)
- *   3. Native XOR with hardcoded keystream (fallback)
+ *   1. enc-dec.app API (handles per-video keystream correctly)
+ *   2. Native XOR with hardcoded keystream (fallback)
  *
  * @param encryptedBase64 - URL-safe base64 encrypted payload from /media/ endpoint
- * @param videoId - Optional video ID for cache lookup/persistence
+ * @param _videoId - Unused (kept for API compatibility)
  * @returns Decrypted JSON string
  */
-export async function decryptMegaUp(encryptedBase64: string, videoId?: string): Promise<string> {
-  // Strategy 0: Local keystream cache (when videoId known)
-  if (videoId) {
-    const cache = await loadCacheModule();
-    const cached = cache.getCachedKeystream(videoId, MEGAUP_USER_AGENT);
-    if (cached) {
-      const encBytes = base64ToBytes(encryptedBase64);
-      const decLen = Math.min(cached.length, encBytes.length);
-      const decBytes = new Uint8Array(decLen);
-      for (let i = 0; i < decLen; i++) {
-        decBytes[i] = encBytes[i] ^ cached[i];
-      }
-      const result = new TextDecoder().decode(decBytes);
-      const json = findJsonBoundary(result);
-      try {
-        JSON.parse(json);
-        return json; // Cache hit — valid JSON
-      } catch {
-        // Cache stale (plaintext changed). Fall through to API.
-        console.log('[MegaUp] Cached keystream produced invalid JSON, re-fetching');
-      }
-    }
-  }
-
+export async function decryptMegaUp(encryptedBase64: string, _videoId?: string): Promise<string> {
   // Strategy 1: enc-dec.app API (handles per-video keystream correctly)
   try {
     const result = await decryptViaApi(encryptedBase64);
-    // Cache the derived keystream for future use
-    if (videoId) {
-      try {
-        const encBytes = base64ToBytes(encryptedBase64);
-        const plainBytes = new TextEncoder().encode(result);
-        const ksLen = Math.min(encBytes.length, plainBytes.length);
-        const ks = new Uint8Array(ksLen);
-        for (let i = 0; i < ksLen; i++) {
-          ks[i] = encBytes[i] ^ plainBytes[i];
-        }
-        const cache = await loadCacheModule();
-        cache.setCachedKeystream(videoId, MEGAUP_USER_AGENT, ks);
-      } catch { /* caching failure is non-fatal */ }
-    }
     return result;
   } catch (apiError) {
     console.log('[MegaUp] enc-dec.app API failed, trying native decryption:', (apiError as Error).message);
