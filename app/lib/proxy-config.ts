@@ -641,6 +641,18 @@ export function getBingeBoxExtractUrl(
   return `${baseUrl}/bingebox/extract?${params.toString()}`;
 }
 
+// ─── Miruro Proxy ─────────────────────────────────────────────
+
+/**
+ * Get Miruro stream proxy URL — proxies HLS .m3u8 streams through /miruro/stream.
+ * Miruro CDN (vault-16.owocdn.top) requires Referer: https://kwik.cx/ and has
+ * broken SSL — the /miruro/stream route handles both the headers and SSL fallback.
+ */
+export function getMiruroStreamProxyUrl(url: string): string {
+  const baseUrl = getBingeBoxProxyBaseUrl(); // same CF Worker base
+  return `${baseUrl}/miruro/stream?url=${encodeURIComponent(url)}`;
+}
+
 // ─── uFreeTV Proxy ─────────────────────────────────────────────
 
 /**

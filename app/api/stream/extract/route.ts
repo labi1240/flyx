@@ -16,7 +16,7 @@ import type { ExtractionRequest } from '@/app/lib/providers/types';
 import { isAnimeContent } from '@/app/lib/services/animekai-extractor';
 import { AllProvidersFailedError } from '@/app/lib/stream-errors';
 import { performanceMonitor } from '@/app/lib/utils/performance-monitor';
-import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, getBingeBoxStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
+import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, getBingeBoxStreamProxyUrl, getMiruroStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
 
 // Lazy-load registry to prevent module-load crashes on CF Pages runtime.
 // If any provider import fails (e.g., Node.js APIs), the whole module would crash
@@ -118,6 +118,7 @@ function maybeProxyUrl(source: any, provider: string): string {
       source.url.includes('/hianime/') ||
       source.url.includes('/vidsrc/') ||
       source.url.includes('/primesrc/') ||
+      source.url.includes('/miruro/stream') ||
       source.url.includes('/stream?url=') ||
       source.url.includes('media-proxy.vynx-3b3.workers.dev')) {
     return source.url;
@@ -133,6 +134,7 @@ function maybeProxyUrl(source: any, provider: string): string {
     const is1movies = provider === '1movies';
     const isPrimeSrc = provider === 'primesrc';
     const isBingeBox = provider === 'bingebox';
+    const isMiruro = provider === 'miruro';
     const isFlixer = provider === 'flixer';
     const isUflix = provider === 'uflix';
     const isMultiEmbed = provider === 'multi-embed' || provider === 'multiembed' || provider === 'hexa';
@@ -141,6 +143,12 @@ function maybeProxyUrl(source: any, provider: string): string {
     // BingeBox: HLS streams proxied through /bingebox/stream on CF Worker
     if (isBingeBox) {
       return getBingeBoxStreamProxyUrl(source.url);
+    }
+
+    // Miruro: HLS streams proxied through /miruro/stream on CF Worker
+    // (sets Referer: kwik.cx and has SSL→HTTP fallback for broken CDN certs)
+    if (isMiruro) {
+      return getMiruroStreamProxyUrl(source.url);
     }
 
     // PrimeSrc: streams proxied through /primesrc/stream on CF Worker (no RPI needed)
