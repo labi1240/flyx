@@ -382,6 +382,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Only after many consecutive failures do we switch to the next source.
   const consecutiveSegmentErrorsRef = useRef<number>(0);
   const MAX_CONSECUTIVE_SEGMENT_ERRORS = 8;
+  // Track MEDIA_ERROR recovery attempts to detect infinite codec-recovery loops
+  // (e.g. HEVC in Chrome — hls.recoverMediaError() can never succeed)
+  const codecRecoveryAttemptsRef = useRef<number>(0);
+  const MAX_CODEC_RECOVERY_ATTEMPTS = 2;
   
   // Skip intro/outro refs (to avoid stale closures in event handlers)
   const skipIntroRef = useRef<[number, number] | null>(null);
@@ -1285,6 +1289,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     sourceConfirmedWorkingRef.current = false;
     playbackStartedRef.current = false;
     consecutiveSegmentErrorsRef.current = 0;
+    codecRecoveryAttemptsRef.current = 0;
     
     // Clear any previous playback start timeout
     if (playbackStartTimeoutRef.current) {
@@ -1407,8 +1412,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             console.log('[HLS] Fragment loaded:', fragSn, 'bytes:', data.payload?.byteLength);
           }
 
-          // Reset consecutive segment error counter on successful load
+          // Reset error counters on successful load
           consecutiveSegmentErrorsRef.current = 0;
+          codecRecoveryAttemptsRef.current = 0;
 
           // Mark current source as confirmed working when first fragment loads (only once)
           if ((fragSn === 0 || fragSn === 1) && !sourceConfirmedWorkingRef.current) {
@@ -1583,8 +1589,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   for (let i = currentIdx + 1; i < currentSources.length; i++) {
                     const nextSource = currentSources[i];
 
-                    // Skip null/undefined sources
+                    // Skip null/undefined sources and codec-incompatible ones
                     if (!nextSource) continue;
+                    if (nextSource.status === 'incompatible') continue;
 
                     // If source has a URL, use it directly
                     if (nextSource.url && nextSource.url !== '') {
@@ -1746,7 +1753,57 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 handleFatalWithFallback('Network error loading video');
               }
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-              // Decoding/media errors — try swapping codecs first
+              // bufferAddCodecError: browser can't decode this codec at all
+              // (e.g. HEVC/H.265 in Chrome). Recovery will never succeed.
+              if (data.details === 'bufferAddCodecError') {
+                console.error('[HLS] Codec incompatible with browser — switching source');
+                if (hlsRef.current) {
+                  hlsRef.current.stopLoad();
+                  hlsRef.current.detachMedia();
+                }
+                prepareAndFallback();
+                setAvailableSources(prevSources => {
+                  const updatedSources = [...prevSources];
+                  if (updatedSources[currentSourceIndex]) {
+                    updatedSources[currentSourceIndex] = { ...updatedSources[currentSourceIndex], status: 'incompatible' };
+                    setSourcesCache(prev => ({ ...prev, [provider]: updatedSources }));
+                  }
+                  return updatedSources;
+                });
+                tryNextSource().then(found => {
+                  if (!found) {
+                    setIsLoading(false);
+                    setError('Video codec not supported by your browser. Try a different source.');
+                    setHighlightServerButton(true);
+                  }
+                });
+                return;
+              }
+
+              // bufferAppendError: could be corrupt segment or codec mismatch.
+              // Try standard recovery first, but track attempts to detect loops.
+              if (data.details === 'bufferAppendError') {
+                codecRecoveryAttemptsRef.current++;
+                if (codecRecoveryAttemptsRef.current >= MAX_CODEC_RECOVERY_ATTEMPTS) {
+                  console.error('[HLS] Codec recovery failed after', codecRecoveryAttemptsRef.current, 'attempts — switching source');
+                  codecRecoveryAttemptsRef.current = 0;
+                  if (hlsRef.current) {
+                    hlsRef.current.stopLoad();
+                    hlsRef.current.detachMedia();
+                  }
+                  prepareAndFallback();
+                  tryNextSource().then(found => {
+                    if (!found) {
+                      setIsLoading(false);
+                      setError('Video playback failed. Try a different source.');
+                      setHighlightServerButton(true);
+                    }
+                  });
+                  return;
+                }
+              }
+
+              // Other media errors — try standard codec swap recovery
               console.error('[HLS] Fatal media error, attempting recovery:', data.details);
               hls.recoverMediaError();
             } else {
@@ -5135,7 +5192,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          opacity: source.status === 'down' ? 0.5 : 1
+                          opacity: (source.status === 'down' || source.status === 'incompatible') ? 0.5 : 1
                         }}
                       >
                         <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -5160,13 +5217,16 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                               width: '8px',
                               height: '8px',
                               borderRadius: '50%',
-                              backgroundColor: source.status === 'working' ? '#4ade80' : 
+                              backgroundColor: source.status === 'working' ? '#4ade80' :
+                                             source.status === 'incompatible' ? '#f97316' :
                                              source.status === 'unknown' ? '#fbbf24' : '#f87171',
                               marginLeft: '8px',
-                              boxShadow: `0 0 4px ${source.status === 'working' ? 'rgba(74, 222, 128, 0.5)' : 
+                              boxShadow: `0 0 4px ${source.status === 'working' ? 'rgba(74, 222, 128, 0.5)' :
+                                                    source.status === 'incompatible' ? 'rgba(249, 115, 22, 0.5)' :
                                                     source.status === 'unknown' ? 'rgba(251, 191, 36, 0.5)' : 'rgba(248, 113, 113, 0.5)'}`
                             }}
-                            title={source.status === 'working' ? 'Available' : 
+                            title={source.status === 'working' ? 'Available' :
+                                   source.status === 'incompatible' ? 'Codec not supported by your browser' :
                                    source.status === 'unknown' ? 'Click to try' : 'Unavailable'}
                           />
                         )}
