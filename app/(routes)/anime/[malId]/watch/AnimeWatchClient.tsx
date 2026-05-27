@@ -306,6 +306,12 @@ export default function AnimeWatchClient() {
   }
 
   const title = anime.title_english || anime.title;
+
+  // Set document title for client-side navigations
+  useEffect(() => {
+    document.title = `${isMovie ? '' : `E${episode} - `}${title} | Flyx`;
+  }, [title, episode, isMovie]);
+
   const nextEpisodeProp = nextEpisode && !nextEpisode.isLastEpisode ? {
     season: 1,
     episode: nextEpisode.episode,
