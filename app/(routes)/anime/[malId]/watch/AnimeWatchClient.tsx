@@ -28,6 +28,8 @@ const MobileVideoPlayer = dynamic(
   )}
 );
 
+const JIKAN = 'https://api.jikan.moe/v4';
+
 interface AnimeData {
   mal_id: number;
   title: string;
@@ -68,31 +70,28 @@ export default function AnimeWatchClient({ malId, episode: initialEpisode }: { m
   const [availableProviders, setAvailableProviders] = useState<string[]>([]);
   const [audioPref, setAudioPref] = useState<AnimeAudioPreference>(() => getProviderSettings().animeAudioPreference);
 
-  // Load anime data from AniList
+  // Load anime data from Jikan (MAL API)
   useEffect(() => {
+    if (!malId) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/anilist/graphql', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query($malId:Int){Media(idMal:$malId,type:ANIME){idMal title{romaji english} format episodes description(asHtml:false) coverImage{extraLarge}}}`,
-            variables: { malId },
-          }),
+        const res = await fetch(`${JIKAN}/anime/${malId}/full`, {
+          signal: AbortSignal.timeout(15000),
         });
         if (cancelled) return;
+        if (!res.ok) { setAnimeError(true); setLoading(false); return; }
         const json = await res.json();
-        const m = json?.data?.Media;
-        if (m?.idMal) {
+        const a = json?.data;
+        if (a?.mal_id) {
           setAnime({
-            mal_id: m.idMal,
-            title: m.title?.romaji || m.title?.english || 'Unknown',
-            title_english: m.title?.english || null,
-            type: m.format || 'TV',
-            episodes: m.episodes || null,
-            synopsis: m.description || null,
-            image: m.coverImage?.extraLarge || '',
+            mal_id: a.mal_id,
+            title: a.title || 'Unknown',
+            title_english: a.title_english || null,
+            type: a.type || 'TV',
+            episodes: a.episodes ?? null,
+            synopsis: a.synopsis || null,
+            image: a.images?.jpg?.large_image_url || a.images?.jpg?.image_url || '',
           });
         } else {
           setAnimeError(true);

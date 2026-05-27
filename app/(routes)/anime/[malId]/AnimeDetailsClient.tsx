@@ -3,82 +3,182 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import type { MALAnime, MALSeason } from '@/lib/services/mal';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { FluidButton } from '@/components/ui/FluidButton';
 
-interface Props {
-  malId?: number;
-  anime?: MALAnime | null;
-  allSeasons?: MALSeason[];
+const JIKAN = 'https://api.jikan.moe/v4';
+
+interface AnimeData {
+  mal_id: number;
+  title: string;
+  title_english: string | null;
+  type: string;
+  episodes: number | null;
+  status: string;
+  score: number | null;
+  year: number | null;
+  synopsis: string | null;
+  image: string;
+  genres: Array<{ mal_id: number; name: string }>;
+  studios: Array<{ mal_id: number; name: string }>;
+  aired: { from: string | null; to: string | null; string: string };
+  relations: Array<{
+    relation: string;
+    entry: Array<{
+      mal_id: number;
+      name: string;
+      type: string;
+    }>;
+  }>;
 }
 
-export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons: ssrSeasons }: Props) {
+interface SeasonEntry {
+  malId: number;
+  title: string;
+  titleEnglish: string | null;
+  imageUrl: string;
+  episodes: number | null;
+  score: number | null;
+  type: string;
+  status: string;
+  year: number | null;
+  seasonOrder: number;
+}
+
+const SEQUEL_TYPES = new Set(['Sequel', 'Prequel', 'Side story', 'Alternative version', 'Spin-off']);
+
+export default function AnimeDetailsClient({ malId }: { malId: number }) {
   const router = useRouter();
-  const [anime, setAnime] = useState<MALAnime | null>(ssrAnime || null);
-  const [allSeasons] = useState<MALSeason[]>(ssrSeasons || []);
-  const [loading, setLoading] = useState(!ssrAnime && !!malId);
-  const [error, setError] = useState(false);
+  const [anime, setAnime] = useState<AnimeData | null>(null);
+  const [seasons, setSeasons] = useState<SeasonEntry[]>([]);
   const [selectedSeasonIdx, setSelectedSeasonIdx] = useState(0);
+  const [episodes, setEpisodes] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (ssrAnime || !malId) return;
+    if (!malId) { setError(true); setLoading(false); return; }
     let cancelled = false;
-    (async () => {
+
+    async function load() {
       try {
-        const res = await fetch('/api/anilist/graphql', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query($malId:Int){Media(idMal:$malId,type:ANIME){idMal title{romaji english} description(asHtml:false) coverImage{extraLarge large} bannerImage averageScore format status episodes seasonYear genres studios(isMain:true){nodes{name}} startDate{year month day}}}`,
-            variables: { malId },
-          }),
+        // Fetch full anime data from Jikan
+        const res = await fetch(`${JIKAN}/anime/${malId}/full`, {
+          signal: AbortSignal.timeout(15000),
         });
-        if (cancelled) return;
+        if (!res.ok) { if (!cancelled) setError(true); return; }
         const json = await res.json();
-        const m = json?.data?.Media;
-        if (m?.idMal) {
-          setAnime({
-            mal_id: m.idMal,
-            title: m.title?.romaji || m.title?.english || 'Unknown',
-            title_english: m.title?.english || null,
-            title_japanese: null,
-            type: m.format || 'TV',
-            episodes: m.episodes || null,
-            status: m.status || 'Unknown',
-            score: m.averageScore != null ? Math.round(m.averageScore) / 10 : null,
-            scored_by: null,
-            rank: null,
-            popularity: null,
-            members: null,
-            synopsis: m.description || null,
-            season: null,
-            year: m.seasonYear || m.startDate?.year || null,
-            images: {
-              jpg: {
-                image_url: m.coverImage?.large || '',
-                large_image_url: m.coverImage?.extraLarge || m.coverImage?.large || '',
-              },
-              webp: {
-                image_url: m.coverImage?.large || '',
-                large_image_url: m.coverImage?.extraLarge || m.coverImage?.large || '',
-              },
-            },
-            aired: { from: null, to: null, string: '' },
-            genres: (m.genres || []).map((g: string, i: number) => ({ mal_id: i, name: g })),
-            studios: (m.studios?.nodes || []).map((s: any) => ({ mal_id: 0, name: s.name })),
-          });
-        } else {
-          setError(true);
+        const data = json?.data;
+        if (!data?.mal_id) { if (!cancelled) setError(true); return; }
+
+        const animeData: AnimeData = {
+          mal_id: data.mal_id,
+          title: data.title || 'Unknown',
+          title_english: data.title_english || null,
+          type: data.type || 'TV',
+          episodes: data.episodes ?? null,
+          status: data.status || 'Unknown',
+          score: data.score ?? null,
+          year: data.year ?? null,
+          synopsis: data.synopsis || null,
+          image: data.images?.jpg?.large_image_url || data.images?.jpg?.image_url || '',
+          genres: (data.genres || []).map((g: any) => ({ mal_id: g.mal_id, name: g.name })),
+          studios: (data.studios || []).map((s: any) => ({ mal_id: s.mal_id, name: s.name })),
+          aired: {
+            from: data.aired?.from || null,
+            to: data.aired?.to || null,
+            string: data.aired?.string || '',
+          },
+          relations: data.relations || [],
+        };
+
+        if (cancelled) return;
+        setAnime(animeData);
+
+        // Build season list from relations
+        const seasonEntries: SeasonEntry[] = [];
+
+        // Main entry is season 1
+        seasonEntries.push({
+          malId: animeData.mal_id,
+          title: animeData.title,
+          titleEnglish: animeData.title_english,
+          imageUrl: animeData.image,
+          episodes: animeData.episodes,
+          score: animeData.score,
+          type: animeData.type,
+          status: animeData.status,
+          year: animeData.year,
+          seasonOrder: 1,
+        });
+
+        // Collect related seasons
+        for (const rel of animeData.relations) {
+          if (!SEQUEL_TYPES.has(rel.relation)) continue;
+          for (const entry of rel.entry) {
+            if (entry.type !== 'anime') continue;
+            if (seasonEntries.some(s => s.malId === entry.mal_id)) continue;
+
+            // We need more detail for each related entry - fetch individual anime
+            try {
+              const relRes = await fetch(`${JIKAN}/anime/${entry.mal_id}`, {
+                signal: AbortSignal.timeout(10000),
+              });
+              if (relRes.ok) {
+                const relJson = await relRes.json();
+                const r = relJson?.data;
+                if (r?.mal_id) {
+                  seasonEntries.push({
+                    malId: r.mal_id,
+                    title: r.title || entry.name || 'Unknown',
+                    titleEnglish: r.title_english || null,
+                    imageUrl: r.images?.jpg?.large_image_url || r.images?.jpg?.image_url || '',
+                    episodes: r.episodes ?? null,
+                    score: r.score ?? null,
+                    type: r.type || 'TV',
+                    status: r.status || 'Unknown',
+                    year: r.year ?? null,
+                    seasonOrder: 0,
+                  });
+                }
+              }
+            } catch {}
+          }
+        }
+
+        // Sort by year, then assign order
+        seasonEntries.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+        seasonEntries.forEach((s, i) => { s.seasonOrder = i + 1; });
+
+        if (!cancelled) {
+          setSeasons(seasonEntries);
+
+          // Generate episode numbers for first season
+          const firstSeason = seasonEntries[0];
+          if (firstSeason?.episodes) {
+            setEpisodes(Array.from({ length: firstSeason.episodes }, (_, i) => i + 1));
+          }
         }
       } catch {
         if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    load();
     return () => { cancelled = true; };
-  }, [ssrAnime, malId]);
+  }, [malId]);
+
+  // Reload episodes when season changes
+  useEffect(() => {
+    const season = seasons[selectedSeasonIdx];
+    if (season?.episodes) {
+      setEpisodes(Array.from({ length: season.episodes }, (_, i) => i + 1));
+    } else {
+      setEpisodes([]);
+    }
+  }, [selectedSeasonIdx, seasons]);
 
   if (loading) {
     return (
@@ -101,7 +201,7 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
     );
   }
 
-  const currentSeason = allSeasons[selectedSeasonIdx] || null;
+  const currentSeason = seasons[selectedSeasonIdx] || seasons[0];
   const isMovie = anime.type === 'Movie';
 
   const handleWatch = () => {
@@ -111,8 +211,6 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
       router.push(`/anime/${currentSeason.malId}/watch?episode=1`);
     }
   };
-
-  const posterUrl = anime.images?.jpg?.large_image_url || '';
 
   return (
     <div className="min-h-screen bg-[#0a0812]">
@@ -126,13 +224,13 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
       {/* Hero */}
       <div className="relative pt-20 pb-10 px-4 md:px-8">
         <div className="absolute inset-0 overflow-hidden">
-          <img src={posterUrl} alt="" className="w-full h-full object-cover blur-3xl opacity-20 scale-110" />
+          <img src={anime.image} alt="" className="w-full h-full object-cover blur-3xl opacity-20 scale-110" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0a0812]/50 to-[#0a0812]" />
         </div>
 
         <div className="relative max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
           <div className="flex-shrink-0 w-48 md:w-56 mx-auto md:mx-0">
-            <img src={posterUrl} alt={anime.title} className="w-full rounded-lg shadow-2xl" />
+            <img src={anime.image} alt={anime.title} className="w-full rounded-lg shadow-2xl" />
           </div>
           <div className="flex-1">
             <h1 className="text-3xl md:text-4xl font-bold text-white">{anime.title}</h1>
@@ -141,20 +239,16 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
             )}
 
             <div className="flex flex-wrap gap-2 mt-3 text-sm text-gray-300">
-              <span>⭐ {anime.score?.toFixed(2) || 'N/A'}</span>
+              {anime.score != null && <span>⭐ {anime.score.toFixed(2)}</span>}
               <span>•</span>
               <span>{anime.type}</span>
               <span>•</span>
               <span>{anime.status}</span>
-              {allSeasons.length > 1 && (
-                <>
-                  <span>•</span>
-                  <span>{allSeasons.length} Seasons</span>
-                </>
-              )}
+              {anime.year && <><span>•</span><span>{anime.year}</span></>}
+              {seasons.length > 1 && <><span>•</span><span>{seasons.length} Seasons</span></>}
             </div>
 
-            {anime.genres && anime.genres.length > 0 && (
+            {anime.genres.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3">
                 {anime.genres.map(g => (
                   <span key={g.mal_id} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded-full text-xs text-gray-300">
@@ -179,11 +273,11 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
       </div>
 
       {/* Season Selector */}
-      {!isMovie && allSeasons.length > 1 && (
+      {!isMovie && seasons.length > 1 && (
         <div className="px-4 md:px-8 pb-6">
           <div className="max-w-6xl mx-auto">
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {allSeasons.map((season, i) => (
+              {seasons.map((season, i) => (
                 <button
                   key={season.malId}
                   onClick={() => setSelectedSeasonIdx(i)}
@@ -194,7 +288,7 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
                   }`}
                 >
                   {season.titleEnglish || season.title}
-                  {season.episodes && <span className="ml-2 text-xs opacity-60">{season.episodes} eps</span>}
+                  {season.episodes != null && <span className="ml-2 text-xs opacity-60">{season.episodes} eps</span>}
                 </button>
               ))}
             </div>
@@ -203,23 +297,23 @@ export default function AnimeDetailsClient({ malId, anime: ssrAnime, allSeasons:
       )}
 
       {/* Episodes Grid */}
-      {!isMovie && currentSeason && currentSeason.episodes && (
+      {!isMovie && episodes.length > 0 && (
         <section className="px-4 md:px-8 pb-20">
           <div className="max-w-6xl mx-auto">
             <GlassPanel>
               <div className="p-4 md:p-6">
                 <h2 className="text-lg font-bold text-white mb-4">
-                  {currentSeason.titleEnglish || currentSeason.title} — Episodes
+                  {currentSeason?.titleEnglish || currentSeason?.title || anime.title} — Episodes
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                  {Array.from({ length: currentSeason.episodes }, (_, i) => i + 1).map(epNum => (
+                  {episodes.map(epNum => (
                     <motion.button
                       key={epNum}
                       whileHover={{ scale: 1.03 }}
-                      onClick={() => router.push(`/anime/${currentSeason.malId}/watch?episode=${epNum}`)}
+                      onClick={() => router.push(`/anime/${currentSeason?.malId || anime.mal_id}/watch?episode=${epNum}`)}
                       className="relative aspect-video bg-white/5 hover:bg-fuchsia-600/20 border border-white/10 hover:border-fuchsia-500/40 rounded-lg overflow-hidden group transition-colors"
                     >
-                      <img src={posterUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
+                      <img src={anime.image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-white font-bold text-lg">{epNum}</span>
                       </div>

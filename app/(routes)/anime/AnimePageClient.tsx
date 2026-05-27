@@ -19,51 +19,32 @@ interface AnimeItem {
 interface Category {
   title: string;
   items: AnimeItem[];
-  filter: string;
-  genre?: string;
 }
 
-const ANILIST_BROWSE = `
-  query($page:Int,$perPage:Int,$sort:[MediaSort],$status:MediaStatus,$format:MediaFormat,$genre:String){
-    Page(page:$page,perPage:$perPage){
-      pageInfo{total}
-      media(type:ANIME,sort:$sort,status:$status,format:$format,genre:$genre){
-        idMal
-        title{romaji english}
-        coverImage{extraLarge large}
-        averageScore seasonYear episodes format
-      }
-    }
-  }
-`;
+const JIKAN = 'https://api.jikan.moe/v4';
 
-function mapMedia(m: any): AnimeItem | null {
-  if (!m.idMal) return null;
-  const image = m.coverImage?.extraLarge || m.coverImage?.large || '';
+function mapJikanItem(a: any): AnimeItem | null {
+  if (!a?.mal_id) return null;
   return {
-    mal_id: m.idMal,
-    title: m.title?.romaji || m.title?.english || 'Unknown',
-    title_english: m.title?.english || null,
-    image,
-    score: m.averageScore != null ? Math.round(m.averageScore) / 10 : null,
-    year: m.seasonYear || null,
-    episodes: m.episodes || null,
-    type: m.format || 'TV',
+    mal_id: a.mal_id,
+    title: a.title || 'Unknown',
+    title_english: a.title_english || a.title || null,
+    image: a.images?.jpg?.large_image_url || a.images?.jpg?.image_url || '',
+    score: a.score ?? null,
+    year: a.year ?? null,
+    episodes: a.episodes ?? null,
+    type: a.type || 'TV',
   };
 }
 
-async function fetchCategory(variables: Record<string, unknown>): Promise<AnimeItem[]> {
+async function fetchJikan(endpoint: string): Promise<AnimeItem[]> {
   try {
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: ANILIST_BROWSE, variables }),
-      signal: AbortSignal.timeout(10000),
+    const res = await fetch(`${JIKAN}${endpoint}`, {
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return [];
     const json = await res.json();
-    const media = json?.data?.Page?.media as any[] | undefined;
-    return (media || []).map(mapMedia).filter((i): i is AnimeItem => i !== null);
+    return (json.data || []).map(mapJikanItem).filter((i: AnimeItem | null): i is AnimeItem => i !== null);
   } catch {
     return [];
   }
@@ -78,17 +59,17 @@ export default function AnimePageClient() {
     let cancelled = false;
     async function load() {
       const [airing, popular, topRated, movies] = await Promise.all([
-        fetchCategory({ page: 1, perPage: 25, sort: ['POPULARITY_DESC'], status: 'RELEASING' }),
-        fetchCategory({ page: 1, perPage: 25, sort: ['POPULARITY_DESC'] }),
-        fetchCategory({ page: 1, perPage: 25, sort: ['SCORE_DESC'] }),
-        fetchCategory({ page: 1, perPage: 25, sort: ['POPULARITY_DESC'], format: 'MOVIE' }),
+        fetchJikan('/seasons/now?limit=25'),
+        fetchJikan('/top/anime?limit=25&filter=bypopularity'),
+        fetchJikan('/top/anime?limit=25'),
+        fetchJikan('/top/anime?limit=25&type=movie'),
       ]);
       if (cancelled) return;
       setCategories([
-        { title: 'Currently Airing', items: airing, filter: 'airing' },
-        { title: 'Popular', items: popular, filter: 'popular' },
-        { title: 'Top Rated', items: topRated, filter: 'top_rated' },
-        { title: 'Movies', items: movies, filter: 'movies' },
+        { title: 'Currently Airing', items: airing },
+        { title: 'Popular', items: popular },
+        { title: 'Top Rated', items: topRated },
+        { title: 'Movies', items: movies },
       ].filter(c => c.items.length > 0));
       setLoading(false);
     }
@@ -158,7 +139,7 @@ function CategoryRow({ title, items, onItemClick }: {
         </div>
         <div
           ref={scrollRef}
-          className="flex gap-3 overflow-x-auto scrollbar-none pb-4"
+          className="flex gap-3 overflow-x-auto pb-4"
           style={{ scrollbarWidth: 'none' }}
         >
           {items.map((item) => (

@@ -1,5 +1,4 @@
 import { Metadata } from 'next';
-import { malService } from '@/lib/services/mal';
 import AnimeWatchClient from './AnimeWatchClient';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +8,8 @@ interface Props {
   searchParams: Promise<{ episode?: string; autoplay?: string }>;
 }
 
+const JIKAN = 'https://api.jikan.moe/v4';
+
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { malId: malIdStr } = await params;
   const { episode } = await searchParams;
@@ -16,11 +17,17 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (isNaN(malId)) return { title: 'Watch | Flyx' };
 
   try {
-    const anime = await malService.getById(malId);
-    if (anime) {
-      const title = anime.title_english || anime.title;
-      const epLabel = episode ? `E${episode} - ` : '';
-      return { title: `${epLabel}${title} | Flyx` };
+    const res = await fetch(`${JIKAN}/anime/${malId}/full`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const a = json?.data;
+      if (a) {
+        const title = a.title_english || a.title || 'Unknown';
+        const epLabel = episode ? `E${episode} - ` : '';
+        return { title: `${epLabel}${title} | Flyx` };
+      }
     }
   } catch {}
 
