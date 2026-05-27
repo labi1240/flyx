@@ -36,6 +36,11 @@ export async function extractBingeBoxClient(
   episode?: number,
   year?: string,
 ): Promise<BingeBoxSource[]> {
+  // BingeBox requires a real TMDB ID. Anime content uses tmdbId=0 with MAL IDs.
+  if (tmdbId === '0') {
+    console.log('[BingeBox] Skipping — tmdbId=0 (anime content, requires real TMDB ID)');
+    return [];
+  }
   console.log(`[BingeBox] Extracting: ${type} ${tmdbId} "${title}"`);
 
   for (const source of SOURCE_PRIORITY) {

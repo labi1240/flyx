@@ -211,7 +211,7 @@ export async function handleMiruroRequest(
       case path === 'stream':
         return await handleStreamProxy(url.searchParams, logger, request.url);
       case path === 'segment':
-        return await handleSegmentProxy(url.searchParams, logger);
+        return await handleSegmentProxy(url.searchParams, logger, request.url);
       default:
         return jsonResponse({ error: 'Unknown Miruro route', path }, 404);
     }
@@ -324,6 +324,31 @@ async function handleConfig(
 }
 
 /**
+ * Fetch with SSL fallback — some Miruro CDN nodes (vault-16.owocdn.top) have
+ * expired SSL certs. When an HTTPS fetch throws a network error, retry with HTTP.
+ */
+async function fetchWithSslFallback(
+  url: string,
+  headers: Record<string, string>,
+  logger: ReturnType<typeof createLogger>,
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers });
+  } catch (err) {
+    if (url.startsWith('https://')) {
+      const httpUrl = url.replace(/^https:\/\//, 'http://');
+      logger.warn('HTTPS fetch failed, retrying with HTTP', {
+        original: url.substring(0, 80),
+        downgraded: httpUrl.substring(0, 80),
+        error: (err as Error).message?.substring(0, 100),
+      });
+      return await fetch(httpUrl, { headers });
+    }
+    throw err;
+  }
+}
+
+/**
  * GET /miruro/stream?url={encoded_m3u8_url}
  * Proxies HLS playlist with Referer header set to kwik.cx
  */
@@ -340,14 +365,18 @@ async function handleStreamProxy(
   const streamUrl = decodeURIComponent(encodedUrl);
   logger.info('Proxying Miruro stream', { url: streamUrl.substring(0, 120) });
 
-  const res = await fetch(streamUrl, {
-    headers: {
-      'User-Agent': UA,
-      'Referer': MIRURO_REFERER,
-      'Origin': MIRURO_BASE,
-      'Accept': '*/*',
-    },
-  });
+  // kwik.cx URLs are embed pages that need JS to resolve — not direct streams.
+  // The client should have filtered these out; if one reaches us, reject it clearly.
+  if (streamUrl.includes('kwik.cx')) {
+    return jsonResponse({ error: 'kwik.cx embed URLs must be resolved client-side, not proxied directly' }, 400);
+  }
+
+  const res = await fetchWithSslFallback(streamUrl, {
+    'User-Agent': UA,
+    'Referer': MIRURO_REFERER,
+    'Origin': MIRURO_BASE,
+    'Accept': '*/*',
+  }, logger);
 
   if (!res.ok) {
     return jsonResponse({ error: `Stream fetch failed: ${res.status}` }, 502);
@@ -364,6 +393,7 @@ async function handleStreamProxy(
 async function handleSegmentProxy(
   params: URLSearchParams,
   logger: ReturnType<typeof createLogger>,
+  requestUrl: string,
 ): Promise<Response> {
   const encodedUrl = params.get('url');
   if (!encodedUrl) {
@@ -372,26 +402,31 @@ async function handleSegmentProxy(
 
   const segmentUrl = decodeURIComponent(encodedUrl);
 
-  const res = await fetch(segmentUrl, {
-    headers: {
-      'User-Agent': UA,
-      'Referer': MIRURO_REFERER,
-      'Origin': MIRURO_BASE,
-    },
-  });
+  const res = await fetchWithSslFallback(segmentUrl, {
+    'User-Agent': UA,
+    'Referer': MIRURO_REFERER,
+    'Origin': MIRURO_BASE,
+  }, logger);
 
   if (!res.ok) {
     return jsonResponse({ error: `Segment fetch failed: ${res.status}` }, 502);
   }
 
-  // Return binary segment directly
-  const body = await res.arrayBuffer();
-  const contentType = res.headers.get('content-type') || 'video/mp2t';
+  const contentType = res.headers.get('content-type') || '';
 
+  // If this is a sub-playlist (.m3u8), rewrite its URLs too so variant
+  // playlists nested inside master playlists keep working through the proxy.
+  if (contentType.includes('mpegurl') || segmentUrl.includes('.m3u8')) {
+    const proxyOrigin = new URL(requestUrl).origin;
+    return await buildStreamResponseFromFetch(res, segmentUrl, proxyOrigin, '/miruro/segment', 'miruro');
+  }
+
+  // Binary segment
+  const body = await res.arrayBuffer();
   return new Response(body, {
     status: 200,
     headers: {
-      'Content-Type': contentType,
+      'Content-Type': contentType || 'video/mp2t',
       'Content-Length': body.byteLength.toString(),
       'Cache-Control': 'public, max-age=3600',
       ...corsHeaders(),

@@ -38,6 +38,11 @@ export async function extractFlixerClient(
   season?: number,
   episode?: number,
 ): Promise<FlixerSource[]> {
+  // Flixer requires a real TMDB ID. Anime content uses tmdbId=0 with MAL IDs.
+  if (tmdbId === '0') {
+    console.log('[Hexa] Skipping — tmdbId=0 (anime content, requires real TMDB ID)');
+    return [];
+  }
   console.log(`[Hexa] Extracting: ${type} ${tmdbId}`);
 
   const params = new URLSearchParams({ tmdbId, type });

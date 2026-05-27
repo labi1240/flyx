@@ -130,6 +130,12 @@ export async function extractMiruroClient(
 
       for (const stream of srcData.streams) {
         if (!stream.url || !stream.isActive) continue;
+        // Skip embed sources (kwik.cx etc.) — they need JS execution to resolve.
+        // Only direct HLS URLs can be proxied through /miruro/stream.
+        if (stream.type === 'embed') {
+          console.log(`[Miruro] Skipping embed source from ${providerId}: ${stream.url.substring(0, 60)}`);
+          continue;
+        }
         sources.push({
           quality: stream.quality || stream.resolution?.height?.toString() || 'auto',
           title: `Miruro ${providerId} (${category})${stream.quality ? ' ' + stream.quality : ''}`,

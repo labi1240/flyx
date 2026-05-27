@@ -56,6 +56,15 @@ function loadTurnstileScript(): Promise<void> {
 export default function PrimeSrcTurnstile({ onToken, onError, autoSolve = true }: PrimeSrcTurnstileProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+
+  // Track mount state to prevent callbacks from operating on removed widgets.
+  // Turnstile error 110200 = "Invalid widget ID" — caused by reset() or remove()
+  // racing on a widget that was already destroyed.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const renderWidget = useCallback(() => {
     if (!containerRef.current) return;
@@ -72,18 +81,19 @@ export default function PrimeSrcTurnstile({ onToken, onError, autoSolve = true }
         sitekey: TURNSTILE_SITEKEY,
         appearance: 'interaction-only',
         callback: (token: string) => {
+          if (!mountedRef.current) return;
           console.log('[PrimeSrc Turnstile] Token obtained:', token.substring(0, 20) + '...');
           onToken(token);
         },
         'error-callback': (err: any) => {
+          if (!mountedRef.current) return;
           console.error('[PrimeSrc Turnstile] Error:', err);
           onError?.(typeof err === 'string' ? err : 'Turnstile challenge failed');
         },
         'expired-callback': () => {
+          if (!mountedRef.current || widgetIdRef.current === null) return;
           console.log('[PrimeSrc Turnstile] Token expired, re-solving...');
-          if (widgetIdRef.current !== null) {
-            turnstile.reset(widgetIdRef.current);
-          }
+          try { turnstile.reset(widgetIdRef.current); } catch {}
         },
         retry: 'auto',
         'retry-interval': 2000,
@@ -110,13 +120,16 @@ export default function PrimeSrcTurnstile({ onToken, onError, autoSolve = true }
 
     return () => {
       cancelled = true;
-      // Cleanup widget
-      if (widgetIdRef.current !== null) {
+      mountedRef.current = false;
+      // Clear widgetId BEFORE calling remove to prevent expired-callback
+      // from calling reset() on a widget about to be destroyed.
+      const wid = widgetIdRef.current;
+      widgetIdRef.current = null;
+      if (wid !== null) {
         try {
           const turnstile = (window as any).turnstile;
-          if (turnstile) turnstile.remove(widgetIdRef.current);
+          if (turnstile) turnstile.remove(wid);
         } catch {}
-        widgetIdRef.current = null;
       }
     };
   }, [autoSolve, renderWidget]);

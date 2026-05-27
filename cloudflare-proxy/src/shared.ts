@@ -110,13 +110,21 @@ export function rewritePlaylistUrls(
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Handle HLS tags with URIs
-    if (line.startsWith('#EXT-X-MEDIA:') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) {
-      const uriMatch = line.match(/URI="([^"]+)"/);
-      if (uriMatch) {
-        rewritten.push(line.replace(`URI="${uriMatch[1]}"`, `URI="${proxyUrl(uriMatch[1])}"`));
+    // Handle HLS tags with URIs — includes #EXT-X-KEY so decryption keys
+    // are proxied through the worker instead of fetched directly by the browser.
+    if (line.startsWith('#EXT-X-MEDIA:') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF:') || line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-SESSION-KEY:')) {
+      // Try quoted URI first: URI="https://..."
+      const quotedMatch = line.match(/URI="([^"]+)"/);
+      if (quotedMatch) {
+        rewritten.push(line.replace(`URI="${quotedMatch[1]}"`, `URI="${proxyUrl(quotedMatch[1])}"`));
       } else {
-        rewritten.push(line);
+        // Try unquoted URI: URI=https://... (valid per HLS spec, common on some CDNs)
+        const unquotedMatch = line.match(/URI=([^\s,]+)/);
+        if (unquotedMatch) {
+          rewritten.push(line.replace(`URI=${unquotedMatch[1]}`, `URI="${proxyUrl(unquotedMatch[1])}"`));
+        } else {
+          rewritten.push(line);
+        }
       }
       continue;
     }

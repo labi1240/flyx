@@ -169,9 +169,10 @@ function readWasmString(ptr: number, maxChars: number, memory: WebAssembly.Memor
 // ============================================================================
 // CF Worker proxy URL
 // ============================================================================
-const CF_WORKER_BASE = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '')
-  : '';
+const getCfWorkerBase = () => {
+  const url = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream';
+  return url.replace(/\/stream\/?$/, '');
+};
 
 // ============================================================================
 // Source type
@@ -199,6 +200,11 @@ export async function extractVideasyClient(
   episode?: number,
   year?: string,
 ): Promise<VideasySource[]> {
+  // Videasy requires a real TMDB ID. Anime content uses tmdbId=0 with MAL IDs.
+  if (tmdbId === '0') {
+    console.log('[Videasy] Skipping — tmdbId=0 (anime content, requires real TMDB ID)');
+    return [];
+  }
   console.log(`[Videasy] Extracting: ${type} ${tmdbId} "${title}"`);
 
   const params = new URLSearchParams({ tmdbId, type, title });
@@ -207,7 +213,7 @@ export async function extractVideasyClient(
   if (year) params.set('year', year);
 
   // Step 1: Fetch raw hex from CF Worker proxy
-  const res = await fetch(`${CF_WORKER_BASE}/videasy/extract?${params}`, {
+  const res = await fetch(`${getCfWorkerBase()}/videasy/extract?${params}`, {
     signal: AbortSignal.timeout(25000),
   });
 
