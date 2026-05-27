@@ -346,7 +346,7 @@ export default function SearchPageClient({
         // Store MAL ID and anime type for navigation
         mal_id: anime.mal_id,
         anime_type: anime.type, // "TV", "Movie", "OVA", "ONA", "Special", etc.
-        episodes: anime.episodes,
+        episodes: anime.episodes ?? undefined,
       }));
 
       // Update URL without reload

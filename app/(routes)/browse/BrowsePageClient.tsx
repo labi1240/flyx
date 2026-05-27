@@ -41,11 +41,29 @@ export default function BrowsePageClient({
     }
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isAnime = type === 'anime' || type === 'anime-movies';
+
   const handleContentClick = useCallback((item: MediaItem) => {
     trackEvent('content_clicked', { content_id: item.id, source: 'browse' });
-    const mediaType = item.mediaType || (type === 'movie' || type === 'anime-movies' ? 'movie' : 'tv');
-    router.push(`/details/${item.id}?type=${mediaType}`);
-  }, [router, trackEvent, type]);
+    if (isAnime) {
+      router.push(`/anime/${item.id}`);
+    } else {
+      const mediaType = item.mediaType || (type === 'movie' ? 'movie' : 'tv');
+      router.push(`/details/${item.id}?type=${mediaType}`);
+    }
+  }, [router, trackEvent, type, isAnime]);
+
+  const getImageUrl = useCallback((item: MediaItem) => {
+    if (item.imageUrl) return item.imageUrl;
+    if (item.poster_path) return `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+    return '/placeholder-poster.jpg';
+  }, []);
+
+  const getYear = useCallback((item: MediaItem) => {
+    if (item.year) return String(item.year);
+    const date = item.release_date || item.first_air_date;
+    return date ? new Date(date).getFullYear() : '';
+  }, []);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -127,7 +145,7 @@ export default function BrowsePageClient({
                       className="relative rounded-xl overflow-hidden bg-gray-900 shadow-lg"
                     >
                       <img
-                        src={item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '/placeholder-poster.jpg'}
+                        src={getImageUrl(item)}
                         alt={item.title || item.name || ''}
                         className="w-full aspect-[2/3] object-cover"
                         loading="lazy"
@@ -154,7 +172,7 @@ export default function BrowsePageClient({
                         {item.title || item.name}
                       </h3>
                       <p className="text-gray-500 text-xs mt-0.5">
-                        {(item.release_date || item.first_air_date) ? new Date(item.release_date || item.first_air_date || '').getFullYear() : ''}
+                        {getYear(item)}
                       </p>
                     </div>
                   </motion.div>

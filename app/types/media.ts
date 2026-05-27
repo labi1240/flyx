@@ -34,6 +34,11 @@ export interface MediaItem {
   releaseDate?: string;
   rating?: number;
   voteCount?: number;
+  // AniList/MAL support
+  imageUrl?: string;
+  year?: number;
+  episodes?: number;
+  format?: string;
 }
 
 export interface Season {

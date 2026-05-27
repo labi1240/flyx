@@ -17,14 +17,112 @@ interface BrowsePageProps {
   searchParams: Promise<{ type?: string; filter?: string; genre?: string; page?: string; region?: string }>;
 }
 
+// ─── AniList GraphQL query for anime browse ──────────────────────
+
+const ANILIST_BROWSE_QUERY = `
+  query ($page: Int, $perPage: Int, $sort: [MediaSort], $status: MediaStatus, $format: MediaFormat, $genre: String) {
+    Page(page: $page, perPage: $perPage) {
+      pageInfo { total }
+      media(type: ANIME, sort: $sort, status: $status, format: $format, genre: $genre) {
+        id idMal
+        title { romaji english native }
+        format status episodes
+        averageScore meanScore popularity
+        description(asHtml: false)
+        season seasonYear
+        startDate { year month day }
+        coverImage { extraLarge large medium }
+        genres
+      }
+    }
+  }
+`;
+
+interface RawAniListMedia {
+  id: number;
+  idMal: number | null;
+  title: { romaji: string | null; english: string | null; native: string | null };
+  format: string | null;
+  status: string | null;
+  episodes: number | null;
+  averageScore: number | null;
+  meanScore: number | null;
+  popularity: number | null;
+  description: string | null;
+  season: string | null;
+  seasonYear: number | null;
+  startDate: { year: number | null } | null;
+  coverImage: { extraLarge: string | null; large: string | null; medium: string | null };
+  genres: string[];
+}
+
+async function fetchAniListBrowse(variables: Record<string, unknown>): Promise<{ items: any[]; total: number }> {
+  try {
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: ANILIST_BROWSE_QUERY, variables }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return { items: [], total: 0 };
+    const json = await res.json();
+    const media = json?.data?.Page?.media as RawAniListMedia[] | undefined;
+    const total = json?.data?.Page?.pageInfo?.total ?? 0;
+    if (!media?.length) return { items: [], total: 0 };
+
+    const items = media
+      .filter(m => m.idMal)
+      .map(m => ({
+        id: m.idMal!,
+        title: m.title?.english || m.title?.romaji || 'Unknown',
+        name: m.title?.romaji || m.title?.english || 'Unknown',
+        poster_path: undefined,
+        imageUrl: m.coverImage?.extraLarge || m.coverImage?.large || '',
+        overview: m.description?.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[^>]+>/g, '').trim() || undefined,
+        vote_average: m.averageScore != null ? Math.round(m.averageScore) / 10 : undefined,
+        year: m.seasonYear || m.startDate?.year || undefined,
+        episodes: m.episodes ?? undefined,
+        format: m.format ?? undefined,
+        mediaType: m.format === 'MOVIE' ? 'movie' : 'tv',
+      }));
+    return { items, total };
+  } catch {
+    return { items: [], total: 0 };
+  }
+}
+
 async function getBrowseData(type: string, filter: string, genre: string, page: number, region: string) {
   try {
+    // ── Anime: use AniList ──
+    if (type === 'anime' || type === 'anime-movies') {
+      const perPage = 25 * PAGES_TO_FETCH;
+      const isMovies = type === 'anime-movies';
+      const variables: Record<string, unknown> = {
+        page,
+        perPage,
+        sort: ['POPULARITY_DESC'],
+        format: isMovies ? 'MOVIE' : undefined,
+      };
+
+      if (!isMovies) {
+        if (filter === 'top_rated') {
+          variables.sort = ['SCORE_DESC'];
+        } else if (filter === 'airing') {
+          variables.status = 'RELEASING';
+        }
+        if (genre && !filter) variables.genre = genre.charAt(0).toUpperCase() + genre.slice(1);
+      }
+
+      const result = await fetchAniListBrowse(variables);
+      const totalPages = Math.min(Math.ceil(result.total / perPage), 250);
+      return { items: result.items, total: result.total, page, totalPages };
+    }
+
+    // ── Movies / TV: use TMDB ──
     let endpoint = '';
     let params: Record<string, string> = {};
 
-    // Handle different content types and filters
     if (type === 'movie') {
-      // For movies with region, always use discover endpoint
       if (region || genre) {
         endpoint = '/discover/movie';
         params.sort_by = 'popularity.desc';
@@ -49,13 +147,12 @@ async function getBrowseData(type: string, filter: string, genre: string, page: 
         endpoint = '/movie/popular';
       }
     } else if (type === 'tv') {
-      // Always use discover to exclude anime (genre 16) and support region
       endpoint = '/discover/tv';
       params.without_genres = '16';
       params.sort_by = 'popularity.desc';
-      
+
       if (region) params.with_origin_country = region;
-      
+
       if (filter === 'top_rated') {
         params.sort_by = 'vote_average.desc';
         params['vote_count.gte'] = '200';
@@ -66,33 +163,10 @@ async function getBrowseData(type: string, filter: string, genre: string, page: 
         params['air_date.gte'] = today;
         params['air_date.lte'] = today;
       }
-      
+
       if (genre) {
         params.with_genres = genre;
       }
-    } else if (type === 'anime') {
-      endpoint = '/discover/tv';
-      params.with_genres = '16';
-      params.with_origin_country = 'JP';
-      params.sort_by = 'popularity.desc';
-      
-      if (filter === 'top_rated') {
-        params.sort_by = 'vote_average.desc';
-        params['vote_count.gte'] = '100';
-      } else if (filter === 'airing') {
-        params['air_date.gte'] = new Date(Date.now() - 60*24*60*60*1000).toISOString().split('T')[0];
-      } else if (genre === 'action') {
-        params.with_genres = '16,10759';
-      } else if (genre === 'fantasy') {
-        params.with_genres = '16,10765';
-      } else if (genre === 'romance') {
-        params.with_keywords = '210024';
-      }
-    } else if (type === 'anime-movies') {
-      endpoint = '/discover/movie';
-      params.with_genres = '16';
-      params.with_origin_country = 'JP';
-      params.sort_by = 'popularity.desc';
     }
 
     if (!endpoint) {
@@ -105,21 +179,21 @@ async function getBrowseData(type: string, filter: string, genre: string, page: 
     for (let i = 0; i < PAGES_TO_FETCH; i++) {
       pagePromises.push(fetchTMDBData(endpoint, { ...params, page: (startPage + i).toString() }));
     }
-    
+
     const results = await Promise.all(pagePromises);
-    const mediaType = type === 'movie' || type === 'anime-movies' ? 'movie' : 'tv';
-    
+    const mediaType = type === 'movie' ? 'movie' : 'tv';
+
     // Combine results from all pages and deduplicate
-    const allItems = results.flatMap(data => 
+    const allItems = results.flatMap(data =>
       data?.results?.map((item: any) => ({ ...item, mediaType })) || []
     ).filter((item, index, self) =>
       self.findIndex(i => i.id === item.id && i.mediaType === item.mediaType) === index
     );
-    
+
     const firstResult = results[0];
     const totalResults = firstResult?.total_results || 0;
     const totalPages = Math.min(Math.ceil((firstResult?.total_pages || 0) / PAGES_TO_FETCH), 250);
-    
+
     return {
       items: allItems,
       total: totalResults,
