@@ -43,6 +43,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
   const [selectedChannelIndex, setSelectedChannelIndex] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
+  const [browserPlayerUrl, setBrowserPlayerUrl] = useState<string | null>(null);
   const recoveryRef = useRef(false); // tracks if auto-recovery is in progress
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -392,6 +393,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
     lastPlaybackTimeRef.current = 0;
     stallCountRef.current = 0;
 
+    setBrowserPlayerUrl(null);
     const streamUrl = getStreamUrl();
     console.log('[VideoPlayer] Stream URL:', streamUrl);
     
@@ -402,6 +404,14 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
     }
 
     // Handle CDN-Live channels — client-side extraction (browser fetches cdn-live.tv directly)
+    // Handle DLHD browser player URLs (Cloudflare challenge bypass via iframe)
+    if (streamUrl.includes('/browser/')) {
+      console.log('[VideoPlayer] DLHD browser player mode');
+      setBrowserPlayerUrl(streamUrl);
+      setIsLoading(false);
+      return;
+    }
+
     if (streamUrl.startsWith('cdnlive://')) {
       try {
         const parts = streamUrl.replace('cdnlive://', '').split('/');
@@ -730,12 +740,22 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         onMouseLeave={() => isPlaying && setShowControls(false)}
         onClick={(e) => e.target === e.currentTarget && togglePlay()}
       >
-        <video
-          ref={videoRef}
-          className={styles.video}
-          playsInline
-          onClick={togglePlay}
-        />
+        {browserPlayerUrl ? (
+          <iframe
+            src={browserPlayerUrl}
+            className={styles.video}
+            style={{ border: 'none', width: '100%', height: '100%' }}
+            allow="autoplay; fullscreen"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            className={styles.video}
+            playsInline
+            onClick={togglePlay}
+          />
+        )}
 
         {isLoading && (
           <div className={styles.loadingOverlay}>

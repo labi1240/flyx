@@ -59,21 +59,32 @@ export function getTvProxyBaseUrl(): string {
 }
 
 // Get TV playlist URL
-// NEW: Uses the dedicated DLHD extractor worker at dlhd.vynx-3b3.workers.dev
-// The /play/:channelId endpoint returns decrypted HLS streams directly
+// DLHD Worker URL — centralized
+const DLHD_WORKER = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx-3b3.workers.dev';
+const DLHD_API_KEY = process.env.NEXT_PUBLIC_DLHD_API_KEY || 'vynx';
+
+// Returns the DLHD playlist URL. Server-side pipeline is WAF-blocked for
+// most channels, so we use the browser player which bypasses Cloudflare's
+// JS challenge via hidden iframe cf_clearance warmup.
 export function getTvPlaylistUrl(channel: string, backend?: string): string {
-  // Use the new DLHD extractor worker - it handles everything:
-  // JWT generation, M3U8 fetch, URL rewriting, segment decryption
-  const dlhdWorkerUrl = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx-3b3.workers.dev';
-  const apiKey = process.env.NEXT_PUBLIC_DLHD_API_KEY || 'vynx';
-  let url = `${dlhdWorkerUrl}/play/${channel}?key=${apiKey}`;
-  
-  // Add backend parameter if specified (for manual backend switching)
+  // Use the browser-side player — fetches M3U8+keys from the browser's
+  // residential IP, segments proxied through our worker for CORS.
+  let url = `${DLHD_WORKER}/browser/${channel}`;
+
+  if (backend) {
+    url += `?backend=${encodeURIComponent(backend)}`;
+  }
+
+  console.log('[proxy-config] getTvPlaylistUrl (browser player):', url);
+  return url;
+}
+
+// Direct M3U8 URL for HLS.js (Player 6 channels — no encryption, no WAF)
+export function getTvDirectM3u8Url(channel: string, backend?: string): string {
+  let url = `${DLHD_WORKER}/play/${channel}?key=${DLHD_API_KEY}`;
   if (backend) {
     url += `&backend=${encodeURIComponent(backend)}`;
   }
-  
-  console.log('[proxy-config] getTvPlaylistUrl (DLHD Worker):', url);
   return url;
 }
 
