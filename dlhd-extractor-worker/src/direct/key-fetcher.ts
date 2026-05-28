@@ -29,8 +29,8 @@ const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 key requests per channel per minute
 
 // Key servers to try (ordered by reliability for server-side fetching)
-// UPDATED Apr 10 2026: sec.ai-hls.site is DEAD (403). All use chevy.{domain} pattern now.
-const KEY_SERVERS = ['chevy.embedkclx.sbs', 'chevy.enviromentalanimal.horse', 'chevy.soyspace.cyou', 'chevy.vovlacosa.sbs'] as const;
+// UPDATED May 27 2026: embedkclx.sbs DEAD, vovlacosa.sbs SSL broken. newkso.ru is new primary.
+const KEY_SERVERS = ['chevy.newkso.ru', 'chevy.enviromentalanimal.horse', 'chevy.soyspace.cyou'] as const;
 
 export interface KeyFetchResult {
   success: boolean;
@@ -146,8 +146,8 @@ export async function fetchKeyWithAuth(
   // Mar 27 2026: No auth headers needed — just Referer/Origin for CORS
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-    'Referer': 'https://www.ksohls.ru/',
-    'Origin': 'https://www.ksohls.ru',
+    'Referer': 'https://www.newkso.ru/',
+    'Origin': 'https://www.newkso.ru',
   };
 
   console.log(`[Key-Fetch] ${resource}/${keyNumber} (no auth headers — IP whitelist only)`);

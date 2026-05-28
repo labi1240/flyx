@@ -24,91 +24,53 @@
 
 import { Env, ExtractedStream } from '../types';
 import { fetchAuthData, DLHDAuthDataV5 } from './dlhd-auth-v5';
+import { discoverAllServers, findAnyWorkingServer, getOrderedServerList, MultiServerResult } from './multi-server';
+import {
+  ALL_SERVERS, BACKEND_DOMAINS,
+  serverLookupUrl, m3u8Url as buildM3u8Url, upstreamHeaders,
+} from './dlhd-config';
 
-// All known DLHD servers (discovered via server_lookup API)
-// SECURITY: Keep these private - don't expose via public APIs
-const ALL_SERVERS = ['ddy6', 'zeko', 'wind', 'dokko1', 'nfs', 'wiki', 'x4'] as const;
+export { ALL_SERVERS, BACKEND_DOMAINS as ALL_DOMAINS } from './dlhd-config';
 
-// All known DLHD domains for M3U8 proxy
-// SECURITY: Keep these private - don't expose via public APIs
-// UPDATED Apr 10 2026: sec.ai-hls.site is DEAD (403). New primary: embedkclx.sbs
-// All servers now use chevy.{domain} prefix pattern
-const ALL_DOMAINS = ['embedkclx.sbs', 'enviromentalanimal.horse', 'soyspace.cyou'] as const;
-
-// Domains for server_lookup API (ordered by reliability)
-// UPDATED Apr 10 2026: embedkclx.sbs is new primary, enviromentalanimal.horse is new fallback
-const LOOKUP_DOMAINS = ['embedkclx.sbs', 'enviromentalanimal.horse', 'vovlacosa.sbs', 'soyspace.cyou'] as const;
-
-// Default domain (for M3U8 proxy)
-const DEFAULT_DOMAIN = 'embedkclx.sbs';
-
-// Key domain — no auth headers needed (reCAPTCHA enforcement appears disabled as of Apr 10 2026)
-// UPDATED Apr 10 2026: embedkclx.sbs is new primary
-export const KEY_DOMAIN = 'embedkclx.sbs';
-
-// Fallback request timeout (ms)
-const FALLBACK_REQUEST_TIMEOUT = 8000;
-
-// Maximum fallback attempts before giving up
-const MAX_FALLBACK_ATTEMPTS = 6;
-
-// Maximum valid channel ID (extended from 850 to 1000 to cover new channels)
+// Maximum valid channel ID
 const MAX_CHANNEL_ID = 1000;
+
+// Fallback limits for extractWithFallback
+const MAX_FALLBACK_ATTEMPTS = 6;
+const FALLBACK_REQUEST_TIMEOUT = 8000;
 
 // =============================================================================
 // DYNAMIC SERVER LOOKUP (with in-memory cache)
 // =============================================================================
 
-// Cache: channel_id -> { server, expires }
 const serverLookupCache = new Map<number, { server: string; expires: number }>();
-const LOOKUP_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const LOOKUP_CACHE_TTL_MS = 2 * 60 * 1000;
 
 /**
  * Look up the correct server for a channel via the live API.
  * Uses chevy.{domain}/server_lookup?channel_id=premium{ch}
- * Returns the server_key (e.g., "zeko", "ddy6") or null if lookup fails.
- * Results are cached in-memory for 2 minutes.
  */
 export async function lookupServer(channelId: number): Promise<string | null> {
-  // Check cache first
   const cached = serverLookupCache.get(channelId);
-  if (cached && cached.expires > Date.now()) {
-    return cached.server;
-  }
-  
+  if (cached && cached.expires > Date.now()) return cached.server;
+
   const channelKey = `premium${channelId}`;
-  
-  // Race all lookup domains in parallel — first valid response wins
-  // UPDATED Apr 10 2026: sec.ai-hls.site is DEAD (403). All use chevy.{domain} now.
+
   try {
-    const lookupUrls = LOOKUP_DOMAINS.map(d => `https://chevy.${d}/server_lookup?channel_id=${encodeURIComponent(channelKey)}`);
     const result = await Promise.any(
-      lookupUrls.map(async (lookupUrl) => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
-        try {
-          const resp = await fetch(lookupUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://www.ksohls.ru/',
-                'Origin': 'https://www.ksohls.ru',
-              },
-              signal: controller.signal,
-            }
-          );
-          clearTimeout(timeoutId);
-          if (!resp.ok) throw new Error(`${resp.status}`);
-          const data = await resp.json() as { server_key?: string };
-          if (!data.server_key) throw new Error('no server_key');
-          return { server: data.server_key, domain: lookupUrl };
-        } catch (e) {
-          clearTimeout(timeoutId);
-          throw e;
-        }
+      BACKEND_DOMAINS.map(async (domain) => {
+        const lookupUrl = serverLookupUrl(domain, channelKey);
+        const resp = await fetch(lookupUrl, {
+          headers: upstreamHeaders(),
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!resp.ok) throw new Error(`${resp.status}`);
+        const data = await resp.json() as { server_key?: string };
+        if (!data.server_key) throw new Error('no server_key');
+        return { server: data.server_key, domain };
       })
     );
-    
-    // Cache the result
+
     serverLookupCache.set(channelId, { server: result.server, expires: Date.now() + LOOKUP_CACHE_TTL_MS });
     if (serverLookupCache.size > 500) {
       const now = Date.now();
@@ -167,6 +129,39 @@ export async function getServersForChannelDynamic(channelId: number): Promise<st
 }
 
 /**
+ * Discover ALL working servers for a channel by probing every server×domain combo.
+ * This bypasses the server_lookup API limitation (which only returns ONE server).
+ * Most channels are mirrored on 2-4 servers simultaneously.
+ *
+ * Results are cached in-memory for 5 minutes.
+ */
+export async function getAllWorkingServersForChannel(channelId: number): Promise<MultiServerResult> {
+  return discoverAllServers(String(channelId));
+}
+
+/**
+ * Fast check: find ANY working server for a channel.
+ * Returns as soon as the first probe succeeds — much faster than full enumeration.
+ */
+export async function findWorkingServerQuick(channelId: number): Promise<{ server: string; domain: string } | null> {
+  return findAnyWorkingServer(String(channelId));
+}
+
+/**
+ * Get the ordered list of servers to try for a channel, using multi-server
+ * discovery when available. Falls back to static map + server_lookup.
+ */
+export async function getServersForChannelMultiServer(channelId: number): Promise<string[]> {
+  try {
+    const ordered = await getOrderedServerList(String(channelId));
+    if (ordered.length > 0) return ordered;
+  } catch {
+    // Fall through to static map
+  }
+  return getServersForChannel(channelId);
+}
+
+/**
  * Get the ordered list of servers to try for a channel (static map only).
  * Primary server first, then all others as fallbacks.
  */
@@ -194,10 +189,8 @@ export function getServerForChannel(channelId: number): string | null {
  * Pattern: https://{m3u8Server}/proxy/{server}/premium{ch}/mono.css
  * DLHD's own player uses M3U8_SERVER directly — confirmed via page source extraction.
  */
-function buildM3U8Url(channelId: string, server: string, domain: string = DEFAULT_DOMAIN): string {
-  const channelKey = `premium${channelId}`;
-  // 'top1/cdn' is a special server key with a slash — use it directly in the path
-  return `https://chevy.${domain}/proxy/${server}/${channelKey}/mono.css`;
+function buildM3U8UrlLocal(channelId: string, server: string, domain?: string): string {
+  return buildM3u8Url(server, domain || BACKEND_DOMAINS[0], channelId);
 }
 
 /**
@@ -228,25 +221,19 @@ export async function extractFast(channelId: string): Promise<ExtractedStream | 
   }
 
   // Step 2: Construct M3U8 URL (instant - 0ms)
-  const m3u8Url = buildM3U8Url(channelId, server);
+  const m3u8UrlResult = buildM3U8UrlLocal(channelId, server);
 
   // Step 3: Build headers - NO AUTH NEEDED for M3U8!
-  // Updated Mar 27, 2026: Referer changed to www.ksohls.ru (current player domain per browser recon)
-  const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': '*/*',
-    'Referer': 'https://www.ksohls.ru/',
-    'Origin': 'https://www.ksohls.ru',
-  };
+  const headers = upstreamHeaders();
 
   const elapsed = Date.now() - startTime;
-  console.log(`[FastExtract] SUCCESS in ${elapsed}ms: Channel ${channelId} -> ${server}.${DEFAULT_DOMAIN}`);
+  console.log(`[FastExtract] SUCCESS in ${elapsed}ms: Channel ${channelId} -> ${server}.${BACKEND_DOMAINS[0]}`);
 
   return {
-    m3u8Url,
+    m3u8Url: m3u8UrlResult,
     headers,
-    referer: 'https://www.ksohls.ru/',
-    origin: 'https://www.ksohls.ru',
+    referer: headers.Referer || 'https://www.newkso.ru/',
+    origin: headers.Origin || 'https://www.newkso.ru',
     quality: undefined,
     isEncrypted: true,
   };
@@ -315,7 +302,7 @@ export async function extractWithFallback(
   
   // Try each server in order, but limit total attempts
   for (const server of servers) {
-    for (const domain of ALL_DOMAINS) {
+    for (const domain of BACKEND_DOMAINS) {
       // SECURITY: Limit total fallback attempts to prevent DoS amplification
       if (attempts >= MAX_FALLBACK_ATTEMPTS) {
         console.log(`[FastExtract] Max fallback attempts (${MAX_FALLBACK_ATTEMPTS}) reached`);
@@ -323,7 +310,7 @@ export async function extractWithFallback(
       }
       attempts++;
       
-      const m3u8Url = buildM3U8Url(channelId, server, domain);
+      const m3u8Url = buildM3U8UrlLocal(channelId, server, domain);
       
       try {
         // Fetch via RPI proxy with timeout
@@ -333,8 +320,8 @@ export async function extractWithFallback(
         rpiUrl.searchParams.set('headers', JSON.stringify({
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': '*/*',
-          'Referer': 'https://www.ksohls.ru/',
-          'Origin': 'https://www.ksohls.ru',
+          'Referer': 'https://www.newkso.ru/',
+          'Origin': 'https://www.newkso.ru',
           'Authorization': `Bearer ${token}`,
         }));
 
@@ -410,7 +397,7 @@ export function getCacheStats(): { serverMapSize: number; totalServers: number; 
   return {
     serverMapSize: Object.keys(SERVER_MAP).length,
     totalServers: ALL_SERVERS.length,
-    totalDomains: ALL_DOMAINS.length,
+    totalDomains: BACKEND_DOMAINS.length,
   };
 }
 
@@ -452,7 +439,7 @@ export function getAllServers(): readonly string[] {
  * WARNING: Do not expose this list in public API responses
  */
 export function getAllDomains(): readonly string[] {
-  return ALL_DOMAINS;
+  return BACKEND_DOMAINS;
 }
 
 

@@ -16,7 +16,7 @@ import {
  * /play is public because it returns M3U8 that players need to fetch frequently
  * /backends is public because it's called by the frontend to list available servers
  */
-const PUBLIC_ROUTES = ['/health', '/', '/dlhdprivate', '/play', '/backends', '/key', '/segment', '/whitelist', '/whitelist-relay'];
+const PUBLIC_ROUTES = ['/health', '/', '/dlhdprivate', '/play', '/backends', '/key', '/segment', '/whitelist', '/whitelist-relay', '/browser', '/browser-api', '/dlhd-sw.js'];
 
 /**
  * Routes that support query param auth (for VLC/media players that can't send headers)

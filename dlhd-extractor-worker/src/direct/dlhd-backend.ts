@@ -17,15 +17,14 @@ import { getProxyConfig } from '../discovery/fetcher';
 // Known DLHD servers discovered via server_lookup API (Jan 2026)
 // Discovered by scanning all 850 channels - these are ALL the servers
 const DLHD_SERVERS = ['ddy6', 'zeko', 'wind', 'dokko1', 'nfs', 'wiki', 'x4'];
-const DLHD_DOMAINS = ['embedkclx.sbs', 'enviromentalanimal.horse', 'soyspace.cyou', 'dvalna.ru'];
+const DLHD_DOMAINS = ['newkso.ru', 'enviromentalanimal.horse', 'soyspace.cyou'];
 
-// The ONLY working lookup endpoint
-// UPDATED Apr 10, 2026: sec.ai-hls.site is DEAD (403). embedkclx.sbs is new primary.
-const LOOKUP_ENDPOINT = 'https://chevy.embedkclx.sbs/server_lookup';
+// UPDATED May 27, 2026: embedkclx.sbs DEAD. newkso.ru is new primary.
+const LOOKUP_ENDPOINT = 'https://chevy.newkso.ru/server_lookup';
 
 // Auth source
-// UPDATED Mar 27, 2026: www.ksohls.ru is the current player domain (browser recon confirmed)
-const JWT_SOURCE_URL = 'https://www.ksohls.ru/premiumtv/daddyhd.php';
+// UPDATED May 27, 2026: ksohls.ru DEAD. www.newkso.ru is the current player domain.
+const JWT_SOURCE_URL = 'https://www.newkso.ru/premiumtv/daddyhd.php';
 
 /**
  * Auth data from JWT source
@@ -148,7 +147,7 @@ export async function lookupServer(
       response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://www.ksohls.ru/',
+          'Referer': 'https://www.newkso.ru/',
         },
       });
     }
@@ -188,7 +187,7 @@ export async function findWorkingServer(
         let response: Response;
         
         if (proxyConfig.url && proxyConfig.apiKey) {
-          const proxyUrl = `${proxyConfig.url}/animekai?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent('https://www.ksohls.ru/')}&origin=${encodeURIComponent('https://www.ksohls.ru')}&auth=${encodeURIComponent(`Bearer ${authData.token}`)}`;
+          const proxyUrl = `${proxyConfig.url}/animekai?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent('https://www.newkso.ru/')}&origin=${encodeURIComponent('https://www.newkso.ru')}&auth=${encodeURIComponent(`Bearer ${authData.token}`)}`;
           response = await fetch(proxyUrl, {
             headers: { 'X-API-Key': proxyConfig.apiKey },
           });
@@ -196,8 +195,8 @@ export async function findWorkingServer(
           response = await fetch(m3u8Url, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Referer': 'https://www.ksohls.ru/',
-              'Origin': 'https://www.ksohls.ru',
+              'Referer': 'https://www.newkso.ru/',
+              'Origin': 'https://www.newkso.ru',
               'Authorization': `Bearer ${authData.token}`,
             },
           });
@@ -239,7 +238,7 @@ export async function findWorkingServer(
           
           if (proxyConfig.url && proxyConfig.apiKey) {
             // Route through RPI proxy with auth
-            const proxyUrl = `${proxyConfig.url}/animekai?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent('https://www.ksohls.ru/')}&origin=${encodeURIComponent('https://www.ksohls.ru')}&auth=${encodeURIComponent(`Bearer ${authData.token}`)}`;
+            const proxyUrl = `${proxyConfig.url}/animekai?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent('https://www.newkso.ru/')}&origin=${encodeURIComponent('https://www.newkso.ru')}&auth=${encodeURIComponent(`Bearer ${authData.token}`)}`;
             response = await fetch(proxyUrl, {
               headers: {
                 'X-API-Key': proxyConfig.apiKey,
@@ -249,8 +248,8 @@ export async function findWorkingServer(
             response = await fetch(m3u8Url, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://www.ksohls.ru/',
-                'Origin': 'https://www.ksohls.ru',
+                'Referer': 'https://www.newkso.ru/',
+                'Origin': 'https://www.newkso.ru',
                 'Authorization': `Bearer ${authData.token}`,
               },
             });
@@ -343,16 +342,16 @@ export async function extractDirectStream(
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
-    'Referer': 'https://www.ksohls.ru/',
-    'Origin': 'https://www.ksohls.ru',
+    'Referer': 'https://www.newkso.ru/',
+    'Origin': 'https://www.newkso.ru',
     'Authorization': `Bearer ${authData.token}`,
   };
 
   return {
     m3u8Url,
     headers,
-    referer: 'https://www.ksohls.ru/',
-    origin: 'https://www.ksohls.ru',
+    referer: 'https://www.newkso.ru/',
+    origin: 'https://www.newkso.ru',
     quality: undefined,
     isEncrypted: true, // DLHD streams are always encrypted
   };

@@ -3,13 +3,13 @@
  *
  * Proxies daddylive live streams through Cloudflare Workers.
  * Main site: thedaddy.top → daddylivestream.com → dlhd.dad → dlhd.link → dlstreams.top
- * Player page: enviromentalspace.sbs (was ksohls.ru, behind Cloudflare now)
+ * Player page: newkso.ru (was ksohls.ru, behind Cloudflare now)
  * M3U8 servers: ai.the-sunmoon.site (primary), chevy.soyspace.cyou (fallback)
  * Key servers: key.keylocking.ru (new), chevy.soyspace.cyou (fallback, requires whitelist)
  * go.ai-chatx.site is DEAD (ECONNREFUSED), daddylive.mp is DEAD
  *
  * Authentication Flow (March 24, 2026):
- *   1. Player page on enviromentalspace.sbs → reCAPTCHA v3 whitelists user's IP
+ *   1. Player page on newkso.ru → reCAPTCHA v3 whitelists user's IP
  *      - Site key: 6LfJv4AsAAAAALTLEHKaQ7LN_VYfFqhLPrB2Tvgj
  *      - POST to {M3U8_SERVER}/verify with recaptcha-token + channel_id
  *      - Background re-verification every 20 minutes
@@ -114,9 +114,9 @@ async function generateSignature(sessionId: string, resource: string, timestamp:
 // CONSTANTS
 // =============================================================================
 
-// UPDATED Apr 10, 2026: embedkclx.sbs is the new player/embed domain. enviromentalspace.sbs is DEAD (SSL failure).
-// Main site redirect chain: daddylivestream.com → dlhd.dad → dlhd.link → dlstreams.top (dlhd.so is DEAD)
-const PLAYER_DOMAIN = 'embedkclx.sbs';
+// UPDATED May 27, 2026: newkso.ru is DEAD (DNS nonexistent). newkso.ru is the new player domain.
+// Main site redirect chain: dlhd.pk → dlstreams.com → dlhd.sx
+const PLAYER_DOMAIN = 'newkso.ru';
 const PARENT_DOMAIN = 'dlstreams.top';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
@@ -161,10 +161,10 @@ const CHANNEL_TO_TOPEMBED: Record<string, string> = {
   '92': 'BeinSports2[Arab]',
 };
 
-/** M3U8 servers (Apr 10, 2026): chevy.embedkclx.sbs is primary, enviromentalanimal.horse + soyspace.cyou fallbacks */
-/** DEAD: ai.the-sunmoon.site, sec.ai-hls.site (403), key.keylocking.ru (403) */
-const CDN_DOMAIN = 'embedkclx.sbs';
-const M3U8_SERVERS = ['embedkclx.sbs', 'enviromentalanimal.horse', 'soyspace.cyou'];
+/** M3U8 servers (May 27, 2026): chevy.newkso.ru is primary, enviromentalanimal.horse + soyspace.cyou fallbacks */
+/** DEAD: newkso.ru (DNS nonexistent), ai.the-sunmoon.site, sec.ai-hls.site (403), key.keylocking.ru (403) */
+const CDN_DOMAIN = 'newkso.ru';
+const M3U8_SERVERS = ['newkso.ru', 'enviromentalanimal.horse', 'soyspace.cyou'];
 
 /** HMAC secret for PoW computation - loaded from environment variable */
 // SECURITY: Never hardcode secrets in source code
@@ -199,7 +199,7 @@ interface SessionData {
   iat: number;
   exp: number;
   fetchedAt: number;
-  source?: 'enviromentalspace.sbs' | 'www.ksohls.ru' | 'hitsplay.fun' | 'topembed.pw'; // Track where JWT was obtained from
+  source?: 'www.newkso.ru' | 'hitsplay.fun' | 'topembed.pw'; // Track where JWT was obtained from
 }
 const sessionCache = new Map<string, SessionData>();
 
@@ -408,10 +408,10 @@ async function computePoWNonce(resource: string, keyNumber: string, timestamp: n
 // =============================================================================
 
 /**
- * Fetch auth token from www.ksohls.ru, hitsplay.fun, or topembed.pw player page
+ * Fetch auth token from www.newkso.ru, hitsplay.fun, or topembed.pw player page
  * 
  * UPDATED February 25, 2026: 
- * - www.ksohls.ru is the new primary player domain (replaces lefttoplay.xyz, epaly.fun)
+ * - www.newkso.ru is the new primary player domain (replaces lefttoplay.xyz, epaly.fun)
  * - Auth values are now XOR-encrypted with polymorphic keys
  * - hitsplay.fun is dead (403)
  * - topembed.pw is fallback for channels with specific mappings
@@ -427,10 +427,10 @@ async function fetchAuthData(channel: string, logger: any, env?: Env): Promise<S
   logger.info('Fetching fresh JWT', { channel });
 
   // ============================================================================
-  // METHOD 1: Try embedkclx.sbs first (Apr 10, 2026 - enviromentalspace.sbs is DEAD)
+  // METHOD 1: Try newkso.ru first (Apr 10, 2026 - newkso.ru is DEAD)
   // Then fall back to ksohls.ru (still works for direct access)
   // ============================================================================
-  const playerDomains = ['embedkclx.sbs', 'www.ksohls.ru'];
+  const playerDomains = ['newkso.ru', 'www.newkso.ru'];
   for (const playerDomain of playerDomains) {
     try {
       const playerUrl = `https://${playerDomain}/premiumtv/daddyhd.php?id=${channel}`;
@@ -478,7 +478,7 @@ async function fetchAuthData(channel: string, logger: any, env?: Env): Promise<S
               iat,
               exp,
               fetchedAt: Date.now(),
-              source: playerDomain === 'enviromentalspace.sbs' ? 'enviromentalspace.sbs' : 'www.ksohls.ru',
+              source: playerDomain === 'newkso.ru' ? 'newkso.ru' : 'www.newkso.ru',
             };
 
             addToSessionCache(channel, session);
@@ -702,8 +702,8 @@ const FALLBACK_SERVER_KEYS = ['wiki', 'hzt', 'x4', 'zeko', 'wind', 'nfs', 'ddy6'
  */
 async function fetchServerKey(channelKey: string, logger: any, env?: Env): Promise<string | null> {
   // UPDATED Apr 10, 2026: ai.the-sunmoon.site and sec.ai-hls.site are DEAD.
-  // All use chevy.{domain} pattern now. embedkclx.sbs is new primary.
-  const lookupDomains = ['embedkclx.sbs', 'enviromentalanimal.horse', 'vovlacosa.sbs', 'soyspace.cyou'];
+  // All use chevy.{domain} pattern now. newkso.ru is new primary.
+  const lookupDomains = ['newkso.ru', 'enviromentalanimal.horse', 'vovlacosa.sbs', 'soyspace.cyou'];
 
   for (const domain of lookupDomains) {
     const url = `https://chevy.${domain}/server_lookup?channel_id=${channelKey}`;
@@ -748,7 +748,7 @@ async function fetchServerKey(channelKey: string, logger: any, env?: Env): Promi
       }
       rpiBase = rpiBase.replace(/\/+$/, '');
       
-      const rpiUrl = `${rpiBase}/dlhd/stream?url=${encodeURIComponent(`https://chevy.embedkclx.sbs/server_lookup?channel_id=${channelKey}`)}&key=${env.RPI_PROXY_KEY}`;
+      const rpiUrl = `${rpiBase}/dlhd/stream?url=${encodeURIComponent(`https://chevy.newkso.ru/server_lookup?channel_id=${channelKey}`)}&key=${env.RPI_PROXY_KEY}`;
       logger.info('Trying server lookup via RPI', { channelKey });
       
       const rpiRes = await fetch(rpiUrl);
@@ -786,27 +786,20 @@ function constructM3U8Url(serverKey: string, channelKey: string): string {
 function rewriteM3U8(content: string, proxyOrigin: string, m3u8BaseUrl: string, jwt: string, rpiProxyUrl?: string, rpiProxyKey?: string): string {
   let modified = content;
 
-  // Rewrite key URLs to proxy through our CF worker's /key endpoint
-  // NEVER expose RPI proxy URL directly to the browser!
-  const workerKeyOrigin = proxyOrigin.replace(/\/dlhd$/, '').replace(/\/tv$/, '');
+  // Browser-direct key fetching: resolve to absolute URLs pointing at DLHD key server.
+  // The browser (on residential IP) fetches real keys directly — no proxy needed.
+  // DLHD key servers have CORS * and reCAPTCHA is reportedly disabled.
+  const keyServerOrigin = (() => { try { return new URL(m3u8BaseUrl).origin; } catch { return `https://chevy.${CDN_DOMAIN}`; } })();
   modified = modified.replace(/URI="([^"]+)"/g, (_, originalKeyUrl) => {
-    let absoluteKeyUrl = originalKeyUrl;
-
-    if (!absoluteKeyUrl.startsWith('http')) {
-      try {
-        const base = new URL(m3u8BaseUrl);
-        absoluteKeyUrl = new URL(
-          absoluteKeyUrl,
-          base.origin + base.pathname.replace(/\/[^/]*$/, '/')
-        ).toString();
-      } catch {
-        const baseWithoutFile = m3u8BaseUrl.replace(/\/[^/]*$/, '/');
-        absoluteKeyUrl = baseWithoutFile + absoluteKeyUrl;
-      }
+    if (originalKeyUrl.startsWith('http')) return `URI="${originalKeyUrl}"`;
+    try {
+      const base = new URL(m3u8BaseUrl);
+      const absolute = new URL(originalKeyUrl, base.origin + base.pathname.replace(/\/[^/]*$/, '/')).toString();
+      return `URI="${absolute}"`;
+    } catch {
+      const baseWithoutFile = m3u8BaseUrl.replace(/\/[^/]*$/, '/');
+      return `URI="${baseWithoutFile}${originalKeyUrl}"`;
     }
-
-    // Route through CF worker's /key endpoint — it proxies to RPI server-side
-    return `URI="${workerKeyOrigin}/key?url=${encodeURIComponent(absoluteKeyUrl)}"`;
   });
 
   // Remove ENDLIST for live streams
@@ -997,7 +990,7 @@ async function handlePlaylistRequest(
     logger.info('Unauthenticated request (allowed)', { channel });
   }
 
-  // Step 1: Get auth data (enviromentalspace.sbs is primary, ksohls.ru fallback)
+  // Step 1: Get auth data (newkso.ru is primary, ksohls.ru fallback)
   const session = await fetchAuthData(channel, logger, env);
   if (!session) {
     return jsonResponse({ error: 'Failed to fetch auth data - player endpoints may be blocking requests' }, 502, origin);
@@ -1224,7 +1217,7 @@ async function handleKeyProxy(url: URL, logger: any, origin: string | null, env?
  */
 
 // Known DLHD CDN domains that block Cloudflare IPs
-const DLHD_DOMAINS = ['soyspace.cyou', 'embedkclx.sbs', 'enviromentalanimal.horse', 'aivideox.site', 'dvalna.ru', 'arbitrageai.cc'];
+const DLHD_DOMAINS = ['soyspace.cyou', 'newkso.ru', 'enviromentalanimal.horse', 'aivideox.site', 'dvalna.ru', 'arbitrageai.cc'];
 
 /**
  * Check if a URL is from a DLHD CDN domain that blocks CF IPs

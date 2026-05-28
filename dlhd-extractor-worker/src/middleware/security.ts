@@ -18,7 +18,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
 // Domains allowed for proxy requests
 const ALLOWED_PROXY_DOMAINS = [
   'soyspace.cyou',
-  'keylocking.ru',       // New key server (Mar 24, 2026)
+  'newkso.ru',           // Current backend domain (May 27, 2026)
   'the-sunmoon.site',   // New primary M3U8 server (Mar 24, 2026)
   'dvalna.ru',
   'dlhd.link',
@@ -28,9 +28,9 @@ const ALLOWED_PROXY_DOMAINS = [
   'dlstreams.top',       // Current main domain (Mar 2026)
   'daddyhd.com',
   'adffdafdsafds.sbs',
-  'enviromentalspace.sbs', // Fallback player domain
-  'www.ksohls.ru',       // Current player domain (Mar 27, 2026 — browser recon confirmed)
-  'ksohls.ru',
+  'enviromentalanimal.horse', // Fallback backend domain
+  'www.newkso.ru',       // Current player domain (May 27, 2026)
+  'newkso.ru',
   'ai-hls.site',         // New primary M3U8/key/verify server (Mar 27, 2026)
   'topembed.pw',
   'allaivideo.fun',

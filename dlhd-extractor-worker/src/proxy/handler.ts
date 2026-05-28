@@ -55,10 +55,10 @@ const RPI_PROXY_DOMAINS = [
   'thedaddy.top',
   'dlstreams.top',
   'soyspace.cyou',
-  'keylocking.ru',
+  'newkso.ru',
   'dvalna.ru',
   'adffdafdsafds.sbs',
-  'enviromentalspace.sbs',
+  'newkso.ru',
   'topembed.pw',
   'arbitrageai.cc',
   'vovlacosa.sbs',
@@ -66,7 +66,7 @@ const RPI_PROXY_DOMAINS = [
   'vmvmv.shop',
   'daddylivestream.com',
   'ai-hls.site',
-  'ksohls.ru',
+  'newkso.ru',
 ];
 
 /**

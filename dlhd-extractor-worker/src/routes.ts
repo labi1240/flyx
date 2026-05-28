@@ -16,7 +16,10 @@ import {
   addProxyCorsHeaders,
   decodeBase64Url
 } from './proxy';
-import { extractFast, getServerForChannel, getServersForChannel, extractWithFallback, getCacheStats, generateJWT, getAllServers, getAllDomains, channelExists, lookupServer, getServersForChannelDynamic, getLookupCacheStats } from './direct/fast-extractor';
+import { runPipeline, setPipelineProxyConfig } from './direct/dlhd-pipeline';
+import { isFakeKey, toHex, parseKeyUrl, upstreamHeaders } from './direct/dlhd-config';
+import { extractFast, getServerForChannel, getServersForChannel, extractWithFallback, getCacheStats, generateJWT, getAllServers, getAllDomains, channelExists, lookupServer, getServersForChannelDynamic, getLookupCacheStats, getAllWorkingServersForChannel, findWorkingServerQuick, getServersForChannelMultiServer } from './direct/fast-extractor';
+import { getMultiServerCacheStats, invalidateCache } from './direct/multi-server';
 import { getProxyConfig, setProxyConfig } from './discovery/fetcher';
 import { fetchKeyWithAuth, extractChannelFromKeyUrl } from './direct/key-fetcher';
 import { DLHDAuthDataV5 } from './direct/dlhd-auth-v5';
@@ -76,12 +79,13 @@ function cleanExpiredKeys() {
 /**
  * Rewrite M3U8 content for the /play endpoint
  *
- * UPDATED March 26, 2026: Proxy ALL URLs through our worker
- * - Keys: routed through /key proxy endpoint (server-side fetch with whitelisted IP)
- * - Segments: routed through /segment proxy endpoint
- *   → DLHD switched to CDNs without CORS headers (gptimage15.com, stariicloud.com, etc.)
- *   → Browser can't fetch cross-origin without Access-Control-Allow-Origin
- *   → Proxying through CF Worker adds CORS and has no bandwidth limits
+ * STRATEGY (May 2026): Browser-Direct Key Fetching
+ * - Keys: resolved to absolute URLs pointing DIRECTLY at DLHD key servers.
+ *   The browser fetches them client-side from its residential IP → real keys.
+ *   DLHD key servers have CORS * and reCAPTCHA is reportedly disabled.
+ *   NO server-side key proxy needed — eliminates the entire whitelist problem.
+ * - Segments: routed through /segment proxy endpoint for CORS headers.
+ *   DLHD CDNs don't set Access-Control-Allow-Origin.
  */
 async function rewriteM3u8ForPlayEndpoint(
   m3u8Content: string,
@@ -97,19 +101,19 @@ async function rewriteM3u8ForPlayEndpoint(
   const rewrittenLines: string[] = [];
 
   const basePath = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
+  const keyServerOrigin = (() => { try { return new URL(baseUrl).origin; } catch { return 'https://chevy.newkso.ru'; } })();
 
   for (const line of lines) {
     const trimmed = line.trim();
 
     if (trimmed.startsWith('#EXT-X-KEY') && trimmed.includes('URI="')) {
       if (inlineKeyBase64) {
-        // INLINE the key as data URI — no separate key fetch needed by HLS.js.
-        // This bypasses all whitelist/CORS issues.
         const newLine = trimmed.replace(/URI="[^"]+"/, `URI="data:application/octet-stream;base64,${inlineKeyBase64}"`);
         rewrittenLines.push(newLine);
         continue;
       }
-      // Fallback: proxy through /key endpoint
+      // Browser-direct key fetching: resolve to absolute URL pointing at DLHD's key server.
+      // The browser (on residential IP) fetches the real key directly — no proxy needed.
       const uriMatch = trimmed.match(/URI="([^"]+)"/);
       if (uriMatch) {
         const uri = uriMatch[1];
@@ -117,29 +121,21 @@ async function rewriteM3u8ForPlayEndpoint(
         if (uri.startsWith('http')) {
           absoluteKeyUrl = uri;
         } else {
-          try {
-            const baseOrigin = new URL(baseUrl).origin;
-            absoluteKeyUrl = `${baseOrigin}${uri.startsWith('/') ? '' : '/'}${uri}`;
-          } catch {
-            absoluteKeyUrl = `https://chevy.embedkclx.sbs${uri.startsWith('/') ? '' : '/'}${uri}`;
-          }
+          absoluteKeyUrl = uri.startsWith('/') ? `${keyServerOrigin}${uri}` : `${basePath}${uri}`;
         }
-        const proxiedKeyUrl = `${workerBaseUrl}/key?url=${encodeURIComponent(absoluteKeyUrl)}`;
-        const newLine = trimmed.replace(/URI="[^"]+"/, `URI="${proxiedKeyUrl}"`);
+        const newLine = trimmed.replace(/URI="[^"]+"/, `URI="${absoluteKeyUrl}"`);
         rewrittenLines.push(newLine);
         continue;
       }
     }
-    
+
     // Empty lines and comments — pass through
     if (trimmed === '' || trimmed.startsWith('#')) {
       rewrittenLines.push(line);
       continue;
     }
-    
+
     // Segment URLs — make absolute, then proxy through /segment for CORS
-    // UPDATED Mar 26 2026: DLHD switched to CDNs without CORS headers
-    // (gptimage15.com, stariicloud.com) — must proxy through our worker
     let segmentUrl = trimmed;
     if (!segmentUrl.startsWith('http')) {
       segmentUrl = basePath + segmentUrl;
@@ -147,7 +143,7 @@ async function rewriteM3u8ForPlayEndpoint(
     const proxiedSegmentUrl = `${workerBaseUrl}/segment?url=${encodeURIComponent(segmentUrl)}`;
     rewrittenLines.push(proxiedSegmentUrl);
   }
-  
+
   return rewrittenLines.join('\n');
 }
 
@@ -178,9 +174,9 @@ async function refreshWhitelistViaRelay(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key': relayKey },
     body: JSON.stringify({
-      url: 'https://chevy.embedkclx.sbs/verify',
+      url: 'https://chevy.newkso.ru/verify',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.ksohls.ru', 'Referer': 'https://www.ksohls.ru/' },
+      headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.newkso.ru', 'Referer': 'https://www.newkso.ru/' },
       body: verifyBody,
       username,
     }),
@@ -268,9 +264,9 @@ grecaptcha.ready(function(){
       }
 
       // POST verify with correct Origin — whitelists THIS CF edge IP
-      const verifyResp = await fetch('https://chevy.embedkclx.sbs/verify', {
+      const verifyResp = await fetch('https://chevy.newkso.ru/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.ksohls.ru', 'Referer': 'https://www.ksohls.ru/' },
+        headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.newkso.ru', 'Referer': 'https://www.newkso.ru/' },
         body: JSON.stringify({ 'recaptcha-token': body.token, 'channel_id': body.channel }),
       });
       const verifyData = await verifyResp.json() as { success?: boolean; score?: number; error?: string };
@@ -332,10 +328,9 @@ grecaptcha.ready(function(){
     const keyServers = [keyUrl];
     if (keyPath) {
       const servers = [
-        `https://chevy.embedkclx.sbs${keyPath}`,
+        `https://chevy.newkso.ru${keyPath}`,
         `https://chevy.enviromentalanimal.horse${keyPath}`,
         `https://chevy.soyspace.cyou${keyPath}`,
-        `https://chevy.vovlacosa.sbs${keyPath}`,
       ];
       for (const s of servers) {
         if (!keyServers.includes(s)) keyServers.push(s);
@@ -344,8 +339,8 @@ grecaptcha.ready(function(){
 
     const dlhdHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-      'Referer': 'https://www.ksohls.ru/',
-      'Origin': 'https://www.ksohls.ru',
+      'Referer': 'https://www.newkso.ru/',
+      'Origin': 'https://www.newkso.ru',
     };
 
     function toHex(data: Uint8Array): string {
@@ -480,8 +475,8 @@ grecaptcha.ready(function(){
           console.log(`[/key] reCAPTCHA token obtained (${token.length}b), POSTing verify via relay...`);
 
           const verifyResult = await relayPost(
-            'https://chevy.embedkclx.sbs/verify',
-            { 'Content-Type': 'application/json', 'Origin': 'https://www.ksohls.ru', 'Referer': 'https://www.ksohls.ru/' },
+            'https://chevy.newkso.ru/verify',
+            { 'Content-Type': 'application/json', 'Origin': 'https://www.newkso.ru', 'Referer': 'https://www.newkso.ru/' },
             JSON.stringify({ 'recaptcha-token': token, 'channel_id': channel }),
             stickyUsername,
           );
@@ -519,13 +514,13 @@ grecaptcha.ready(function(){
 
       // ─── Step 2: Self-whitelist + fetch (Mar 27 2026) ──────────────────
       // CRITICAL: verify and key fetch MUST hit the SAME server hostname.
-      // The whitelist is PER-SERVER — whitelisting on chevy.embedkclx.sbs doesn't
+      // The whitelist is PER-SERVER — whitelisting on chevy.newkso.ru doesn't
       // help if the key is fetched from chevy.soyspace.cyou.
       const channelMatch = keyUrl.match(/\/(premium\d+)\//);
       const channel = channelMatch ? channelMatch[1] : 'premium51';
 
       // Extract the hostname from the key URL — verify on THAT same host
-      const keyHost = (() => { try { return new URL(keyUrl).origin; } catch { return 'https://chevy.embedkclx.sbs'; } })();
+      const keyHost = (() => { try { return new URL(keyUrl).origin; } catch { return 'https://chevy.newkso.ru'; } })();
       const verifyUrl = `${keyHost}/verify`;
 
       console.log(`[/key] Self-whitelist: verify=${verifyUrl} key=${keyUrl.substring(0, 60)}`);
@@ -534,7 +529,7 @@ grecaptcha.ready(function(){
         if (rcToken && rcToken.length > 20) {
           const verifyResp = await fetch(verifyUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.ksohls.ru', 'Referer': 'https://www.ksohls.ru/' },
+            headers: { 'Content-Type': 'application/json', 'Origin': 'https://www.newkso.ru', 'Referer': 'https://www.newkso.ru/' },
             body: JSON.stringify({ 'recaptcha-token': rcToken, 'channel_id': channel }),
             signal: AbortSignal.timeout(8000),
           });
@@ -832,8 +827,8 @@ grecaptcha.ready(function(){
         rpiUrl.searchParams.set('headers', JSON.stringify({
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': '*/*',
-          'Referer': 'https://www.ksohls.ru/',
-          'Origin': 'https://www.ksohls.ru',
+          'Referer': 'https://www.newkso.ru/',
+          'Origin': 'https://www.newkso.ru',
         }));
         
         const controller = new AbortController();
@@ -914,17 +909,123 @@ grecaptcha.ready(function(){
     });
   });
 
+  // Multi-server discovery endpoint — probes ALL 7 servers × 3 domains
+  // to find EVERY working server for a channel (not just the primary).
+  // This bypasses the server_lookup API limitation.
+  //
+  // Query params:
+  //   ?full=true  - Full enumeration (all 21 combos, slower but complete)
+  //   ?full=false - Fast mode (first working only, default)
+  router.get('/servers/:channelId', async (request, env, params) => {
+    const channelId = params.channelId;
+    const url = new URL(request.url);
+    const fullMode = url.searchParams.get('full') === 'true';
+    const origin = request.headers.get('origin');
+
+    const corsHeaders: Record<string, string> = {
+      'Access-Control-Allow-Origin': origin || '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    };
+
+    // Validate channel ID
+    const chNum = parseInt(channelId, 10);
+    if (isNaN(chNum) || chNum < 1 || chNum > 1000) {
+      return new Response(JSON.stringify({
+        error: 'Invalid channel ID',
+        hint: 'Channel ID must be between 1 and 1000',
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
+    try {
+      if (fullMode) {
+        // Full enumeration — probe all 21 combos (7 servers × 3 domains)
+        const result = await getAllWorkingServersForChannel(chNum);
+        return new Response(JSON.stringify({
+          success: true,
+          channelId,
+          channelKey: result.channelKey,
+          primaryServer: result.primaryServer,
+          allWorkingServers: result.allWorkingServers,
+          allWorkingDomains: result.allWorkingDomains,
+          totalProbed: result.totalProbed,
+          totalWorking: result.totalWorking,
+          elapsed: result.elapsed,
+          probes: result.probes
+            .filter(p => p.working)
+            .map(p => ({ server: p.server, domain: p.domain, elapsed: p.elapsed })),
+        }, null, 2), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      } else {
+        // Fast mode — first working server wins
+        const working = await findWorkingServerQuick(chNum);
+        return new Response(JSON.stringify({
+          success: true,
+          channelId,
+          working: working !== null,
+          server: working?.server || null,
+          domain: working?.domain || null,
+          mode: 'fast',
+        }), {
+          status: working ? 200 : 404,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+    } catch (e) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: (e as Error).message,
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+  });
+
+  // Multi-server cache debug/management endpoint
+  router.get('/servers/cache/stats', async (request, env, params) => {
+    const origin = request.headers.get('origin');
+    const stats = getMultiServerCacheStats();
+    return new Response(JSON.stringify(stats, null, 2), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin || '*' },
+    });
+  });
+
+  // Invalidate multi-server cache
+  router.post('/servers/cache/invalidate', async (request, env, params) => {
+    const origin = request.headers.get('origin');
+    let channelId: string | undefined;
+    try {
+      const body = await request.json() as { channelId?: string };
+      channelId = body.channelId;
+    } catch { /* no body */ }
+    invalidateCache(channelId);
+    return new Response(JSON.stringify({
+      success: true,
+      invalidated: channelId || 'all',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin || '*' },
+    });
+  });
+
   // Debug endpoint to check proxy config (protected)
   router.get('/debug/proxy', async (request, env, params) => {
     const proxyConfig = getProxyConfig();
-    
+
     // Also test shouldUseRpiProxy
     const testUrl = 'https://chevy.soyspace.cyou/test';
     const RPI_PROXY_DOMAINS = [
       'dlhd.link', 'dlhd.dad', 'thedaddy.top', 'soyspace.cyou',
-      'topembed.pw', 'embedkclx.sbs', 'enviromentalanimal.horse', 'dvalna.ru', 'keylocking.ru',
+      'topembed.pw', 'newkso.ru', 'enviromentalanimal.horse', 'dvalna.ru',
       'adffdafdsafds.sbs', 'dlstreams.top', 'vovlacosa.sbs', 'the-sunmoon.site',
-      'vmvmv.shop', 'daddylivestream.com', 'ai-hls.site', 'ksohls.ru', 'aivideox.site',
+      'vmvmv.shop', 'daddylivestream.com', 'ai-hls.site', 'aivideox.site',
     ];
     const hostname = new URL(testUrl).hostname;
     const shouldProxy = RPI_PROXY_DOMAINS.some(domain => 
@@ -1078,8 +1179,8 @@ grecaptcha.ready(function(){
         const m3u8Resp = await fetch(m3u8Url, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.ksohls.ru/',
-            'Origin': 'https://www.ksohls.ru',
+            'Referer': 'https://www.newkso.ru/',
+            'Origin': 'https://www.newkso.ru',
             'Authorization': `Bearer ${jwtToken}`,
           },
         });
@@ -1207,7 +1308,12 @@ grecaptcha.ready(function(){
         allowedOrigin
       );
     }
-    
+
+    // Configure proxy for DLHD pipeline (routes through RPI if direct access blocked)
+    if (env.RPI_PROXY_URL && env.RPI_PROXY_API_KEY) {
+      setPipelineProxyConfig({ url: env.RPI_PROXY_URL, key: env.RPI_PROXY_API_KEY });
+    }
+
     // SECURITY: Validate channel ID format
     const channelValidation = validateChannelId(channelId);
     if (!channelValidation.valid) {
@@ -1311,8 +1417,8 @@ grecaptcha.ready(function(){
       const m3u8Headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
         'Accept': '*/*',
-        'Referer': 'https://www.ksohls.ru/',
-        'Origin': 'https://www.ksohls.ru',
+        'Referer': 'https://www.newkso.ru/',
+        'Origin': 'https://www.newkso.ru',
         'Authorization': `Bearer ${token}`,
       };
 
@@ -1327,10 +1433,10 @@ grecaptcha.ready(function(){
 
       // Phase 1: Try primary server directly (fast path, ~200-500ms)
       const primaryServer = servers[0]; // First server is the best candidate (from lookup or static map)
-      const primaryUrl = `https://chevy.embedkclx.sbs/proxy/${primaryServer}/${channelKey}/mono.css`;
+      const primaryUrl = `https://chevy.newkso.ru/proxy/${primaryServer}/${channelKey}/mono.css`;
 
       try {
-        console.log(`[/play] Phase 1: Trying primary ${primaryServer} on chevy.embedkclx.sbs...`);
+        console.log(`[/play] Phase 1: Trying primary ${primaryServer} on chevy.newkso.ru...`);
         const primaryResp = await fetch(primaryUrl, {
           headers: m3u8Headers,
           signal: AbortSignal.timeout(3000), // Tight 3s timeout for primary
@@ -1340,8 +1446,8 @@ grecaptcha.ready(function(){
           if (content.includes('#EXTM3U') || content.includes('#EXT-X-')) {
             m3u8Content = content;
             workingServer = primaryServer;
-            workingDomain = 'embedkclx.sbs';
-            console.log(`[/play] ✅ Phase 1 HIT: ${primaryServer}.embedkclx.sbs (${Date.now() - startTime}ms)`);
+            workingDomain = 'newkso.ru';
+            console.log(`[/play] ✅ Phase 1 HIT: ${primaryServer}.newkso.ru (${Date.now() - startTime}ms)`);
           }
         }
       } catch (e) {
@@ -1353,7 +1459,7 @@ grecaptcha.ready(function(){
         const m3u8Candidates: Array<{ url: string; server: string; domain: string }> = [];
 
         for (const server of servers) {
-          for (const domain of ['embedkclx.sbs', 'enviromentalanimal.horse', ...domains]) {
+          for (const domain of ['newkso.ru', 'enviromentalanimal.horse', ...domains]) {
             m3u8Candidates.push({
               url: `https://chevy.${domain}/proxy/${server}/${channelKey}/mono.css`,
               server,
@@ -1848,8 +1954,8 @@ grecaptcha.ready(function(){
     console.log(`[/dlhdprivate] Direct fetch: ${targetUrl.substring(0, 60)}...`);
     
     try {
-      const upstreamReferer = customReferer || 'https://www.ksohls.ru/';
-      const upstreamOrigin = customReferer ? customReferer.replace(/\/$/, '') : 'https://www.ksohls.ru';
+      const upstreamReferer = customReferer || 'https://www.newkso.ru/';
+      const upstreamOrigin = customReferer ? customReferer.replace(/\/$/, '') : 'https://www.newkso.ru';
       const response = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -2045,6 +2151,244 @@ grecaptcha.ready(function(){
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  });
+
+  // Browser-side DLHD player — bypasses Cloudflare JS Challenge by pre-warming
+  // the cf_clearance cookie via a hidden iframe before fetching M3U8.
+  // The browser executes Cloudflare's JS challenge, gets the clearance cookie,
+  // then all subsequent fetch() calls include it automatically.
+  router.get('/browser/:channelId', async (request, env, params) => {
+    const channelId = params.channelId;
+    const workerBaseUrl = new URL(request.url).origin;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DLHD ch${channelId}</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<style>body{font-family:system-ui;background:#111;color:#fff;margin:0;padding:20px}
+video{width:100%;max-width:960px;background:#000;display:block}
+#s{padding:10px;font-size:14px;color:#aaa}
+#debug{font-size:11px;color:#555;margin-top:10px;max-height:200px;overflow-y:auto}
+</style></head>
+<body><video id="v" controls></video><div id="s">Initializing...</div><div id="debug"></div>
+<script>
+(function() {
+var CH="${channelId}",
+    WORKER="${workerBaseUrl}",
+    DOM=["newkso.ru","enviromentalanimal.horse","soyspace.cyou"],
+    SRV=["ddy6","zeko","wind","dokko1","nfs","wiki","x4"],
+    debugLines=[];
+
+function status(t){document.getElementById("s").textContent=t;debug(t);}
+function debug(t){debugLines.push(new Date().toISOString().substr(11,8)+" "+t);document.getElementById("debug").textContent=debugLines.slice(-15).join("\\n");}
+
+// Cloudflare JS Challenge bypass: open a hidden iframe to the DLHD domain.
+// The browser executes Cloudflare's challenge JS, gets cf_clearance cookie.
+// After that, all fetch() calls to that domain include the cookie.
+function warmupCfClearance(domain, timeoutMs) {
+  return new Promise(function(resolve) {
+    status("Warming cf_clearance for "+domain+"...");
+    var iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = "https://chevy."+domain+"/";
+    var done = false;
+    var timer = setTimeout(function() {
+      if (!done) { done = true; document.body.removeChild(iframe); debug("cf warmup timeout for "+domain); resolve(false); }
+    }, timeoutMs);
+    iframe.onload = function() {
+      if (!done) { done = true; clearTimeout(timer); document.body.removeChild(iframe); debug("cf warmup complete for "+domain); resolve(true); }
+    };
+    iframe.onerror = function() {
+      if (!done) { done = true; clearTimeout(timer); document.body.removeChild(iframe); debug("cf warmup error for "+domain); resolve(false); }
+    };
+    document.body.appendChild(iframe);
+  });
+}
+
+async function fetchWithRetry(url, headers, retries) {
+  retries = retries || 2;
+  for (var i=0; i<=retries; i++) {
+    try {
+      var r = await fetch(url, {headers: headers, signal: AbortSignal.timeout(8000)});
+      if (r.ok) return r;
+      debug("HTTP "+r.status+" for "+url.substring(0,60)+" (attempt "+(i+1)+"/"+(retries+1)+")");
+      if (r.status === 403 && i < retries) {
+        // Cloudflare challenge — warmup then retry
+        var host = new URL(url).hostname;
+        await warmupCfClearance(host.replace("chevy.",""), 5000);
+      }
+    } catch(e) {
+      debug("Fetch error: "+e.message+" (attempt "+(i+1)+")");
+    }
+  }
+  return null;
+}
+
+(async()=>{
+// Step 0: Pre-warm cf_clearance on the primary domain
+await warmupCfClearance(DOM[0], 6000);
+
+// Step 1: Server discovery
+status("Discovering server...");
+var best=null;
+for(var d of DOM){try{var j=await fetchWithRetry("https://chevy."+d+"/server_lookup?channel_id=premium"+CH,{Referer:"https://www.newkso.ru/"});if(j){var jj=await j.json();if(jj&&jj.server_key){best=jj.server_key;debug("Server: "+best+" (via "+d+")");break}}}catch(e){debug("Lookup err "+d+": "+e.message)}}
+
+// Step 2: Fetch M3U8
+status("Fetching stream...");
+var m3=null, usedSrv=null, usedDom=null;
+var sv=best?[best].concat(SRV.filter(function(x){return x!==best})):SRV;
+for(var srv of sv){for(var dom of DOM){var r=await fetchWithRetry("https://chevy."+dom+"/proxy/"+srv+"/premium"+CH+"/mono.css",{Referer:"https://www.newkso.ru/",Origin:"https://www.newkso.ru"});if(r){m3=await r.text();usedSrv=srv;usedDom=dom;status("Got stream: "+srv+"."+dom);break}}if(m3)break}
+if(!m3){status("Stream offline — try a different channel");return}
+
+// Step 3: Rewrite M3U8
+var m3url="https://chevy."+usedDom+"/proxy/"+usedSrv+"/premium"+CH+"/mono.css";
+var ko=(new URL(m3url)).origin, bp=m3url.substring(0,m3url.lastIndexOf("/")+1);
+var lines=m3.split("\\n"), out=[];
+for(var li=0; li<lines.length; li++){
+  var l=lines[li], t=l.trim();
+  if(t.indexOf("#EXT-X-KEY")===0&&t.indexOf('URI="')!==-1){
+    var um=t.match(/URI="([^"]+)"/);
+    if(um){var abs=um[1].indexOf("http")===0?um[1]:um[1].indexOf("/")===0?ko+um[1]:bp+um[1];out.push(t.replace(/URI="[^"]+"/,'URI="'+abs+'"'));continue}
+  }
+  if(!t||t.indexOf("#")===0){out.push(l);continue}
+  var seg=t.indexOf("http")===0?t:bp+t;
+  out.push(WORKER+"/segment?url="+encodeURIComponent(seg));
+}
+var rw=out.join("\\n"), blob=new Blob([rw],{type:"application/vnd.apple.mpegurl"});
+var url=URL.createObjectURL(blob), v=document.getElementById("v");
+status("Playing... ("+usedSrv+"."+usedDom+")");
+
+// Step 4: Play
+if(Hls.isSupported()){var h=new Hls();h.loadSource(url);h.attachMedia(v);h.on(Hls.Events.ERROR,function(e,d){if(d.fatal){status("Fatal error: "+d.type+" — "+d.details);h.destroy()}})}
+else if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=url}
+else{status("HLS not supported")}
+v.play().catch(function(){});
+})();
+})();
+</script></body></html>`;
+
+    return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' } });
+  });
+
+  // Service Worker for transparent DLHD request handling.
+  // The frontend registers this SW, and it intercepts all DLHD requests to:
+  // 1. Pass M3U8 + key requests through directly (browser handles CF challenge)
+  // 2. Route segment requests through our /segment CORS proxy
+  // 3. Auto-retry with cf_clearance warmup on 403 responses
+  router.get('/dlhd-sw.js', async (request, env, params) => {
+    const workerBaseUrl = new URL(request.url).origin;
+
+    const sw = `
+// DLHD Service Worker — transparent Cloudflare challenge bypass + segment proxying
+const WORKER = '${workerBaseUrl}';
+const DLHD_DOMAINS = ['newkso.ru','enviromentalanimal.horse','soyspace.cyou'];
+const DLHD_PATTERN = /chevy\\.(newkso\\.ru|enviromentalanimal\\.horse|soyspace\\.cyou)/;
+
+// Track which domains have been cf-warmed
+const warmedDomains = new Set();
+
+// Warm up cf_clearance cookie by loading the domain in an invisible iframe.
+// The browser executes Cloudflare's JS challenge, gets the cookie, and
+// subsequent fetch() calls include it automatically.
+async function warmupCfClearance(domain) {
+  if (warmedDomains.has(domain)) return true;
+  try {
+    await new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'https://chevy.' + domain + '/';
+      const timer = setTimeout(() => { try { document.body.removeChild(iframe); } catch(e) {} resolve(false); }, 5000);
+      iframe.onload = () => { clearTimeout(timer); try { document.body.removeChild(iframe); } catch(e) {} warmedDomains.add(domain); resolve(true); };
+      iframe.onerror = () => { clearTimeout(timer); try { document.body.removeChild(iframe); } catch(e) {} resolve(false); };
+      document.body.appendChild(iframe);
+    });
+    return warmedDomains.has(domain);
+  } catch(e) {
+    return false;
+  }
+}
+
+// Check if a response is a Cloudflare challenge (403 with challenge page body)
+async function isCfChallenge(response) {
+  if (response.status !== 403) return false;
+  try {
+    const text = await response.clone().text();
+    return text.includes('_cf_chl_opt') || text.includes('challenge-platform') || text.includes('cf-challenge');
+  } catch { return false; }
+}
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  const isDlhd = DLHD_PATTERN.test(url.hostname);
+
+  if (!isDlhd) return; // Not a DLHD request — pass through
+
+  // Segment requests → route through worker proxy for CORS
+  if (url.pathname.indexOf('.ts') !== -1 || url.pathname.indexOf('.m4s') !== -1) {
+    event.respondWith(
+      fetch(WORKER + '/segment?url=' + encodeURIComponent(event.request.url))
+    );
+    return;
+  }
+
+  // M3U8 + key + API requests → pass through directly (browser handles CF challenge)
+  // If blocked, auto-warmup and retry
+  event.respondWith((async () => {
+    let response = await fetch(event.request);
+
+    if (await isCfChallenge(response)) {
+      // Extract domain from URL for warmup
+      const domain = url.hostname.replace('chevy.', '');
+      console.log('[DLHD-SW] CF challenge detected on ' + url.hostname + ', warming up...');
+
+      const warmed = await warmupCfClearance(domain);
+      if (warmed) {
+        console.log('[DLHD-SW] Retrying after warmup...');
+        response = await fetch(event.request);
+      }
+    }
+
+    return response;
+  })());
+});
+
+// Warm up primary domain on install
+self.addEventListener('activate', () => {
+  for (const d of DLHD_DOMAINS) {
+    warmupCfClearance(d).then(ok => console.log('[DLHD-SW] warmup ' + d + ': ' + (ok ? 'OK' : 'FAIL')));
+  }
+});
+
+console.log('[DLHD-SW] Service Worker loaded — intercepting DLHD requests');
+`.trim();
+
+    return new Response(sw, {
+      status: 200,
+      headers: { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' },
+    });
+  });
+
+  // API for browser-side pipeline — gives frontend the URLs to try directly
+  router.get('/browser-api/:channelId', async (request, env, params) => {
+    const channelId = params.channelId;
+    const chNum = parseInt(channelId, 10);
+    if (isNaN(chNum) || chNum < 1 || chNum > 1000) {
+      return new Response(JSON.stringify({ error: 'Invalid channel' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    }
+    const workerBaseUrl = new URL(request.url).origin;
+    const domains = ['newkso.ru', 'enviromentalanimal.horse', 'soyspace.cyou'];
+    const servers = ['ddy6','zeko','wind','dokko1','nfs','wiki','x4'];
+    let bestServer = null;
+    try {
+      const resp = await fetch('https://chevy.'+domains[0]+'/server_lookup?channel_id=premium'+channelId, { headers: { 'Referer': 'https://www.newkso.ru/', 'Origin': 'https://www.newkso.ru' }, signal: AbortSignal.timeout(5000) });
+      if (resp.ok) { const data = await resp.json(); if (data.server_key) bestServer = data.server_key; }
+    } catch {}
+    const orderedServers = bestServer ? [bestServer, ...servers.filter(s => s !== bestServer)] : servers;
+    return new Response(JSON.stringify({
+      success: true, channelId, bestServer,
+      m3u8Urls: orderedServers.flatMap(s => domains.map(d => ({ server: s, domain: d, url: 'https://chevy.'+d+'/proxy/'+s+'/premium'+channelId+'/mono.css' }))),
+      keyServerOrigin: 'https://chevy.'+domains[0],
+      segmentProxy: workerBaseUrl+'/segment?url=',
+      note: 'Browser fetches M3U8 & keys directly (residential IP). Segments proxy through worker.',
+    }), { status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   });
 
   // Debug endpoint to test auth computation
