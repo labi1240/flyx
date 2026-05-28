@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
+import FetchLoader from './hls-fetch-loader';
 import { getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import { useAnalytics } from '../analytics/AnalyticsProvider';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
@@ -1274,7 +1275,9 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     };
   // IMPORTANT: Include malId in dependencies for MAL-direct anime (tmdbId=0)
   // Without this, switching between different MAL anime won't trigger a re-fetch
-  }, [tmdbId, mediaType, season, episode, malId]);
+  // externalStreamUrl/Sources must be in deps so the pre-extracted bypass fires
+  // when AnimeWatchClient finishes extraction after the initial render.
+  }, [tmdbId, mediaType, season, episode, malId, externalStreamUrl, externalStreamSources, externalStreamProvider, externalStreamSourceIndex]);
 
   // Initialize HLS
   useEffect(() => {
@@ -1384,10 +1387,11 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           abrBandWidthFactor: 0.8, // Be more conservative with bandwidth
           abrBandWidthUpFactor: 0.5, // Slower to upgrade quality
           abrMaxWithRealBitrate: true,
-          // @ts-ignore
-          xhrSetup: (xhr: any, url: any) => {
-            xhr.withCredentials = false;
-          },
+          // Use fetch-based loader so the Service Worker can intercept
+          // CDN segment requests and inject Referer/Origin headers.
+          // The default XHR loader bypasses the SW entirely.
+          pLoader: FetchLoader as any,
+          fLoader: FetchLoader as any,
         } as any);
 
         console.log('[HLS] Created HLS instance, loading source...');

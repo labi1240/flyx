@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import Hls from 'hls.js';
+import FetchLoader from './hls-fetch-loader';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useMobileGestures } from '@/hooks/useMobileGestures';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
@@ -592,6 +593,10 @@ export default function MobileVideoPlayer({
     abrMaxWithRealBitrate: true,
     nudgeOffset: 0.1,
     nudgeMaxRetry: 5,
+    // Use fetch-based loader so the Service Worker can intercept
+    // CDN segment requests and inject Referer/Origin headers.
+    pLoader: FetchLoader as any,
+    fLoader: FetchLoader as any,
   }), []);
 
   // Track the last initialized stream URL to prevent re-initialization on rotation
