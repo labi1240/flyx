@@ -72,9 +72,23 @@ const CATEGORY_DEFS = [
   { title: 'Movies', endpoint: '/top/anime?limit=25&type=movie' },
   ...Object.entries(GENRES).map(([name, id]) => ({
     title: name,
-    endpoint: `/anime?genres=${id}&order_by=popularity&sort=desc&limit=25`,
+    endpoint: `/anime?genres=${id}&order_by=popularity&sort=desc&limit=25&sfw=true`,
   })),
 ];
+
+async function fetchJikanBatch(endpoints: string[]): Promise<AnimeItem[][]> {
+  const results: AnimeItem[][] = [];
+  // Jikan rate limit: 3 req/s. Batch 3 at a time with 1.2s delay between batches.
+  for (let i = 0; i < endpoints.length; i += 3) {
+    const batch = endpoints.slice(i, i + 3);
+    const batchResults = await Promise.all(batch.map(e => fetchJikan(e)));
+    results.push(...batchResults);
+    if (i + 3 < endpoints.length) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
+  }
+  return results;
+}
 
 export default function AnimePageClient() {
   const router = useRouter();
@@ -84,13 +98,12 @@ export default function AnimePageClient() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const results = await Promise.all(
-        CATEGORY_DEFS.map(d => fetchJikan(d.endpoint))
-      );
+      const endpoints = CATEGORY_DEFS.map(d => d.endpoint);
+      const results = await fetchJikanBatch(endpoints);
       if (cancelled) return;
       setCategories(
         CATEGORY_DEFS
-          .map((d, i) => ({ title: d.title, items: results[i] }))
+          .map((d, i) => ({ title: d.title, items: results[i] || [] }))
           .filter(c => c.items.length > 0)
       );
       setLoading(false);
