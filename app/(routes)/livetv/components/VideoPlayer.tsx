@@ -43,7 +43,6 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
   const [selectedChannelIndex, setSelectedChannelIndex] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
-  const [browserPlayerUrl, setBrowserPlayerUrl] = useState<string | null>(null);
   const recoveryRef = useRef(false); // tracks if auto-recovery is in progress
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -393,25 +392,59 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
     lastPlaybackTimeRef.current = 0;
     stallCountRef.current = 0;
 
-    setBrowserPlayerUrl(null);
     const streamUrl = getStreamUrl();
     console.log('[VideoPlayer] Stream URL:', streamUrl);
-    
+
     if (!streamUrl) {
       setError('No stream URL available - channel may not be configured');
       setIsLoading(false);
       return;
     }
 
-    // Handle CDN-Live channels — client-side extraction (browser fetches cdn-live.tv directly)
-    // Handle DLHD browser player URLs (Cloudflare challenge bypass via iframe)
-    if (streamUrl.includes('/browser/')) {
-      console.log('[VideoPlayer] DLHD browser player mode');
-      setBrowserPlayerUrl(streamUrl);
-      setIsLoading(false);
-      return;
+    // DLHD: pre-flight check — if server-side returns error, fetch M3U8 browser-side.
+    // Browser can pass Cloudflare's JS challenge (server can't).
+    if (channel?.source === 'dlhd' || event?.source === 'dlhd') {
+      try {
+        const checkResp = await fetch(streamUrl, { signal: AbortSignal.timeout(8000) });
+        const checkText = await checkResp.text();
+        if (checkResp.ok && checkText.includes('#EXTM3U')) {
+          // Server-side works (Player 6, etc.) — proceed normally
+          console.log('[VideoPlayer] DLHD server-side OK, using worker playlist');
+        } else {
+          // Server-side failed — fetch M3U8 directly from the browser
+          console.log('[VideoPlayer] DLHD server blocked, fetching browser-side...');
+          setRecoveryStatus('Bypassing Cloudflare...');
+          const chId = channel?.channelId || event?.channels?.[0]?.channelId || '';
+          const { fetchDLHDM3U8BrowserSide } = await import('@/app/lib/livetv/dlhd-browser-fetch');
+          const result = await fetchDLHDM3U8BrowserSide(chId);
+          if (result) {
+            setRecoveryStatus(null);
+            loadHlsStream(video, result.blobUrl);
+            return;
+          }
+          setError('Stream unavailable — all sources failed');
+          setIsLoading(false);
+          return;
+        }
+      } catch (e) {
+        // Fetch failed entirely — try browser-side
+        console.log('[VideoPlayer] DLHD server unreachable, fetching browser-side...');
+        setRecoveryStatus('Bypassing Cloudflare...');
+        const chId = channel?.channelId || event?.channels?.[0]?.channelId || '';
+        const { fetchDLHDM3U8BrowserSide } = await import('@/app/lib/livetv/dlhd-browser-fetch');
+        const result = await fetchDLHDM3U8BrowserSide(chId);
+        if (result) {
+          setRecoveryStatus(null);
+          loadHlsStream(video, result.blobUrl);
+          return;
+        }
+        setError('Stream unavailable — cannot reach DLHD');
+        setIsLoading(false);
+        return;
+      }
     }
 
+    // Handle CDN-Live channels — client-side extraction (browser fetches cdn-live.tv directly)
     if (streamUrl.startsWith('cdnlive://')) {
       try {
         const parts = streamUrl.replace('cdnlive://', '').split('/');
@@ -740,22 +773,12 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         onMouseLeave={() => isPlaying && setShowControls(false)}
         onClick={(e) => e.target === e.currentTarget && togglePlay()}
       >
-        {browserPlayerUrl ? (
-          <iframe
-            src={browserPlayerUrl}
-            className={styles.video}
-            style={{ border: 'none', width: '100%', height: '100%' }}
-            allow="autoplay; fullscreen"
-            allowFullScreen
-          />
-        ) : (
-          <video
-            ref={videoRef}
-            className={styles.video}
-            playsInline
-            onClick={togglePlay}
-          />
-        )}
+        <video
+          ref={videoRef}
+          className={styles.video}
+          playsInline
+          onClick={togglePlay}
+        />
 
         {isLoading && (
           <div className={styles.loadingOverlay}>

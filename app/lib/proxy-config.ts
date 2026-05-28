@@ -63,28 +63,13 @@ export function getTvProxyBaseUrl(): string {
 const DLHD_WORKER = process.env.NEXT_PUBLIC_DLHD_WORKER_URL || 'https://dlhd.vynx-3b3.workers.dev';
 const DLHD_API_KEY = process.env.NEXT_PUBLIC_DLHD_API_KEY || 'vynx';
 
-// Returns the DLHD playlist URL. Server-side pipeline is WAF-blocked for
-// most channels, so we use the browser player which bypasses Cloudflare's
-// JS challenge via hidden iframe cf_clearance warmup.
+// Server-side /play endpoint (works for Player 6 channels, WAF-blocked for main pipeline)
 export function getTvPlaylistUrl(channel: string, backend?: string): string {
-  // Use the browser-side player — fetches M3U8+keys from the browser's
-  // residential IP, segments proxied through our worker for CORS.
-  let url = `${DLHD_WORKER}/browser/${channel}`;
-
-  if (backend) {
-    url += `?backend=${encodeURIComponent(backend)}`;
-  }
-
-  console.log('[proxy-config] getTvPlaylistUrl (browser player):', url);
-  return url;
-}
-
-// Direct M3U8 URL for HLS.js (Player 6 channels — no encryption, no WAF)
-export function getTvDirectM3u8Url(channel: string, backend?: string): string {
   let url = `${DLHD_WORKER}/play/${channel}?key=${DLHD_API_KEY}`;
   if (backend) {
     url += `&backend=${encodeURIComponent(backend)}`;
   }
+  console.log('[proxy-config] getTvPlaylistUrl:', url);
   return url;
 }
 
