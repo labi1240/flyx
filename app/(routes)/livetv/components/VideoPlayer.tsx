@@ -401,49 +401,6 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
       return;
     }
 
-    // DLHD: pre-flight check — if server-side returns error, fetch M3U8 browser-side.
-    // Browser can pass Cloudflare's JS challenge (server can't).
-    if (channel?.source === 'dlhd' || event?.source === 'dlhd') {
-      try {
-        const checkResp = await fetch(streamUrl, { signal: AbortSignal.timeout(8000) });
-        const checkText = await checkResp.text();
-        if (checkResp.ok && checkText.includes('#EXTM3U')) {
-          // Server-side works (Player 6, etc.) — proceed normally
-          console.log('[VideoPlayer] DLHD server-side OK, using worker playlist');
-        } else {
-          // Server-side failed — fetch M3U8 directly from the browser
-          console.log('[VideoPlayer] DLHD server blocked, fetching browser-side...');
-          setRecoveryStatus('Bypassing Cloudflare...');
-          const chId = channel?.channelId || event?.channels?.[0]?.channelId || '';
-          const { fetchDLHDM3U8BrowserSide } = await import('@/app/lib/livetv/dlhd-browser-fetch');
-          const result = await fetchDLHDM3U8BrowserSide(chId);
-          if (result) {
-            setRecoveryStatus(null);
-            loadHlsStream(video, result.blobUrl);
-            return;
-          }
-          setError('Stream unavailable — all sources failed');
-          setIsLoading(false);
-          return;
-        }
-      } catch (e) {
-        // Fetch failed entirely — try browser-side
-        console.log('[VideoPlayer] DLHD server unreachable, fetching browser-side...');
-        setRecoveryStatus('Bypassing Cloudflare...');
-        const chId = channel?.channelId || event?.channels?.[0]?.channelId || '';
-        const { fetchDLHDM3U8BrowserSide } = await import('@/app/lib/livetv/dlhd-browser-fetch');
-        const result = await fetchDLHDM3U8BrowserSide(chId);
-        if (result) {
-          setRecoveryStatus(null);
-          loadHlsStream(video, result.blobUrl);
-          return;
-        }
-        setError('Stream unavailable — cannot reach DLHD');
-        setIsLoading(false);
-        return;
-      }
-    }
-
     // Handle CDN-Live channels — client-side extraction (browser fetches cdn-live.tv directly)
     if (streamUrl.startsWith('cdnlive://')) {
       try {

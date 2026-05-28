@@ -62,8 +62,8 @@ const ALLOWED_ORIGINS = [
   '.workers.dev',
 ];
 
-// UPDATED March 27, 2026: www.ksohls.ru is the current player domain (browser recon confirmed)
-const PLAYER_DOMAIN = 'www.ksohls.ru';
+// UPDATED March 27, 2026: www.newkso.ru is the current player domain (browser recon confirmed)
+const PLAYER_DOMAIN = 'www.newkso.ru';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
 // Regions where DLHD CDN blocks datacenter IPs — these MUST route through RPI residential proxy.
@@ -82,8 +82,8 @@ const ALL_SERVER_KEYS = [
   'wiki',
   'x4',
 ];
-const CDN_DOMAIN = 'embedkclx.sbs';
-const M3U8_SERVER = 'chevy.embedkclx.sbs'; // UPDATED Apr 10 2026: sec.ai-hls.site is DEAD (403)
+const CDN_DOMAIN = 'newkso.ru';
+const M3U8_SERVER = 'chevy.newkso.ru'; // UPDATED Apr 10 2026: sec.ai-hls.site is DEAD (403)
 
 // CORRECT SECRET - extracted from WASM module (January 2026)
 // The old 64-char hex secret is WRONG! This is the real one from the WASM.
@@ -330,9 +330,9 @@ async function fetchPlayerJWT(channel: string, logger: any, env?: Env): Promise<
   logger.info('Fetching fresh JWT', { channel });
 
   // ============================================================================
-  // METHOD 1: Try player domains (www.ksohls.ru primary, embedkclx.sbs fallback)
+  // METHOD 1: Try player domains (www.newkso.ru primary, newkso.ru fallback)
   // ============================================================================
-  const playerDomains = [PLAYER_DOMAIN, 'embedkclx.sbs'];
+  const playerDomains = [PLAYER_DOMAIN, 'newkso.ru'];
   for (const domain of playerDomains) {
     try {
       const playerUrl = `https://${domain}/premiumtv/daddyhd.php?id=${channel}`;
@@ -538,7 +538,7 @@ async function getServerKey(channelKey: string, logger: any, env?: Env): Promise
 }
 
 function constructM3U8Url(serverKey: string, channelKey: string): string {
-  // UPDATED Apr 10, 2026: sec.ai-hls.site is DEAD. Using chevy.embedkclx.sbs now.
+  // UPDATED Apr 10, 2026: sec.ai-hls.site is DEAD. Using chevy.newkso.ru now.
   return `https://${M3U8_SERVER}/proxy/${serverKey}/${channelKey}/mono.css`;
 }
 
@@ -1159,7 +1159,7 @@ async function handleWhitelistToken(
  * Routes through the RPI proxy's /dlhd-whitelist endpoint which uses
  * rust-fetch via ProxyJet residential SOCKS5 to:
  *   1. Solve reCAPTCHA v3
- *   2. POST token to chevy.embedkclx.sbs/verify
+ *   2. POST token to chevy.newkso.ru/verify
  *   3. Whitelist the residential proxy IP (same IP used for key fetches)
  *
  * March 24, 2026: The verify MUST come from the same IP that fetches keys.
@@ -1486,8 +1486,8 @@ async function tryCdnLiveBackend(
  * Returns the content if successful, null otherwise
  * 
  * CRITICAL: DLHD CDN requires:
- * - Origin: https://www.ksohls.ru
- * - Referer: https://www.ksohls.ru/
+ * - Origin: https://www.newkso.ru
+ * - Referer: https://www.newkso.ru/
  * - Authorization: Bearer <JWT> (optional - not always needed)
  */
 async function tryDvalnaServer(
@@ -2106,7 +2106,7 @@ async function handleKeyProxy(url: URL, logger: any, origin: string | null, env?
 }
 
 // Known DLHD CDN domains that block Cloudflare IPs
-const DLHD_DOMAINS = ['soyspace.cyou', 'keylocking.ru', 'the-sunmoon.site', 'arbitrageai.cc', 'r2.cloudflarestorage.com', 'embedkclx.sbs', 'enviromentalanimal.horse', 'aivideox.site'];
+const DLHD_DOMAINS = ['soyspace.cyou', 'keylocking.ru', 'the-sunmoon.site', 'arbitrageai.cc', 'r2.cloudflarestorage.com', 'newkso.ru', 'enviromentalanimal.horse', 'aivideox.site'];
 
 /**
  * Check if a URL is from a DLHD CDN domain that blocks CF IPs
@@ -2161,7 +2161,7 @@ async function handleSegmentProxy(url: URL, logger: any, origin: string | null, 
     'the-sunmoon.site',
     'arbitrageai.cc',
     'r2.cloudflarestorage.com',
-    'embedkclx.sbs',
+    'newkso.ru',
     'enviromentalanimal.horse',
     'aivideox.site',
     'cdn-live-tv.ru',
@@ -2202,8 +2202,8 @@ async function handleSegmentProxy(url: URL, logger: any, origin: string | null, 
     } else if (urlHost.includes('moveonjoy.com')) {
       referer = 'https://tv-bu1.blogspot.com/';
       requestOrigin = 'https://tv-bu1.blogspot.com';
-    } else if (urlHost.includes('soyspace.cyou') || urlHost.includes('keylocking.ru') || urlHost.includes('the-sunmoon.site') || urlHost.includes('ai-hls.site') || urlHost.includes('r2.cloudflarestorage.com') || urlHost.includes('arbitrageai.cc') || urlHost.includes('embedkclx.sbs') || urlHost.includes('enviromentalanimal.horse') || urlHost.includes('aivideox.site')) {
-      // DLHD CDN requires www.ksohls.ru referer (updated Mar 27, 2026)
+    } else if (urlHost.includes('soyspace.cyou') || urlHost.includes('keylocking.ru') || urlHost.includes('the-sunmoon.site') || urlHost.includes('ai-hls.site') || urlHost.includes('r2.cloudflarestorage.com') || urlHost.includes('arbitrageai.cc') || urlHost.includes('newkso.ru') || urlHost.includes('enviromentalanimal.horse') || urlHost.includes('aivideox.site')) {
+      // DLHD CDN requires www.newkso.ru referer (updated Mar 27, 2026)
       referer = `https://${PLAYER_DOMAIN}/`;
       requestOrigin = `https://${PLAYER_DOMAIN}`;
     }

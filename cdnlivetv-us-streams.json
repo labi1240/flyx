@@ -1,0 +1,1094 @@
+{
+  "generated": "2026-05-27T04:33:08.837Z",
+  "totalChannels": 96,
+  "working": 21,
+  "failed": 75,
+  "channels": [
+    {
+      "dlhdId": "51",
+      "dlhdName": "ABC USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "abc",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-abc/playlist.m3u8?hPvPohsr=1cc25fefba5e1153d73c7a521a25c7e1e58e9e0bc9e81e5212aa23dade9ac9be.1779856373.13ff7a0113bde6c64e9e4c919bfae9bd.b0e6f5e2415829eaf9948679d5971edc.18bbc8a54e2e4962f445948030b5a807&signature=76d1d60d42e18205d6b62f981fa0b03a8c643b0e698393ca0da8e1e8151be306",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-abc/playlist.m3u8?token=1cc25fefba5e1153d73c7a521a25c7e1e58e9e0bc9e81e5212aa23dade9ac9be.1779856373.13ff7a0113bde6c64e9e4c919bfae9bd.b0e6f5e2415829eaf9948679d5971edc.18bbc8a54e2e4962f445948030b5a807&signature=76d1d60d42e18205d6b62f981fa0b03a8c643b0e698393ca0da8e1e8151be306"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "283",
+      "dlhdName": "Antenna TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "302",
+      "dlhdName": "A&E USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "303",
+      "dlhdName": "AMC USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "664",
+      "dlhdName": "ACC Network USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "742",
+      "dlhdName": "AXS TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "766",
+      "dlhdName": "ABC NY USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "425",
+      "dlhdName": "BeIN SPORTS USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "306",
+      "dlhdName": "BET USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "bet",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-bet/playlist.m3u8?RaCVqPPj=b453735ec497a37b64a1dacc46493a3afe3f1453c7586457ecd77752728cfe3c.1779856374.da44040c7aa376abda03f0b19fab852b.e653e11f5c3c516213ed1d40ce831ab3.52f9c3743fa62b8c4edcd7faaceaab42&signature=3d28c475dcebc023760b79e952be2d5884e327ebc58b4324cdce623e31587bac",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-bet/playlist.m3u8?token=b453735ec497a37b64a1dacc46493a3afe3f1453c7586457ecd77752728cfe3c.1779856374.da44040c7aa376abda03f0b19fab852b.e653e11f5c3c516213ed1d40ce831ab3.52f9c3743fa62b8c4edcd7faaceaab42&signature=3d28c475dcebc023760b79e952be2d5884e327ebc58b4324cdce623e31587bac"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "307",
+      "dlhdName": "Bravo USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "397",
+      "dlhdName": "BIG TEN Network (BTN USA)",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "btn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-btn/playlist.m3u8?nRJOPubB=1312aa7ed254e778f5cff6b8fbe63600b7baf8f22be70f6b8c6df9592d66154d.1779856375.12892f00cee7b80b4eb091c72c9eb5a5.e541e0c159c6fecaeaeff9a54d703e1a.7469726165b857b6e3d3f8d73de56e3e&signature=16009045e6e090ce35211ee9f33d9defcf04d87b82b91662749f7cb86f4fea7d",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-btn/playlist.m3u8?token=1312aa7ed254e778f5cff6b8fbe63600b7baf8f22be70f6b8c6df9592d66154d.1779856375.12892f00cee7b80b4eb091c72c9eb5a5.e541e0c159c6fecaeaeff9a54d703e1a.7469726165b857b6e3d3f8d73de56e3e&signature=16009045e6e090ce35211ee9f33d9defcf04d87b82b91662749f7cb86f4fea7d"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "280",
+      "dlhdName": "CW PIX 11 USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 5)"
+    },
+    {
+      "dlhdId": "52",
+      "dlhdName": "CBS USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "cbs",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cbs/playlist.m3u8?CdaRZseB=181b7f6455e4e503d99ec6cee3ce80489d52a3f7d125653c625aebe227a23662.1779856375.e2981c98a4ab9e23aa3ba85236e94073.ea51d1da9756c63973a317ce6d5a8833.83a1a75f3f1dc8400526b517616f99c7&signature=09ee3b77b2702f319a7f61e8ed989aff15e0f72a1de1237f40573d43946ab73b",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cbs/playlist.m3u8?token=181b7f6455e4e503d99ec6cee3ce80489d52a3f7d125653c625aebe227a23662.1779856375.e2981c98a4ab9e23aa3ba85236e94073.ea51d1da9756c63973a317ce6d5a8833.83a1a75f3f1dc8400526b517616f99c7&signature=09ee3b77b2702f319a7f61e8ed989aff15e0f72a1de1237f40573d43946ab73b"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "281",
+      "dlhdName": "Court TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "300",
+      "dlhdName": "CW USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "309",
+      "dlhdName": "CNBC USA",
+      "dlhdCategory": "news",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "cnbc",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cnbc/playlist.m3u8?XZENnjVe=162be0e86837ce6afb19e89b575cabc6f0509d0a379e548e837b380597c66531.1779856376.d800f3f76411eeaf7db9ffa38c6a8666.ef591810d2c40ddfa5a5a98c4a7f12d5.e7d9041812cc5196963359256501d254&signature=22f33267b1affe4725eebbc458c247f1a35f1b6a85d4a0cb72ce0e987fe92310",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cnbc/playlist.m3u8?token=162be0e86837ce6afb19e89b575cabc6f0509d0a379e548e837b380597c66531.1779856376.d800f3f76411eeaf7db9ffa38c6a8666.ef591810d2c40ddfa5a5a98c4a7f12d5.e7d9041812cc5196963359256501d254&signature=22f33267b1affe4725eebbc458c247f1a35f1b6a85d4a0cb72ce0e987fe92310"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "345",
+      "dlhdName": "CNN USA",
+      "dlhdCategory": "news",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "cnn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cnn/playlist.m3u8?JXUpuSKE=8a2e211073918f106a6f36e55b6bc8a9a635c17386afd5a47b807f060407e25c.1779856376.1da010e610bc220995c51a488b4651af.6e36e485420e2275c0b4122e42a8c2bf.89948a5d6170ccac41d91ff456f7acc9&signature=d0424caa98141729a8048ee3bf4ce253622b02abbb818a7ad4deacb42911e2f3",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cnn/playlist.m3u8?token=8a2e211073918f106a6f36e55b6bc8a9a635c17386afd5a47b807f060407e25c.1779856376.1da010e610bc220995c51a488b4651af.6e36e485420e2275c0b4122e42a8c2bf.89948a5d6170ccac41d91ff456f7acc9&signature=d0424caa98141729a8048ee3bf4ce253622b02abbb818a7ad4deacb42911e2f3"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "374",
+      "dlhdName": "Cinemax USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "cinemax",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cinemax/playlist.m3u8?uIlEnPgF=f8f3471f223cf12af68a1df72b75498ac06941684ff97c4874a38b1af9c39dfd.1779856376.0e1b8cfb3f8fb0cd07640aed91b3cd64.7eb0958a60410beeb0f17dc6e88553f1.c2f503e0a3a29e7781952d178fb2239e&signature=685eb25c115adf57d1898e070e73c9dce77e865575fa97e245f9fd2784549b60",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-cinemax/playlist.m3u8?token=f8f3471f223cf12af68a1df72b75498ac06941684ff97c4874a38b1af9c39dfd.1779856376.0e1b8cfb3f8fb0cd07640aed91b3cd64.7eb0958a60410beeb0f17dc6e88553f1.c2f503e0a3a29e7781952d178fb2239e&signature=685eb25c115adf57d1898e070e73c9dce77e865575fa97e245f9fd2784549b60"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "748",
+      "dlhdName": "COZI TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "647",
+      "dlhdName": "CMT USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "669",
+      "dlhdName": "Crime+ Investigation USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "696",
+      "dlhdName": "Comet USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "697",
+      "dlhdName": "Cooking Channel USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "767",
+      "dlhdName": "CBSNY USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "44",
+      "dlhdName": "ESPN USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "espn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-espn/playlist.m3u8?UBBTUIPp=7df14daee3af60d07dd10bf6cd88351161113ff76d4afc1f072709d7264ae03c.1779856377.160d1a4f46b1a1ad6b4542b4e9e28b9f.117f420ea77ee4b1292ef0d80a0f1055.1eb5e2b080db30b6d2b8c12de5f4772d&signature=035afd06b4de2fcf679b472b97f7e2ece3155d3d3c18a371b75991340e7e0baa",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-espn/playlist.m3u8?token=7df14daee3af60d07dd10bf6cd88351161113ff76d4afc1f072709d7264ae03c.1779856377.160d1a4f46b1a1ad6b4542b4e9e28b9f.117f420ea77ee4b1292ef0d80a0f1055.1eb5e2b080db30b6d2b8c12de5f4772d&signature=035afd06b4de2fcf679b472b97f7e2ece3155d3d3c18a371b75991340e7e0baa"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "45",
+      "dlhdName": "ESPN2 USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "316",
+      "dlhdName": "ESPNU USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "279",
+      "dlhdName": "FUSE TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "39",
+      "dlhdName": "Fox Sports 1 USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "758",
+      "dlhdName": "Fox Sports 2 USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "643",
+      "dlhdName": "FOX Deportes USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "54",
+      "dlhdName": "FOX USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "fox",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-fox/playlist.m3u8?WNVKxPTn=bed5793fb48441782f213120e542c72602c44ef8cb261a7106f25e9b276e6753.1779856378.4fd01728cec01c1d866bfb55ae030fa1.23f3c496be6318fbfb550708f299d5b8.8b69e8d01684bc4de3dff0615595e629&signature=434323ff52c9d43d5fffdc0763d002b6f159b3c0e3380a3926b8acb06a14d95e",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-fox/playlist.m3u8?token=bed5793fb48441782f213120e542c72602c44ef8cb261a7106f25e9b276e6753.1779856378.4fd01728cec01c1d866bfb55ae030fa1.23f3c496be6318fbfb550708f299d5b8.8b69e8d01684bc4de3dff0615595e629&signature=434323ff52c9d43d5fffdc0763d002b6f159b3c0e3380a3926b8acb06a14d95e"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "317",
+      "dlhdName": "FX USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "298",
+      "dlhdName": "FXX USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "768",
+      "dlhdName": "FOXNY USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "318",
+      "dlhdName": "GOLF Channel USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "597",
+      "dlhdName": "GOLTV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "goltv",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-goltv/playlist.m3u8?BPtitOHg=7abbd140ebee67baf88d84c7670907f8e610875c7bec34a29b6adf6522a42571.1779856379.82d419a04cd05f4afe50ff1aae70ab8d.9982eb5936a6e4e9efedbca4e22507c8.dc3dc269dfe70a19152a82b813064c13&signature=ca56e2cfb6c001164b44537fff4a312507416db3e6d047227c2cf7d362fc8a6a",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-goltv/playlist.m3u8?token=7abbd140ebee67baf88d84c7670907f8e610875c7bec34a29b6adf6522a42571.1779856379.82d419a04cd05f4afe50ff1aae70ab8d.9982eb5936a6e4e9efedbca4e22507c8.dc3dc269dfe70a19152a82b813064c13&signature=ca56e2cfb6c001164b44537fff4a312507416db3e6d047227c2cf7d362fc8a6a"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "743",
+      "dlhdName": "Galavisi贸n USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "282",
+      "dlhdName": "Heroes & Icons (H&I) USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "321",
+      "dlhdName": "HBO USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "hbo",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-hbo/playlist.m3u8?mmizYklN=cb3bd4ae19f4e5cfc3ed41a95dcf9675b3a4daa3ae724391fbe303b64bea5099.1779856380.0ed0a3db87c89a7df666d1eb27c9c0f2.d911582e4c0059f38e93871fb15b55bf.0de381c8a013a83981589e9a14716fa5&signature=6cc2f582d68eeb57851280d1e357e04f0d5560970c3a24ad7a7d277d2d524bb8",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-hbo/playlist.m3u8?token=cb3bd4ae19f4e5cfc3ed41a95dcf9675b3a4daa3ae724391fbe303b64bea5099.1779856380.0ed0a3db87c89a7df666d1eb27c9c0f2.d911582e4c0059f38e93871fb15b55bf.0de381c8a013a83981589e9a14716fa5&signature=6cc2f582d68eeb57851280d1e357e04f0d5560970c3a24ad7a7d277d2d524bb8"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "689",
+      "dlhdName": "HBO2 USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "690",
+      "dlhdName": "HBO Comedy USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "691",
+      "dlhdName": "HBO Family USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "692",
+      "dlhdName": "HBO Latino USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "693",
+      "dlhdName": "HBO Signature USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "694",
+      "dlhdName": "HBO Zone USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "322",
+      "dlhdName": "History USA",
+      "dlhdCategory": "documentary",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "history",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-history/playlist.m3u8?IFcbMsXD=2f13b7c546a5d12f807aca754b2739b75e1ab0967fd43d39146c242160f5990a.1779856380.6764a39a44eed62f35f05978d145181a.1767f51297961dcd55b2c99f83947775.e2ca64e62d1115f726c160ae49781818&signature=1c46e452f80d195b0bb64476c7df7e868245db2cf63523ab1cfe10906175bbc7",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-history/playlist.m3u8?token=2f13b7c546a5d12f807aca754b2739b75e1ab0967fd43d39146c242160f5990a.1779856380.6764a39a44eed62f35f05978d145181a.1767f51297961dcd55b2c99f83947775.e2ca64e62d1115f726c160ae49781818&signature=1c46e452f80d195b0bb64476c7df7e868245db2cf63523ab1cfe10906175bbc7"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "324",
+      "dlhdName": "Investigation Discovery (ID USA)",
+      "dlhdCategory": "documentary",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "325",
+      "dlhdName": "ION USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "656",
+      "dlhdName": "IFC TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "849",
+      "dlhdName": "Logo TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "765",
+      "dlhdName": "MSG USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "msg",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-msg/playlist.m3u8?XeIeujnK=04c3910426ec58ff34b5f66d1cc63034df687e9abae36357ca9de0540eaf0cde.1779856381.759f7871290a1bfbd90caad024f509a3.067daa54651b99260d664f5ef6185fc4.aac5ba701005207f29fc77c0c5ad96d1&signature=19434c5aa655f1505edc2c3eddda8d2fd1cbed5dc4e41b2a7df7bc80c64c37e0",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-msg/playlist.m3u8?token=04c3910426ec58ff34b5f66d1cc63034df687e9abae36357ca9de0540eaf0cde.1779856381.759f7871290a1bfbd90caad024f509a3.067daa54651b99260d664f5ef6185fc4.aac5ba701005207f29fc77c0c5ad96d1&signature=19434c5aa655f1505edc2c3eddda8d2fd1cbed5dc4e41b2a7df7bc80c64c37e0"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "371",
+      "dlhdName": "MTV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "646",
+      "dlhdName": "MAVTV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "399",
+      "dlhdName": "MLB Network USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "829",
+      "dlhdName": "MASN USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "masn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-masn/playlist.m3u8?GvZADYQJ=09f7ad31cb4c4a5dd97601b9ca4e977bcf86664e3de49afb0ea6f879be5184d0.1779856382.ef158a6e15e78ce5a4e679cbe0bba314.f05498e73d4f995d0a5311292578fd37.be3fe9a77f95470e5ad42f21d9e530a2&signature=f15fc534adfc5bd61e16498d52c9c0f37923203a6a9d1ef298c2c878435eaea2",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-masn/playlist.m3u8?token=09f7ad31cb4c4a5dd97601b9ca4e977bcf86664e3de49afb0ea6f879be5184d0.1779856382.ef158a6e15e78ce5a4e679cbe0bba314.f05498e73d4f995d0a5311292578fd37.be3fe9a77f95470e5ad42f21d9e530a2&signature=f15fc534adfc5bd61e16498d52c9c0f37923203a6a9d1ef298c2c878435eaea2"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "654",
+      "dlhdName": "MY9TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "662",
+      "dlhdName": "METV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "791",
+      "dlhdName": "MGM+ USA / Epix",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "663",
+      "dlhdName": "NHL Network USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "762",
+      "dlhdName": "NESN USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "nesn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-nesn/playlist.m3u8?guiHNMup=cf09746cf3811fb935467997b29c896835040b31ca6390bfe41d99432f8cdbd7.1779856383.b4bac176550b061f9cb4ebec03da7027.09cdd444d04a71135497b493a284f266.f1fc8067fb1497bc1ca8ce3713739f55&signature=e72fb480547b430f11cb31ff44bd4fc289e74109d6a9c6d254d055de6abfac83",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-nesn/playlist.m3u8?token=cf09746cf3811fb935467997b29c896835040b31ca6390bfe41d99432f8cdbd7.1779856383.b4bac176550b061f9cb4ebec03da7027.09cdd444d04a71135497b493a284f266.f1fc8067fb1497bc1ca8ce3713739f55&signature=e72fb480547b430f11cb31ff44bd4fc289e74109d6a9c6d254d055de6abfac83"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "53",
+      "dlhdName": "NBC USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "nbc",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-nbc/playlist.m3u8?ytrtkpOO=fd577eb563b43b7a39aecbb10ace25103ea71b7e64ba8476a4a80ee1e198b241.1779856383.48ea158f57e34d169b10d7b7c2c0f8dc.de985eaf0dadaab78b5626e0a40d21b0.031780ebdec4fb6bf79af5f1e3691baf&signature=d083f141ae3bd3702fd99410a9fc844035e5c647eb12a9250485560d1bed9d44",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-nbc/playlist.m3u8?token=fd577eb563b43b7a39aecbb10ace25103ea71b7e64ba8476a4a80ee1e198b241.1779856383.48ea158f57e34d169b10d7b7c2c0f8dc.de985eaf0dadaab78b5626e0a40d21b0.031780ebdec4fb6bf79af5f1e3691baf&signature=d083f141ae3bd3702fd99410a9fc844035e5c647eb12a9250485560d1bed9d44"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "404",
+      "dlhdName": "NBA TV USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "769",
+      "dlhdName": "NBCNY USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "292",
+      "dlhdName": "NewsNation USA",
+      "dlhdCategory": "news",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "613",
+      "dlhdName": "Newsmax USA",
+      "dlhdCategory": "news",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "745",
+      "dlhdName": "Nat Geo Wild USA",
+      "dlhdCategory": "documentary",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "848",
+      "dlhdName": "Outdoor Channel USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "653",
+      "dlhdName": "POP TV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "287",
+      "dlhdName": "Pac-12 Network USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "210",
+      "dlhdName": "PBS USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "982",
+      "dlhdName": "Spectrum SportsNet USA",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "385",
+      "dlhdName": "SEC Network USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "695",
+      "dlhdName": "Showtime SHOxBET USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "145",
+      "dlhdName": "Sport 5 PLUS Israel",
+      "dlhdCategory": "sports",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "333",
+      "dlhdName": "Showtime USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "showtime",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-showtime/playlist.m3u8?AlcDUXjt=79e82cea9e59cffe9a0c760586dff2aceab798ec4853acd5d88929cd60fc7447.1779856385.ed8ba7a4c11348d88d370975b33f6a74.1feb360f0211da41e976aa26adee8228.8272239ec7acd8e99c685d6fe253bded&signature=ac270d6ff4fc9cca38eb43efbd95e25a5a66748709fad04b6ab84f185b28593b",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-showtime/playlist.m3u8?token=79e82cea9e59cffe9a0c760586dff2aceab798ec4853acd5d88929cd60fc7447.1779856385.ed8ba7a4c11348d88d370975b33f6a74.1feb360f0211da41e976aa26adee8228.8272239ec7acd8e99c685d6fe253bded&signature=ac270d6ff4fc9cca38eb43efbd95e25a5a66748709fad04b6ab84f185b28593b"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "373",
+      "dlhdName": "SYFY USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "792",
+      "dlhdName": "Showtime 2 USA (SHO2) USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 4)"
+    },
+    {
+      "dlhdId": "793",
+      "dlhdName": "Showtime Showcase USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "794",
+      "dlhdName": "Showtime Extreme USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "795",
+      "dlhdName": "Showtime Family Zone (SHO Family Zone) USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "796",
+      "dlhdName": "Showtime Next (SHO Next) USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "797",
+      "dlhdName": "Showtime Women USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "66",
+      "dlhdName": "TUDN USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "tudn",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tudn/playlist.m3u8?gGjzWRfg=afc7baea7d059cfb3466336e81df3793460abbfdb3872d1f6190cdc8513f6160.1779856386.b85f78566bea05cbfc796aa8993460e8.0487334675b5fb4119349ac689391cfe.beb3b3b84517295ed2764dd2b1109482&signature=f6fee8899a02dbfe69b54b92f8dec08df93bc52212afd0374dba79ace95a0dea",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tudn/playlist.m3u8?token=afc7baea7d059cfb3466336e81df3793460abbfdb3872d1f6190cdc8513f6160.1779856386.b85f78566bea05cbfc796aa8993460e8.0487334675b5fb4119349ac689391cfe.beb3b3b84517295ed2764dd2b1109482&signature=f6fee8899a02dbfe69b54b92f8dec08df93bc52212afd0374dba79ace95a0dea"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "336",
+      "dlhdName": "TBS USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "tbs",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tbs/playlist.m3u8?nPbWDXsk=39fa456c8dee930fd677d8ce49df48054efb4dec418969a17402cc4c68069ff8.1779856387.d56d8f1cf6f125083bfade32325aaee8.3d664394de479f956814e7eecc512101.360351c1ab46fc27e734a624e6d28ccf&signature=2b0d9a40ff07bbaa057d3ec51034d75813cc303787953d9f3ac4effe21737912",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tbs/playlist.m3u8?token=39fa456c8dee930fd677d8ce49df48054efb4dec418969a17402cc4c68069ff8.1779856387.d56d8f1cf6f125083bfade32325aaee8.3d664394de479f956814e7eecc512101.360351c1ab46fc27e734a624e6d28ccf&signature=2b0d9a40ff07bbaa057d3ec51034d75813cc303787953d9f3ac4effe21737912"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "338",
+      "dlhdName": "TNT USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "tnt",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tnt/playlist.m3u8?fMHPfogV=731f362ace964747410b35fdf11e536e6deaf3690b1f1595c4e9036bef9366f6.1779856387.11dfba1b1cb2adc47b07a1fd911829f5.6ee8d289d9154339b16ced67c6c37e73.86ae2661940b51ddfd19bc1663be4360&signature=3dea8358994cc9e42fb82f4d4bfe4a2119e61198d0aab337a086da8bce16b2ce",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-tnt/playlist.m3u8?token=731f362ace964747410b35fdf11e536e6deaf3690b1f1595c4e9036bef9366f6.1779856387.11dfba1b1cb2adc47b07a1fd911829f5.6ee8d289d9154339b16ced67c6c37e73.86ae2661940b51ddfd19bc1663be4360&signature=3dea8358994cc9e42fb82f4d4bfe4a2119e61198d0aab337a086da8bce16b2ce"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "341",
+      "dlhdName": "TruTV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "cdnlivetvName": "trutv",
+      "cdnlivetvCode": "us",
+      "success": true,
+      "m3u8Urls": [
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-trutv/playlist.m3u8?hEdGgCzG=7e13847ccc0b2f4c7459220017c2ca2c1284bf3929b8f1c5ae73f946a78bdddf.1779856387.7d7326b860533584a376dcd8ff083e12.4d6534a9b8155e0e5236b839db708a43.90d26746c4606f0103d78e56ac83a3a8&signature=3656fe4b9906c05332260f5dbbb79ef34b34fdc6a57b13d0606611b49d9162d5",
+        "https://edge.cdnlivetv.ru/secure/api/v1/us-trutv/playlist.m3u8?token=7e13847ccc0b2f4c7459220017c2ca2c1284bf3929b8f1c5ae73f946a78bdddf.1779856387.7d7326b860533584a376dcd8ff083e12.4d6534a9b8155e0e5236b839db708a43.90d26746c4606f0103d78e56ac83a3a8&signature=3656fe4b9906c05332260f5dbbb79ef34b34fdc6a57b13d0606611b49d9162d5"
+      ],
+      "deobfuscatedCount": 2,
+      "httpStatus": 200,
+      "error": null
+    },
+    {
+      "dlhdId": "644",
+      "dlhdName": "TCM USA",
+      "dlhdCategory": "movies",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "698",
+      "dlhdName": "TMC Channel USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "660",
+      "dlhdName": "TV ONE USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "343",
+      "dlhdName": "USA Network",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "668",
+      "dlhdName": "Universal Kids USA",
+      "dlhdCategory": "kids",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "344",
+      "dlhdName": "VH1 USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 1)"
+    },
+    {
+      "dlhdId": "655",
+      "dlhdName": "WETV USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 2)"
+    },
+    {
+      "dlhdId": "763",
+      "dlhdName": "YES Network USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    },
+    {
+      "dlhdId": "360",
+      "dlhdName": "5 USA",
+      "dlhdCategory": "entertainment",
+      "dlhdCountry": "usa",
+      "success": false,
+      "m3u8Urls": [],
+      "httpStatus": 401,
+      "error": "No candidates worked (tried 3)"
+    }
+  ]
+}
