@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   jikanFull,
-  jikanGet,
   jikanEpisodes,
   jikanCharacters,
   jikanRecommendations,
@@ -15,13 +14,8 @@ import {
   type AnimeCard,
 } from '@/lib/anime/jikan-client';
 
-const SEQUEL_TYPES = new Set([
-  'Sequel',
-  'Prequel',
-  'Side story',
-  'Alternative version',
-  'Spin-off',
-]);
+// Cap chain walk so a pathological relations graph can't stall the page.
+const MAX_SEASON_CHAIN = 20;
 
 interface SeasonEntry {
   malId: number;
@@ -34,6 +28,48 @@ interface SeasonEntry {
   status: string;
   year: number | null;
   seasonOrder: number;
+}
+
+function toSeasonEntry(a: JikanAnime, order: number): SeasonEntry {
+  return {
+    malId: a.mal_id,
+    title: a.title,
+    titleEnglish: a.title_english,
+    imageUrl:
+      a.images?.webp?.large_image_url ||
+      a.images?.jpg?.large_image_url ||
+      a.images?.jpg?.image_url || '',
+    episodes: a.episodes,
+    score: a.score,
+    type: a.type,
+    status: a.status,
+    year: a.year,
+    seasonOrder: order,
+  };
+}
+
+// Plain /anime/{id} doesn't include `relations`; only /full does. So we keep
+// using jikanFull while walking the chain — cached by jikan-client, so revisits
+// to a chain neighbour don't re-hit the network.
+async function walkChain(
+  start: JikanAnime,
+  direction: 'Sequel' | 'Prequel',
+  visited: Set<number>,
+): Promise<JikanAnime[]> {
+  const out: JikanAnime[] = [];
+  let current: JikanAnime = start;
+  while (out.length < MAX_SEASON_CHAIN) {
+    const nextRef = current.relations
+      ?.find((r) => r.relation === direction)
+      ?.entry.find((e) => e.type === 'anime' && !visited.has(e.mal_id));
+    if (!nextRef) break;
+    visited.add(nextRef.mal_id);
+    const fetched = await jikanFull(nextRef.mal_id);
+    if (!fetched) break;
+    out.push(fetched);
+    current = fetched;
+  }
+  return out;
 }
 
 type Tab = 'episodes' | 'characters' | 'related';
@@ -65,61 +101,21 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
       if (!data) { setError(true); setLoading(false); return; }
       setAnime(data);
 
-      // Seed seasons list with main entry
-      const seasonEntries: SeasonEntry[] = [{
-        malId: data.mal_id,
-        title: data.title,
-        titleEnglish: data.title_english,
-        imageUrl:
-          data.images?.webp?.large_image_url ||
-          data.images?.jpg?.large_image_url ||
-          data.images?.jpg?.image_url || '',
-        episodes: data.episodes,
-        score: data.score,
-        type: data.type,
-        status: data.status,
-        year: data.year,
-        seasonOrder: 1,
-      }];
-
-      // Resolve related seasons (sequels/prequels/etc.)
-      const relations = data.relations || [];
-      const relatedIds = relations
-        .filter((r) => SEQUEL_TYPES.has(r.relation))
-        .flatMap((r) => r.entry)
-        .filter((e) => e.type === 'anime' && e.mal_id !== data.mal_id);
-
-      for (const rel of relatedIds) {
-        if (cancelled) return;
-        if (seasonEntries.some((s) => s.malId === rel.mal_id)) continue;
-        const r = await jikanGet(rel.mal_id);
-        if (cancelled) return;
-        if (!r) continue;
-        seasonEntries.push({
-          malId: r.mal_id,
-          title: r.title,
-          titleEnglish: r.title_english,
-          imageUrl:
-            r.images?.webp?.large_image_url ||
-            r.images?.jpg?.large_image_url ||
-            r.images?.jpg?.image_url || '',
-          episodes: r.episodes,
-          score: r.score,
-          type: r.type,
-          status: r.status,
-          year: r.year,
-          seasonOrder: 0,
-        });
-      }
-
-      // Sort by year ascending and renumber
-      seasonEntries.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
-      seasonEntries.forEach((s, i) => { s.seasonOrder = i + 1; });
-
+      // Walk the Sequel/Prequel chain so multi-season shows surface every
+      // season — not just the ones directly adjacent to this entry. Side
+      // stories, spin-offs, and OVAs are intentionally excluded; they
+      // belong in "Related", not in the season selector.
+      const visited = new Set<number>([data.mal_id]);
+      const prequels = await walkChain(data, 'Prequel', visited);
       if (cancelled) return;
+      const sequels = await walkChain(data, 'Sequel', visited);
+      if (cancelled) return;
+
+      const ordered: JikanAnime[] = [...prequels.reverse(), data, ...sequels];
+      const seasonEntries: SeasonEntry[] = ordered.map((a, i) => toSeasonEntry(a, i + 1));
+
       setSeasons(seasonEntries);
 
-      // Find index of THIS entry within sorted list
       const idx = seasonEntries.findIndex((s) => s.malId === data.mal_id);
       if (idx > 0) setSelectedSeasonIdx(idx);
 

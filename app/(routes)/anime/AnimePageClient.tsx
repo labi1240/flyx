@@ -86,7 +86,7 @@ export default function AnimePageClient() {
     setLoadingGenre(true);
     (async () => {
       const items = await jikanList(
-        `/anime?genres=${genre.id}&order_by=popularity&sort=desc&limit=30&sfw=true`,
+        `/anime?genres=${genre.id}&order_by=popularity&sort=desc&limit=25&sfw=true`,
       );
       if (cancelled) return;
       setGenreData((prev) => ({ ...prev, [activeTab]: items }));

@@ -232,16 +232,6 @@ export async function jikanFull(malId: number, signal?: AbortSignal): Promise<Ji
   }
 }
 
-/** Fetch a single anime by MAL ID using /anime/{id}. */
-export async function jikanGet(malId: number, signal?: AbortSignal): Promise<JikanAnime | null> {
-  try {
-    const json = await jikanRaw(`/anime/${malId}`, signal);
-    return (json?.data as JikanAnime) || null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Fetch every page of /anime/{id}/episodes. Most TV series fit one page (100
  * items); long-runners need multiple. We cap at 8 pages (~800 eps) for safety.

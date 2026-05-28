@@ -126,7 +126,7 @@ export default function AnimeWatchClient({ malId, episode: initialEpisode }: { m
         if (cancelled) return;
         try {
           if (prov === 'miruro') {
-            const { extractMiruroClient } = await import('@/app/lib/services/miruro-client-extractor');
+            const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
             if (results.length > 0) {
               const cfBase = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
@@ -141,7 +141,7 @@ export default function AnimeWatchClient({ malId, episode: initialEpisode }: { m
               break;
             }
           } else if (prov === 'animekai') {
-            const { extractAnimeKaiClient } = await import('@/app/lib/services/animekai-client-extractor');
+            const { extractAnimeKaiClient } = await import('@/lib/services/animekai-client-extractor');
             const results = await extractAnimeKaiClient(malId, animeTitle, targetEp, audioPref);
             if (results.length > 0) {
               sources = results.map((s: any) => ({
