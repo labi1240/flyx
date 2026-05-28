@@ -14,6 +14,8 @@ const DEFAULT_TIMEOUT = 20000;
 class FetchLoader implements Loader<LoaderContext> {
   private controller: AbortController | null = null;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
+  private retryId: ReturnType<typeof setTimeout> | null = null;
+  private aborted = false;
   stats!: LoaderStats;
   context!: LoaderContext;
 
@@ -22,6 +24,7 @@ class FetchLoader implements Loader<LoaderContext> {
   }
 
   abort(): void {
+    this.aborted = true;
     if (this.controller) {
       this.controller.abort();
       this.controller = null;
@@ -29,6 +32,10 @@ class FetchLoader implements Loader<LoaderContext> {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
+    }
+    if (this.retryId) {
+      clearTimeout(this.retryId);
+      this.retryId = null;
     }
   }
 
@@ -38,12 +45,20 @@ class FetchLoader implements Loader<LoaderContext> {
     callbacks: LoaderCallbacks<LoaderContext>,
   ): void {
     this.context = context;
-    this.stats = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0, loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } } as LoaderStats;
+    this.aborted = false;
+    this.stats = {
+      aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0,
+      loading: { start: performance.now(), first: 0, end: 0 },
+      parsing: { start: 0, end: 0 },
+      buffering: { start: 0, first: 0, end: 0 },
+    } as LoaderStats;
 
     const maxRetry = config.maxRetry ?? DEFAULT_RETRY;
     const timeout = config.timeout ?? DEFAULT_TIMEOUT;
 
     const doFetch = (retryCount: number) => {
+      if (this.aborted) return;
+
       this.controller = new AbortController();
       const signal = this.controller.signal;
 
@@ -58,7 +73,9 @@ class FetchLoader implements Loader<LoaderContext> {
         credentials: 'same-origin',
       })
         .then(async (res) => {
+          if (this.aborted) return;
           if (this.timeoutId) { clearTimeout(this.timeoutId); this.timeoutId = null; }
+          this.stats.loading.first = performance.now();
           this.stats.loading.end = performance.now();
 
           if (!res.ok && res.status >= 400) {
@@ -66,38 +83,37 @@ class FetchLoader implements Loader<LoaderContext> {
           }
 
           const data = await res.arrayBuffer();
+          if (this.aborted) return;
           this.stats.loaded = data.byteLength;
           this.stats.total = data.byteLength;
 
+          if (callbacks.onProgress) {
+            callbacks.onProgress(this.stats, context, data, null as any);
+          }
+
           callbacks.onSuccess(
-            { url: res.url, data: new Uint8Array(data) },
+            { url: res.url, data: data },
             this.stats,
             context,
             null as any,
           );
         })
         .catch((err: any) => {
+          if (this.aborted) return;
           if (this.timeoutId) { clearTimeout(this.timeoutId); this.timeoutId = null; }
-          const isAborted = err?.name === 'AbortError' || signal.aborted;
-          if (isAborted) {
-            if (retryCount < maxRetry) {
-              this.stats.retry = retryCount + 1;
-              setTimeout(() => doFetch(retryCount + 1), Math.min(1000 * (retryCount + 1), 4000));
-            } else {
-              callbacks.onError({ code: 0, text: 'Fetch aborted after retries' }, context, null as any, this.stats);
-            }
-            return;
-          }
+
+          const isTimeout = err?.name === 'AbortError' || signal.aborted;
+          const code = err?.code ?? (isTimeout ? 0 : 0);
+          const text = err?.text ?? err?.message ?? (isTimeout ? 'Request timed out' : 'Fetch failed');
+
           if (retryCount < maxRetry) {
             this.stats.retry = retryCount + 1;
-            setTimeout(() => doFetch(retryCount + 1), Math.min(1000 * (retryCount + 1), 4000));
+            this.retryId = setTimeout(() => {
+              this.retryId = null;
+              if (!this.aborted) doFetch(retryCount + 1);
+            }, Math.min(1000 * (retryCount + 1), 4000));
           } else {
-            callbacks.onError(
-              { code: err?.code ?? 0, text: err?.text ?? err?.message ?? 'Fetch failed' },
-              context,
-              null as any,
-              this.stats,
-            );
+            callbacks.onError({ code, text }, context, null as any, this.stats);
           }
         });
     };
