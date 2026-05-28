@@ -23,12 +23,12 @@ interface Category {
 
 const JIKAN = 'https://api.jikan.moe/v4';
 
-function mapJikanItem(a: any): AnimeItem | null {
+function mapItem(a: any): AnimeItem | null {
   if (!a?.mal_id) return null;
   return {
     mal_id: a.mal_id,
     title: a.title || 'Unknown',
-    title_english: a.title_english || a.title || null,
+    title_english: a.title_english || null,
     image: a.images?.jpg?.large_image_url || a.images?.jpg?.image_url || '',
     score: a.score ?? null,
     year: a.year ?? null,
@@ -44,11 +44,37 @@ async function fetchJikan(endpoint: string): Promise<AnimeItem[]> {
     });
     if (!res.ok) return [];
     const json = await res.json();
-    return (json.data || []).map(mapJikanItem).filter((i: AnimeItem | null): i is AnimeItem => i !== null);
+    return (json.data || []).map(mapItem).filter((i: AnimeItem | null): i is AnimeItem => i !== null);
   } catch {
     return [];
   }
 }
+
+const GENRES: Record<string, number> = {
+  Action: 1,
+  Adventure: 2,
+  Comedy: 4,
+  Drama: 8,
+  Fantasy: 10,
+  Horror: 14,
+  Romance: 22,
+  'Sci-Fi': 24,
+  Thriller: 41,
+  Sports: 30,
+};
+
+const CATEGORY_DEFS = [
+  { title: 'Currently Airing', endpoint: '/seasons/now?limit=25' },
+  { title: 'Popular', endpoint: '/top/anime?limit=25&filter=bypopularity' },
+  { title: 'Top Rated', endpoint: '/top/anime?limit=25' },
+  { title: 'Most Favorited', endpoint: '/top/anime?limit=25&filter=favorite' },
+  { title: 'Upcoming', endpoint: '/seasons/upcoming?limit=25' },
+  { title: 'Movies', endpoint: '/top/anime?limit=25&type=movie' },
+  ...Object.entries(GENRES).map(([name, id]) => ({
+    title: name,
+    endpoint: `/anime?genres=${id}&order_by=popularity&sort=desc&limit=25`,
+  })),
+];
 
 export default function AnimePageClient() {
   const router = useRouter();
@@ -58,19 +84,15 @@ export default function AnimePageClient() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [airing, popular, topRated, movies] = await Promise.all([
-        fetchJikan('/seasons/now?limit=25'),
-        fetchJikan('/top/anime?limit=25&filter=bypopularity'),
-        fetchJikan('/top/anime?limit=25'),
-        fetchJikan('/top/anime?limit=25&type=movie'),
-      ]);
+      const results = await Promise.all(
+        CATEGORY_DEFS.map(d => fetchJikan(d.endpoint))
+      );
       if (cancelled) return;
-      setCategories([
-        { title: 'Currently Airing', items: airing },
-        { title: 'Popular', items: popular },
-        { title: 'Top Rated', items: topRated },
-        { title: 'Movies', items: movies },
-      ].filter(c => c.items.length > 0));
+      setCategories(
+        CATEGORY_DEFS
+          .map((d, i) => ({ title: d.title, items: results[i] }))
+          .filter(c => c.items.length > 0)
+      );
       setLoading(false);
     }
     load();
@@ -127,7 +149,10 @@ function CategoryRow({ title, items, onItemClick }: {
     <section className="px-4 md:px-6">
       <div className="max-w-[1400px] mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl md:text-2xl font-bold text-white">{title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl md:text-2xl font-bold text-white">{title}</h2>
+            <span className="text-xs text-gray-500">({items.length}+)</span>
+          </div>
           <div className="hidden md:flex gap-2">
             <button onClick={() => scroll('left')} className="w-8 h-8 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white font-bold">
               ‹
@@ -149,31 +174,45 @@ function CategoryRow({ title, items, onItemClick }: {
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
               onClick={() => onItemClick(item)}
-              className="flex-shrink-0 w-[130px] sm:w-36 md:w-44 cursor-pointer group"
+              className="flex-shrink-0 w-[140px] sm:w-40 md:w-48 cursor-pointer group"
             >
-              <div className="relative rounded-lg overflow-hidden bg-gray-900 shadow-lg group-hover:scale-105 group-hover:shadow-xl transition-all duration-300">
+              <div className="relative rounded-lg overflow-hidden bg-gray-900 shadow-lg group-hover:scale-105 group-hover:shadow-xl group-hover:shadow-fuchsia-500/20 transition-all duration-300">
                 <img
                   src={item.image || '/placeholder-poster.jpg'}
                   alt={item.title}
                   className="w-full aspect-[2/3] object-cover group-hover:scale-110 transition-transform duration-300"
                   loading="lazy"
                 />
+
+                {/* Type badge */}
+                <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 rounded text-[9px] font-medium text-gray-300 uppercase">
+                  {item.type}
+                </div>
+
+                {/* Hover play overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                   <div className="w-12 h-12 rounded-full bg-fuchsia-600/60 backdrop-blur-sm flex items-center justify-center border border-white/20 scale-0 group-hover:scale-100 transition-transform duration-300">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
                   </div>
                 </div>
+
+                {/* Score */}
                 {item.score && (
-                  <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-semibold text-yellow-400">
-                    ★ {item.score.toFixed(1)}
+                  <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-semibold text-yellow-400 flex items-center gap-0.5">
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    {item.score.toFixed(1)}
                   </div>
                 )}
               </div>
+
               <div className="mt-2 px-0.5">
-                <h3 className="text-white font-medium text-xs sm:text-sm line-clamp-1 group-hover:text-fuchsia-300 transition-colors">
+                <h3 className="text-white font-medium text-xs sm:text-sm line-clamp-2 group-hover:text-fuchsia-300 transition-colors leading-tight">
                   {item.title_english || item.title}
                 </h3>
-                <p className="text-gray-500 text-[10px] mt-0.5">{item.year || ''}</p>
+                <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
+                  {item.year && <span>{item.year}</span>}
+                  {item.episodes && <span>{item.episodes} eps</span>}
+                </div>
               </div>
             </motion.div>
           ))}
