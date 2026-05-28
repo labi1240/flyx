@@ -9,10 +9,9 @@ const nextConfig = {
     root: __dirname,
   },
 
-  // Enable standalone output for Docker/Cloudflare deployments
-  ...(process.env.FLYX_SELF_HOSTED === 'true' || process.env.DOCKER_BUILD === 'true'
-    ? { output: 'standalone', outputFileTracingRoot: __dirname }
-    : {}),
+  // Standalone output is required by @opennextjs/cloudflare (and Docker self-host)
+  output: 'standalone',
+  outputFileTracingRoot: __dirname,
 
   // Image optimization
   images: {
