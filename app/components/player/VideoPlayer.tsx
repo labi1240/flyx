@@ -158,6 +158,13 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return `${baseUrl}/miruro/stream?url=${encodeURIComponent(sourceUrl)}`;
   }
 
+  // Providers that ALWAYS need proxying regardless of the requiresSegmentProxy flag
+  if (providerName === 'videasy') {
+    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) return sourceUrl; // Already proxied
+    return getVideasyStreamProxyUrl(sourceUrl);
+  }
+  if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
+
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -167,11 +174,6 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     sourceUrl.includes('wind.');
   if (!needsProxy) return sourceUrl;
 
-  if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
-  if (providerName === 'videasy') {
-    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) return sourceUrl; // Already proxied
-    return getVideasyStreamProxyUrl(sourceUrl);
-  }
   return sourceUrl;
 }
 
