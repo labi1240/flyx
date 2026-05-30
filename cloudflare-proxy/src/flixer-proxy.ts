@@ -37,6 +37,18 @@ export interface Env {
   HEXA_CONFIG?: KVNamespace;
 }
 
+/** Strip BOM and normalize the RPI proxy URL from env secrets */
+function getRpiBaseUrl(env: Env): string | null {
+  let raw = env.RPI_PROXY_URL;
+  if (!raw) return null;
+  // Strip BOM (U+FEFF) — secrets may be set with BOM from copy-paste
+  raw = raw.replace(/^﻿/, '').trim();
+  if (!raw) return null;
+  let base = raw.replace(/\/+$/, '');
+  if (!base.startsWith('http')) base = `https://${base}`;
+  return base;
+}
+
 /**
  * Build the API path for movie or TV image requests using config routes.
  * Replaces {tmdbId}, {season}, {episode} placeholders in the route templates.
@@ -1376,9 +1388,8 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
             if (directRes.ok) return directRes;
           } catch {}
           // RPI rust-fetch
-          if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
-            let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-            if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
+          const rpiBase = getRpiBaseUrl(env);
+          if (rpiBase && env.RPI_PROXY_KEY) {
             const rustParams = new URLSearchParams({ url: targetUrl, headers: JSON.stringify(cdnHeaders), timeout: '20' });
             const rustRes = await fetch(`${rpiBase}/fetch-rust?${rustParams.toString()}`, {
               headers: { 'X-API-Key': env.RPI_PROXY_KEY },
@@ -1847,12 +1858,11 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     } catch (e) { results.direct = { error: e instanceof Error ? e.message : String(e) }; }
 
     // Test Strategy 2: RPI rust-fetch
-    if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
+    const rpiBase1 = getRpiBaseUrl(env);
+    if (rpiBase1 && env.RPI_PROXY_KEY) {
       try {
-        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
         const rustParams = new URLSearchParams({ url: targetUrl, headers: JSON.stringify(cdnHeaders), timeout: '30' });
-        const rustUrl = `${rpiBase}/fetch-rust?${rustParams.toString()}`;
+        const rustUrl = `${rpiBase1}/fetch-rust?${rustParams.toString()}`;
         const t0 = Date.now();
         const rustRes = await fetch(rustUrl, { headers: { 'X-API-Key': env.RPI_PROXY_KEY }, signal: AbortSignal.timeout(20000) });
         const body = await rustRes.text();
@@ -1861,10 +1871,8 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
 
       // Test Strategy 3: RPI legacy
       try {
-        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
         const rpiParams = new URLSearchParams({ url: targetUrl, key: env.RPI_PROXY_KEY, referer: 'https://hexa.su/', origin: 'https://hexa.su' });
-        const rpiUrl = `${rpiBase}/flixer/stream?${rpiParams.toString()}`;
+        const rpiUrl = `${rpiBase1}/flixer/stream?${rpiParams.toString()}`;
         const t0 = Date.now();
         const rpiRes = await fetch(rpiUrl, { signal: AbortSignal.timeout(15000) });
         const body = await rpiRes.text();
@@ -1927,18 +1935,16 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
     }
 
     // Strategy 2: RPI residential proxy fallback
-    if (env.RPI_PROXY_URL && env.RPI_PROXY_KEY) {
+    const rpiBase2 = getRpiBaseUrl(env);
+    if (rpiBase2 && env.RPI_PROXY_KEY) {
       try {
-        let rpiBase = env.RPI_PROXY_URL.replace(/\/+$/, '');
-        if (!rpiBase.startsWith('http')) rpiBase = `https://${rpiBase}`;
-
         const rpiParams = new URLSearchParams({
           url: decodedUrl,
           key: env.RPI_PROXY_KEY,
           referer: 'https://flixer.su/',
           origin: '__skip__',
         });
-        const rpiUrl = `${rpiBase}/flixer/stream?${rpiParams.toString()}`;
+        const rpiUrl = `${rpiBase2}/flixer/stream?${rpiParams.toString()}`;
 
         const rpiRes = await fetch(rpiUrl, { signal: AbortSignal.timeout(15000) });
         if (rpiRes.ok) {
