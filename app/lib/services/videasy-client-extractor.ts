@@ -7,6 +7,7 @@
  */
 
 import { getWasm, wasmDecrypt, aesDecrypt } from './videasy-crypto';
+import { getVideasyStreamProxyUrl } from '../proxy-config';
 
 // ============================================================================
 // CF Worker proxy URL
@@ -109,10 +110,12 @@ export async function extractVideasyClient(
     .map((s: any) => ({
       quality: s.quality || 'auto',
       title: s.title || `Videasy ${s.quality || 'auto'}`,
-      url: s.url,
+      // Wrap through CF Worker media-proxy so segment requests carry the
+      // required Referer: https://player.videasy.net/ header.
+      url: getVideasyStreamProxyUrl(s.url),
       type: (s.type || 'hls') as 'hls' | 'mp4',
       referer: s.referer || 'https://player.videasy.net/',
-      requiresSegmentProxy: true,
+      requiresSegmentProxy: false, // URL is already proxied through media-proxy
       status: 'working' as const,
       language: s.language || s.lang || 'en',
       server: s.server || 'videasy',

@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
-import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
+import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
@@ -17,7 +17,7 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
       sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
       sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
-      sourceUrl.includes('/bingebox/')) {
+      sourceUrl.includes('/bingebox/') || sourceUrl.includes('/stream?url=')) {
     return sourceUrl;
   }
 
@@ -38,7 +38,6 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
 
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
   if (providerName === 'animekai') return getAnimeKaiProxyUrl(sourceUrl);
-  if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
   return sourceUrl;
 }
 

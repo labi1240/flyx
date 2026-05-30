@@ -156,7 +156,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
       sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
       sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
       sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
-      sourceUrl.includes('/bingebox/')) {
+      sourceUrl.includes('/bingebox/') || sourceUrl.includes('/stream?url=')) {
     return sourceUrl;
   }
 
@@ -183,15 +183,6 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   }
 
   // Providers that ALWAYS need proxying regardless of the requiresSegmentProxy flag
-  if (providerName === 'videasy') {
-    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) {
-      console.log('[applyStreamProxy] Videasy URL already proxied, returning as-is:', sourceUrl.substring(0, 100));
-      return sourceUrl;
-    }
-    const wrapped = getVideasyStreamProxyUrl(sourceUrl);
-    console.log('[applyStreamProxy] Videasy wrapping:', sourceUrl.substring(0, 80), '→', wrapped.substring(0, 100));
-    return wrapped;
-  }
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
 
   // Safety net: unproxied workers.dev / known CDN URLs → route through CF Worker
@@ -924,10 +915,12 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           const sources = (parsed.sources || []).filter((s: any) => s.url).map((s: any) => ({
             quality: s.quality || 'auto',
             title: s.title || `Videasy ${s.quality || 'auto'}`,
-            url: s.url,
+            // Pre-proxy through CF Worker so segment requests carry the
+            // required Referer: https://player.videasy.net/ header.
+            url: getVideasyStreamProxyUrl(s.url),
             type: (s.type || 'hls') as 'hls' | 'mp4',
             referer: s.referer || 'https://player.videasy.net/',
-            requiresSegmentProxy: true,
+            requiresSegmentProxy: false, // URL is already proxied through media-proxy
             status: 'working' as const,
             language: s.language || s.lang || 'en',
             server: s.server || 'videasy',

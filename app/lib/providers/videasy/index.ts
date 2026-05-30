@@ -127,7 +127,7 @@ export class VideasyProvider implements Provider {
       language: s.language,
       server: s.server,
       referer: s.referer,
-      requiresSegmentProxy: s.requiresSegmentProxy ?? true,
+      requiresSegmentProxy: s.requiresSegmentProxy ?? false, // URL is pre-proxied through media-proxy
       ...(s.status && { status: s.status }),
     };
   }
