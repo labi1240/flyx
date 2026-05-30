@@ -1,97 +1,179 @@
 /**
- * Flyx Bypass v4 — Main-World Interceptor
+ * Flyx Bypass v5 — Main-World DLHD Stream Unblocker
  *
  * Runs in page MAIN world (manifest "world":"MAIN", document_start).
- * Intercepts *.workers.dev requests:
- *   - DLHD: routes through extension SW (which uses origin IP to bypass CF WAF)
- *   - Stream proxy: extracts CDN URL and fetches directly from page context
- *   - Other providers: routes through extension SW
+ * Intercepts XHR to dlhd.vynx-3b3.workers.dev/play/* and fetches the
+ * M3U8 directly from chevy.newkso.ru (HTTPS) with the browser's
+ * residential IP. DNR rules handle Origin+Referer headers on CDN requests.
  */
 (function () {
   'use strict';
 
-  // ── Detection ──────────────────────────────────────────────────────────
+  var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
+
+  function isDLHDWorker(url) {
+    try { var h = new URL(url, location.origin).hostname; return h === 'dlhd.vynx-3b3.workers.dev'; }
+    catch { return false; }
+  }
 
   function isWorkerProxy(url) {
     try { return new URL(url, location.origin).hostname.endsWith('.workers.dev'); }
     catch { return false; }
   }
 
-  // ── Extension Bridge (postMessage ↔ extension SW) ─────────────────────
+  // ── DLHD: server lookup + M3U8 fetch + rewrite ───────────────────────
 
-  var _reqId = 0, _pending = {};
+  var _dlhdCache = {};
 
-  window.addEventListener('message', function (e) {
-    if (e.source !== window) return;
-    var d = e.data;
-    if (d && d.type === '__FB_RESP__') {
-      var p = _pending[d.id];
-      if (p) { clearTimeout(p.t); delete _pending[d.id]; if (d.err) p.rej(new Error(d.err)); else p.res(d.res); }
+  async function handleDLHD(url) {
+    var pu = new URL(url);
+    var channelId = pu.searchParams.get('channel') || pu.pathname.split('/').pop();
+    var channelKey = channelId.indexOf('premium') === 0 ? channelId : 'premium' + channelId;
+
+    console.log('[Flyx Bypass] DLHD channel=' + channelKey);
+
+    // Server lookup (cached 60s)
+    var serverKey;
+    var cacheKey = channelKey;
+    if (_dlhdCache[cacheKey] && _dlhdCache[cacheKey].ts > Date.now() - 60000) {
+      serverKey = _dlhdCache[cacheKey].key;
+    } else {
+      serverKey = await lookupServer(channelKey);
+      _dlhdCache[cacheKey] = { key: serverKey, ts: Date.now() };
     }
-  });
 
-  function sendToExt(url, method, headers, bodyB64) {
-    return new Promise(function (resolve, reject) {
-      var id = ++_reqId;
-      var t = setTimeout(function () { delete _pending[id]; reject(new Error('Timeout: ' + url)); }, 25000);
-      _pending[id] = { res: resolve, rej: reject, t: t };
-      window.postMessage({ type: '__FB_REQ__', id: id, url: url, method: method || 'GET', headers: headers || {}, body: bodyB64 || null }, '*');
+    console.log('[Flyx Bypass] DLHD server=' + serverKey);
+
+    // Fetch M3U8
+    var m3u8Url = 'https://chevy.newkso.ru/proxy/' + serverKey + '/' + channelKey + '/mono.css';
+    console.log('[Flyx Bypass] DLHD M3U8: ' + m3u8Url);
+
+    var resp = await fetch(m3u8Url, {
+      headers: { 'User-Agent': UA, 'Accept': '*/*' },
+      referrer: 'https://www.newkso.ru/',
+      referrerPolicy: 'unsafe-url'
     });
+
+    if (!resp.ok) throw new Error('M3U8 fetch: HTTP ' + resp.status);
+
+    var text = await resp.text();
+    if (text.indexOf('#EXT') === -1) throw new Error('Not an M3U8: ' + text.substring(0, 200));
+
+    console.log('[Flyx Bypass] DLHD M3U8 OK, length=' + text.length);
+
+    // Rewrite M3U8: resolve relative URLs → absolute HTTPS chevy.newkso.ru
+    var base = 'https://chevy.newkso.ru/proxy/' + serverKey + '/' + channelKey + '/';
+    var rewritten = rewriteDLHD(text, base);
+    console.log('[Flyx Bypass] DLHD M3U8 rewritten');
+
+    return rewritten;
   }
 
-  function reconstructResponse(data) {
-    var body = null;
-    if (data.body) {
-      var bin = atob(data.body), bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      body = bytes;
+  async function lookupServer(channelKey) {
+    var domains = ['newkso.ru', 'enviromentalanimal.horse', 'soyspace.cyou'];
+    for (var i = 0; i < domains.length; i++) {
+      try {
+        var url = 'https://chevy.' + domains[i] + '/server_lookup?channel_id=' + channelKey;
+        console.log('[Flyx Bypass] Lookup: ' + url);
+        var resp = await fetch(url, {
+          headers: { 'User-Agent': UA, 'Accept': '*/*' },
+          referrer: 'https://www.newkso.ru/',
+          referrerPolicy: 'unsafe-url'
+        });
+        if (resp.ok) {
+          var t = await resp.text();
+          console.log('[Flyx Bypass] Lookup response: ' + t.substring(0, 100));
+          if (t.charAt(0) === '{') {
+            try { var d = JSON.parse(t); if (d.server_key) return d.server_key; } catch(e) {}
+          }
+          if (t.trim().length < 20 && t.trim().length > 1 && t.indexOf('<') === -1) return t.trim();
+        }
+      } catch(e) { console.warn('[Flyx Bypass] Lookup error: ' + e.message); }
     }
-    return new Response(body, {
-      status: data.status || 200,
-      statusText: data.statusText || 'OK',
-      headers: new Headers(data.headers || {})
-    });
+    return 'ddy6';
   }
 
-  // ── fetch() Override ──────────────────────────────────────────────────
-
-  var _fetch = window.fetch;
-  var _diagEnd = Date.now() + 10000;
-  window.fetch = function (input, init) {
-    var url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
-    if (Date.now() < _diagEnd) {
-      try { console.log('[Flyx Bypass] DIAG:', new URL(url, location.origin).hostname); } catch(e) {}
+  function rewriteDLHD(playlist, baseUrl) {
+    // Fix split URLs
+    var lines = playlist.split('\n'), joined = [], carry = '';
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (!t || t.charAt(0) === '#') { if (carry) { joined.push(carry); carry = ''; } joined.push(lines[i]); }
+      else if (t.indexOf('http') === 0) { if (carry) joined.push(carry); carry = t; }
+      else { carry += t; }
     }
-    if (!isWorkerProxy(url)) return _fetch.call(window, input, init);
+    if (carry) joined.push(carry);
 
-    console.log('[Flyx Bypass] FETCH INTERCEPT:', url.substring(0, 150));
-
-    var method = (init && init.method) || (input instanceof Request && input.method) || 'GET';
-    var headers = {};
-    if (init && init.headers) {
-      if (init.headers.forEach) init.headers.forEach(function (v, k) { headers[k] = v; });
-      else if (Array.isArray(init.headers)) init.headers.forEach(function (p) { headers[p[0]] = p[1]; });
-      else Object.assign(headers, init.headers);
-    } else if (input instanceof Request) {
-      input.headers.forEach(function (v, k) { headers[k] = v; });
-    }
-    var bodyB64 = null;
-    if (init && init.body && typeof init.body === 'string') {
-      bodyB64 = btoa(unescape(encodeURIComponent(init.body)));
+    var bo = '', bp = '';
+    try { var bu = new URL(baseUrl); bo = bu.origin; bp = bu.pathname; bp = bp.substring(0, bp.lastIndexOf('/') + 1); } catch(e) {}
+    function resolve(u) {
+      if (u.indexOf('http') === 0) return u;
+      try { return new URL(u, bo + bp).toString(); } catch(e) { return u; }
     }
 
-    return sendToExt(url, method, headers, bodyB64)
-      .then(function (d) {
-        if (d.err) { console.warn('[Flyx Bypass] SW error:', d.err); return _fetch.call(window, input, init); }
-        return reconstructResponse(d);
-      })
-      .catch(function (err) {
-        console.warn('[Flyx Bypass] fetch intercept failed:', err.message);
-        return _fetch.call(window, input, init);
-      });
-  };
+    var out = [];
+    for (var i = 0; i < joined.length; i++) {
+      var line = joined[i], trimmed = line.trim();
+      if (trimmed.indexOf('#EXT-X-KEY:') === 0) {
+        var m = trimmed.match(/URI="([^"]+)"/);
+        if (m && m[1].indexOf('http') !== 0) { out.push(trimmed.replace('URI="' + m[1] + '"', 'URI="' + resolve(m[1]) + '"')); continue; }
+        out.push(line); continue;
+      }
+      if (trimmed.indexOf('#EXT-X-ENDLIST') === 0) continue;
+      if (!trimmed || trimmed.charAt(0) === '#') { out.push(line); continue; }
+      if (trimmed.indexOf('http') === 0) { out.push(trimmed); continue; }
+      out.push(resolve(trimmed));
+    }
+    return out.join('\n');
+  }
 
-  // ── XMLHttpRequest Override ───────────────────────────────────────────
+  // ── Generic handler for other providers ──────────────────────────────
+
+  async function handleGeneric(url) {
+    var pu = new URL(url);
+    var targetUrl = pu.searchParams.get('url');
+    if (!targetUrl) throw new Error('No URL param');
+
+    var ref = pu.searchParams.get('referer') || pu.searchParams.get('referrer');
+    var opts = { headers: { 'User-Agent': UA, 'Accept': '*/*' } };
+    if (ref) { opts.referrer = ref; opts.referrerPolicy = 'unsafe-url'; }
+
+    var resp = await fetch(targetUrl, opts);
+    var ct = resp.headers.get('content-type') || '';
+    if (ct.indexOf('mpegurl') !== -1 || targetUrl.indexOf('.m3u8') !== -1) {
+      var text = await resp.text();
+      return rewriteM3U8(text, targetUrl);
+    }
+    // For binary (segments): return Response so HLS.js can consume it
+    return resp;
+  }
+
+  function rewriteM3U8(playlist, baseUrl) {
+    var bp = '';
+    try { var pu = new URL(baseUrl); bp = pu.pathname; bp = bp.substring(0, bp.lastIndexOf('/') + 1); } catch(e) {}
+    var bo = '';
+    try { bo = new URL(baseUrl).origin; } catch(e) {}
+
+    function resolve(u) {
+      if (u.indexOf('http') === 0) return u;
+      try { return new URL(u, bo + bp).toString(); } catch(e) { return u; }
+    }
+
+    var lines = playlist.split('\n'), out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], trimmed = line.trim();
+      if (!trimmed) { out.push(line); continue; }
+      if (trimmed.charAt(0) === '#') {
+        var m = trimmed.match(/URI="([^"]+)"/);
+        if (m) { out.push(trimmed.replace('URI="' + m[1] + '"', 'URI="' + resolve(m[1]) + '"')); continue; }
+        out.push(line); continue;
+      }
+      out.push(resolve(trimmed));
+    }
+    return out.join('\n');
+  }
+
+  // ── XHR Override ─────────────────────────────────────────────────────
 
   var XHR = window.XMLHttpRequest;
   window.XMLHttpRequest = function () {
@@ -112,7 +194,6 @@
     function fallbackToNative(body) {
       _intercept = false;
       XHR.prototype.open.call(xhr, _method, _url, true);
-      Object.keys(_headers).forEach(function (k) { XHR.prototype.setRequestHeader.call(xhr, k, _headers[k]); });
       XHR.prototype.send.call(xhr, body);
     }
 
@@ -136,23 +217,14 @@
       Object.defineProperty(xhr, 'response', { get: function () {
         if (!_rbody) return null;
         if (_rt === 'arraybuffer') return _rbody.buffer;
-        if (_rt === 'json') try { return JSON.parse(new TextDecoder().decode(_rbody)); } catch (e) { return null; }
         return new TextDecoder().decode(_rbody);
       }, configurable: true });
       Object.defineProperty(xhr, 'responseText', { get: function () { return _rbody ? new TextDecoder().decode(_rbody) : ''; }, configurable: true });
-      var add = XHR.prototype.addEventListener, rem = XHR.prototype.removeEventListener;
-      xhr.addEventListener = function (n, fn) { if (_events[n]) _events[n].push(fn); else add.call(xhr, n, fn); };
-      xhr.removeEventListener = function (n, fn) {
-        if (_events[n]) { var i = _events[n].indexOf(fn); if (i >= 0) _events[n].splice(i, 1); return; }
-        rem.call(xhr, n, fn);
-      };
       xhr.getResponseHeader = function (n) {
         var k = Object.keys(_rh).find(function (kk) { return kk.toLowerCase() === n.toLowerCase(); });
         return k ? _rh[k] : null;
       };
-      xhr.getAllResponseHeaders = function () {
-        return Object.keys(_rh).map(function (k) { return k + ': ' + _rh[k]; }).join('\r\n');
-      };
+      xhr.getAllResponseHeaders = function () { return Object.keys(_rh).map(function (k) { return k + ': ' + _rh[k]; }).join('\r\n'); };
     }
 
     var _headers = {};
@@ -162,7 +234,7 @@
       _url = String(url);
       _intercept = isWorkerProxy(_url);
       if (_intercept) {
-        console.log('[Flyx Bypass] XHR INTERCEPT:', _url.substring(0, 120));
+        console.log('[Flyx Bypass] XHR INTERCEPT: ' + _url.substring(0, 120));
         applyPatches();
       } else {
         XHR.prototype.open.call(xhr, method, url, async !== false, arguments[3], arguments[4]);
@@ -175,19 +247,32 @@
     xhr.send = function (body) {
       if (_aborted) return;
       if (!_intercept) return XHR.prototype.send.call(xhr, body);
+
       fireMock('loadstart'); setRS(1);
-      var b = null;
-      if (body && typeof body === 'string') b = btoa(unescape(encodeURIComponent(body)));
-      sendToExt(_url, _method, _headers, b).then(function (d) {
+
+      var handler = isDLHDWorker(_url) ? handleDLHD : handleGeneric;
+
+      handler(_url).then(function (result) {
         if (_aborted) return;
-        if (d.err) { console.warn('[Flyx Bypass] XHR SW error:', d.err); fallbackToNative(body); return; }
-        _status = d.status || 200; _st = d.statusText || 'OK'; _rh = d.headers || {};
-        setRS(2);
-        if (d.body) { var bin = atob(d.body); _rbody = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++)_rbody[i] = bin.charCodeAt(i); }
-        setRS(3); setRS(4);
+        var text;
+        if (typeof result === 'string') {
+          text = result;
+        } else {
+          // Response object from handleGeneric for binary data
+          return result.text().then(function (t) { text = t; proceed(); });
+        }
+        proceed();
+
+        function proceed() {
+          _status = 200; _st = 'OK';
+          _rh = { 'content-type': 'application/vnd.apple.mpegurl', 'access-control-allow-origin': '*' };
+          setRS(2);
+          _rbody = new TextEncoder().encode(text);
+          setRS(3); setRS(4);
+        }
       }).catch(function (err) {
         if (_aborted) return;
-        console.warn('[Flyx Bypass] XHR SW failed:', err.message);
+        console.warn('[Flyx Bypass] Intercept failed: ' + err.message + ' — falling back');
         fallbackToNative(body);
       });
     };
@@ -204,5 +289,30 @@
   window.XMLHttpRequest.LOADING = 3;
   window.XMLHttpRequest.DONE = 4;
 
-  console.log('[Flyx Bypass v4] Injected — intercepting *.workers.dev, routing via extension SW');
+  // ── fetch() Override ──────────────────────────────────────────────────
+
+  var _fetch = window.fetch;
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+    if (!isWorkerProxy(url)) return _fetch.call(window, input, init);
+
+    console.log('[Flyx Bypass] FETCH INTERCEPT: ' + url.substring(0, 150));
+
+    var handler = isDLHDWorker(url) ? handleDLHD : handleGeneric;
+
+    return handler(url).then(function (result) {
+      if (typeof result === 'string') {
+        return new Response(result, {
+          status: 200,
+          headers: { 'content-type': 'application/vnd.apple.mpegurl', 'access-control-allow-origin': '*' }
+        });
+      }
+      return result; // Response from handleGeneric
+    }).catch(function (err) {
+      console.warn('[Flyx Bypass] fetch failed: ' + err.message + ' — falling back');
+      return _fetch.call(window, input, init);
+    });
+  };
+
+  console.log('[Flyx Bypass v5] Injected — direct HTTPS CDN fetch + DNR headers');
 })();
