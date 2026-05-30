@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v11';
+const SW_VERSION = 'v13';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -382,6 +382,166 @@ function rewritePlaylistUrls(playlist, cdnBaseUrl) {
   return rewritten.join('\n');
 }
 
+// ── DLHD Worker URL Handler ──────────────────────────────────────────────────
+// Intercepts dlhd.vynx-3b3.workers.dev/play/{id} requests that would normally
+// go to the CF Worker (which has a datacenter IP blocked by Cloudflare WAF).
+// Fetches directly from the DLHD origin IP (HTTP, bypasses WAF).
+
+var DLHD_ORIGIN_IP = '213.21.239.30';
+var DLHD_VHOST = 'chevy.newkso.ru';
+var DLHD_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
+var DLHD_KEY_CACHE = {};
+
+async function handleDLHDWorkerRequest(request) {
+  var url = request.url;
+  var channelId = '';
+
+  // Extract channel ID: /play/{id} or /play?channel={id}
+  try {
+    var pu = new URL(url);
+    channelId = pu.searchParams.get('channel') || '';
+    if (!channelId) {
+      var pathParts = pu.pathname.split('/');
+      channelId = pathParts[pathParts.length - 1];
+    }
+  } catch (e) {}
+
+  if (!channelId) {
+    return new Response('Missing channel ID', { status: 400 });
+  }
+
+  var channelKey = channelId.indexOf('premium') === 0 ? channelId : 'premium' + channelId;
+
+  console.log('[ResiSW] DLHD WORKER INTERCEPT: channel=' + channelKey);
+
+  try {
+    // Step 1: Server lookup via origin IP
+    var serverKey = await getDLHDServerKey(channelKey);
+    console.log('[ResiSW] DLHD server: ' + serverKey);
+
+    // Step 2: Fetch M3U8 from origin IP
+    var m3u8Url = 'http://' + DLHD_ORIGIN_IP + '/proxy/' + serverKey + '/' + channelKey + '/mono.css';
+    console.log('[ResiSW] DLHD M3U8: ' + m3u8Url);
+
+    var m3u8Resp = await fetch(m3u8Url, {
+      headers: {
+        'User-Agent': DLHD_UA,
+        'Host': DLHD_VHOST,
+        'Origin': 'https://www.newkso.ru',
+        'Referer': 'https://www.newkso.ru/',
+        'Accept': '*/*'
+      }
+    });
+
+    if (!m3u8Resp.ok) {
+      console.error('[ResiSW] DLHD M3U8 failed: ' + m3u8Resp.status);
+      return new Response('DLHD upstream returned ' + m3u8Resp.status, { status: 502 });
+    }
+
+    var m3u8Text = await m3u8Resp.text();
+
+    if (m3u8Text.indexOf('#EXT') === -1) {
+      console.error('[ResiSW] DLHD response not M3U8: ' + m3u8Text.substring(0, 300));
+      return new Response('Invalid DLHD response', { status: 502 });
+    }
+
+    console.log('[ResiSW] DLHD M3U8 OK, length=' + m3u8Text.length);
+
+    // Step 3: Rewrite M3U8 — resolve relative URLs against HTTPS chevy.newkso.ru
+    // This avoids mixed content blocking (page is HTTPS).
+    var httpsBase = 'https://chevy.newkso.ru/proxy/' + serverKey + '/' + channelKey + '/';
+    var rewritten = rewriteDLHDM3U8(m3u8Text, httpsBase);
+
+    console.log('[ResiSW] DLHD M3U8 rewritten ✓');
+
+    return new Response(rewritten, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=5',
+        'X-ResiSW': 'DLHD-Worker'
+      }
+    });
+
+  } catch (err) {
+    console.error('[ResiSW] DLHD error: ' + (err.message || err));
+    return new Response('DLHD fetch error: ' + (err.message || err), { status: 502 });
+  }
+}
+
+async function getDLHDServerKey(channelKey) {
+  var now = Date.now();
+  if (DLHD_KEY_CACHE[channelKey] && DLHD_KEY_CACHE[channelKey].ts > now - 60000) {
+    return DLHD_KEY_CACHE[channelKey].key;
+  }
+
+  var lu = 'http://' + DLHD_ORIGIN_IP + '/server_lookup?channel_id=' + channelKey;
+  try {
+    var resp = await fetch(lu, {
+      headers: {
+        'User-Agent': DLHD_UA,
+        'Host': DLHD_VHOST,
+        'Origin': 'https://www.newkso.ru',
+        'Referer': 'https://www.newkso.ru/',
+        'Accept': '*/*'
+      }
+    });
+    if (resp.ok) {
+      var t = await resp.text();
+      console.log('[ResiSW] DLHD lookup: ' + t.substring(0, 100));
+      if (t.charAt(0) === '{') {
+        try { var d = JSON.parse(t); if (d.server_key) { DLHD_KEY_CACHE[channelKey] = { key: d.server_key, ts: now }; return d.server_key; } } catch(e) {}
+      }
+      if (t.trim().length < 20 && t.trim().length > 1 && t.indexOf('<') === -1) {
+        DLHD_KEY_CACHE[channelKey] = { key: t.trim(), ts: now };
+        return t.trim();
+      }
+    }
+  } catch(e) { console.warn('[ResiSW] DLHD lookup error: ' + e.message); }
+  return 'ddy6';
+}
+
+// DLHD M3U8 rewriter: resolve relative URLs, strip ENDLIST, fix split lines
+function rewriteDLHDM3U8(playlist, baseUrl) {
+  // Fix split-line URLs
+  var lines = playlist.split('\n');
+  var joined = [], carry = '';
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (!t || t.charAt(0) === '#') { if (carry) { joined.push(carry); carry = ''; } joined.push(lines[i]); }
+    else if (t.indexOf('http') === 0) { if (carry) joined.push(carry); carry = t; }
+    else { carry += t; }
+  }
+  if (carry) joined.push(carry);
+
+  var baseOrigin = '', basePath = '';
+  try { var bp = new URL(baseUrl); baseOrigin = bp.origin; basePath = bp.pathname; basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1); } catch(e) {}
+
+  function resolve(u) {
+    if (u.indexOf('http://') === 0 || u.indexOf('https://') === 0) return u;
+    try { return new URL(u, baseOrigin + basePath).toString(); } catch(e) { return u; }
+  }
+
+  var out = [];
+  for (var i = 0; i < joined.length; i++) {
+    var line = joined[i], trimmed = line.trim();
+    if (trimmed.indexOf('#EXT-X-KEY:') === 0) {
+      var m = trimmed.match(/URI="([^"]+)"/);
+      if (m && m[1].indexOf('http') !== 0) {
+        out.push(trimmed.replace('URI="' + m[1] + '"', 'URI="' + resolve(m[1]) + '"'));
+        continue;
+      }
+      out.push(line); continue;
+    }
+    if (trimmed.indexOf('#EXT-X-ENDLIST') === 0) continue;
+    if (!trimmed || trimmed.charAt(0) === '#') { out.push(line); continue; }
+    if (trimmed.indexOf('http') === 0) { out.push(trimmed); continue; }
+    out.push(resolve(trimmed));
+  }
+  return out.join('\n');
+}
+
 // ── Proxying ─────────────────────────────────────────────────────────────────
 
 async function proxyWithResidentialIp(request) {
@@ -634,12 +794,19 @@ self.addEventListener('fetch', function(event) {
   // Only http/https
   if (url.indexOf('http') !== 0) return;
 
-  // Quick skips are now hostname-aware (applied below only for OWN_HOSTNAMES)
-  // This avoids accidentally skipping upstream CDN URLs like miruro.to/api/secure/pipe
-
-  // Hostname quick check: does this URL look like it could be a CDN?
+  // ══════════════════════════════════════════════════════════════════
+  // DLHD WORKER URL INTERCEPTION — replaces CF Worker M3U8 fetching
+  // The CF Worker (dlhd.vynx-3b3.workers.dev) has a datacenter IP
+  // blocked by Cloudflare WAF. This SW fetches from the DLHD origin IP
+  // (HTTP, bypasses WAF) and rewrites M3U8 with HTTPS segment URLs.
+  // ══════════════════════════════════════════════════════════════════
   var hostname;
   try { hostname = new URL(url).hostname; } catch (e) { return; }
+
+  if (hostname === 'dlhd.vynx-3b3.workers.dev' && url.indexOf('/play/') !== -1) {
+    event.respondWith(handleDLHDWorkerRequest(event.request));
+    return;
+  }
 
   // Skip ALL our own domains — the CF Worker handles its own proxy routes.
   // The SW only intercepts direct CDN requests from the browser.
