@@ -149,7 +149,7 @@
 
     function fire(n) { var a = _events[n]; if (!a) return; if (a._on) try { a._on.call(xhr); } catch(e) {} for (var i=0;i<a.length;i++) try{a[i].call(xhr)}catch(e){} }
     function setRS(rs) { _rs=rs; fire('readystatechange'); if (rs===4) { fire('load'); fire('loadend'); } }
-    function fallback() { _intercept=false; XHR.prototype.open.call(xhr, _url, true); XHR.prototype.send.call(xhr, null); }
+    function fallback() { _intercept=false; XHR.prototype.open.call(xhr, _method, _url, true); XHR.prototype.send.call(xhr, null); }
 
     function patch() {
       if (_events) return; _events = {};
@@ -167,6 +167,7 @@
     }
 
     xhr.open = function (method, url, async) {
+      _method = (method || 'GET').toUpperCase();
       _url = String(url);
       _intercept = isWorker(_url);
       if (_intercept) { console.log('[Flyx] XHR: '+_url.substring(0,120)); patch(); }
