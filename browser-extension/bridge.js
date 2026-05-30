@@ -1,32 +1,43 @@
 /**
- * Flyx Bypass v2 — Isolated-World Bridge
+ * Flyx Bypass v3 — Isolated-World Bridge
  *
- * Runs in ISOLATED world with chrome.runtime access.
- * Bridges postMessage (from inject.js in MAIN world) ↔ chrome.runtime.sendMessage (to service worker).
+ * Relays messages between inject.js (MAIN world) and extension SW.
+ * Handles:
+ *   - __FB_REQ__  → chrome.runtime.sendMessage (generic proxy — legacy fallback)
+ *   - __FB_CAP_REQ__ → chrome.runtime.sendMessage (reCAPTCHA solve)
  */
 (function () {
   'use strict';
   if (!chrome.runtime?.id) return;
 
-  // inject.js → service worker
   window.addEventListener('message', function (e) {
-    if (e.source !== window || !e.data || e.data.type !== '__FB_REQ__') return;
+    if (e.source !== window || !e.data) return;
+
     var d = e.data;
-    chrome.runtime.sendMessage({
-      type: 'proxy', id: d.id, url: d.url,
-      method: d.method, headers: d.headers, body: d.body
-    }).then(function (res) {
-      window.postMessage({ type: '__FB_RESP__', id: d.id, res: res }, '*');
-    }).catch(function (err) {
-      window.postMessage({ type: '__FB_RESP__', id: d.id, err: err.message || 'Bridge error' }, '*');
-    });
+
+    // Legacy proxy request (still used as fallback)
+    if (d.type === '__FB_REQ__') {
+      chrome.runtime.sendMessage({
+        type: 'proxy', id: d.id, url: d.url,
+        method: d.method, headers: d.headers, body: d.body
+      }).then(function (res) {
+        window.postMessage({ type: '__FB_RESP__', id: d.id, res: res }, '*');
+      }).catch(function (err) {
+        window.postMessage({ type: '__FB_RESP__', id: d.id, err: err.message }, '*');
+      });
+    }
+
+    // reCAPTCHA solve request
+    if (d.type === '__FB_CAP_REQ__') {
+      chrome.runtime.sendMessage({
+        type: 'whitelist', ch: d.channel
+      }).then(function (res) {
+        window.postMessage({ type: '__FB_CAP_RESP__', id: d.id, token: res.token, err: res.error || res.err }, '*');
+      }).catch(function (err) {
+        window.postMessage({ type: '__FB_CAP_RESP__', id: d.id, err: err.message }, '*');
+      });
+    }
   });
 
-  // Stats relay
-  window.addEventListener('message', function (e) {
-    if (e.source !== window || !e.data || e.data.type !== '__FB_STAT__') return;
-    chrome.runtime.sendMessage({ type: 'stat', key: e.data.key, val: e.data.val }).catch(function(){});
-  });
-
-  console.log('[Flyx Bypass v2] Bridge loaded');
+  console.log('[Flyx Bypass v3] Bridge loaded');
 })();
