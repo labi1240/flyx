@@ -14,6 +14,27 @@
  * stream proxying with correct headers and CORS handling.
  */
 
+/**
+ * Fully percent-decode a URL until stable.
+ * Some source URLs (especially Videasy) contain pre-encoded characters
+ * (e.g. %3D for = in base64 tokens). We must decode them before
+ * re-encoding to avoid double-encoding (% → %25 → %253D) when the
+ * CF Worker's searchParams.get() decodes only once.
+ */
+function fullyDecodeUrl(url: string): string {
+  let decoded = url;
+  let prev = "";
+  while (decoded !== prev) {
+    prev = decoded;
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      break; // invalid percent sequence — stop decoding
+    }
+  }
+  return decoded;
+}
+
 // Stream proxy for HLS streams (2embed, moviesapi, etc.)
 export function getStreamProxyUrl(
   url: string,
@@ -23,16 +44,20 @@ export function getStreamProxyUrl(
 ): string {
   // Try both NEXT_PUBLIC_ (available at build time) and server-side env var
   // Fallback to hardcoded URL for production if env vars aren't set
-  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 
-                     process.env.CF_STREAM_PROXY_URL || 
+  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
+                     process.env.CF_STREAM_PROXY_URL ||
                      'https://media-proxy.vynx-3b3.workers.dev/stream';
-  
+
   // Strip trailing slash if present to avoid double slashes
   const baseUrl = cfProxyUrl.replace(/\/+$/, '');
-  
+
+  // Decode any existing percent-encoding before re-encoding to avoid
+  // double-encoding when the CF Worker decodes query params
+  const decodedUrl = fullyDecodeUrl(url);
+
   // Add noreferer param for sources that block requests with Origin header (like MegaUp CDN)
   const noRefParam = skipOrigin ? '&noreferer=true' : '';
-  return `${baseUrl}?url=${encodeURIComponent(url)}&source=${source}&referer=${encodeURIComponent(referer)}${noRefParam}`;
+  return `${baseUrl}?url=${encodeURIComponent(decodedUrl)}&source=${source}&referer=${encodeURIComponent(referer)}${noRefParam}`;
 }
 
 // Check if DLHD proxy (Oxylabs residential) should be used for Live TV
@@ -595,7 +620,10 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
  */
 export function getVideasyStreamProxyUrl(url: string): string {
   const baseUrl = getFlixerProxyBaseUrl();
-  return `${baseUrl}/stream?url=${encodeURIComponent(url)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.net/')}`;
+  // Decode any existing percent-encoding before re-encoding to avoid
+  // double-encoding (Videasy tokens contain %3D for base64 = padding)
+  const decoded = fullyDecodeUrl(url);
+  return `${baseUrl}/stream?url=${encodeURIComponent(decoded)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.net/')}`;
 }
 
 // ─── BingeBox Proxy ─────────────────────────────────────────────

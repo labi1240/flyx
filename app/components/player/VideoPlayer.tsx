@@ -1430,7 +1430,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     let streamCleanup: (() => void) | null = null;
 
     const loadStream = () => {
-    if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/vidsrc') || streamUrl.includes('workers.dev')) {
+    if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream?url=') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/vidsrc') || streamUrl.includes('/videasy/') || streamUrl.includes('workers.dev')) {
       if (Hls.isSupported()) {
         // Check if this is a Flixer source (needs more aggressive buffering)
         const isFlixerSource = streamUrl.includes('flixer') || streamUrl.includes('p.10015.workers.dev') || streamUrl.includes('afc7d47f');
