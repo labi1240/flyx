@@ -56,6 +56,10 @@ export interface ExtractionResult {
   provider: string;
   error?: string;
   timing?: number;
+  /** Raw hex from CF proxy — set when server can't decrypt (CF Pages) */
+  hexData?: string;
+  /** True when the client (browser) must run WASM+AES decryption */
+  needsClientDecrypt?: boolean;
 }
 
 export interface ProviderConfig {

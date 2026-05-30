@@ -39,7 +39,8 @@ export class VideasyProvider implements Provider {
     const start = Date.now();
     try {
       if (isServer) {
-        // Server-side: use the server extractor (direct fetch → CF Worker → WASM → AES)
+        // Server-side: uses the server extractor which handles WASM loading
+        // via dynamic .wasm import (compiled module) on CF Pages Workers.
         const { extractVideasyStreams } = await import('../../services/videasy-extractor');
 
         const result = await extractVideasyStreams(
@@ -57,9 +58,13 @@ export class VideasyProvider implements Provider {
           provider: this.name,
           error: result.error,
           timing: Date.now() - start,
+          ...(result.needsClientDecrypt && {
+            hexData: result.hexData,
+            needsClientDecrypt: true,
+          }),
         };
       } else {
-        // Client-side: use the browser extractor (browser fetch → WASM → AES)
+        // Client-side (browser): full pipeline with fetch + WASM
         const { extractVideasyClient } = await import('../../services/videasy-client-extractor');
 
         const sources = await extractVideasyClient(

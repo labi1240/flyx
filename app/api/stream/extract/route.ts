@@ -233,6 +233,8 @@ function buildSuccessResponse(sources: any[], provider: string, opts: {
   cacheHits?: number;
   deduplicated?: boolean;
   executionTime: number;
+  hexData?: string;
+  needsClientDecrypt?: boolean;
 }) {
   const proxiedSources = formatSources(sources, provider);
   return NextResponse.json({
@@ -246,6 +248,7 @@ function buildSuccessResponse(sources: any[], provider: string, opts: {
     cached: opts.cached || false,
     ...(opts.cacheHits !== undefined && { cacheHits: opts.cacheHits }),
     ...(opts.deduplicated && { deduplicated: true }),
+    ...(opts.hexData && { hexData: opts.hexData, needsClientDecrypt: true }),
     executionTime: opts.executionTime,
   }, {
     headers: {
@@ -533,7 +536,11 @@ export async function GET(request: NextRequest) {
       });
       console.log(`[EXTRACT] Success in ${executionTime}ms - ${result.sources.length} qualities via ${result.provider}`);
 
-      return buildSuccessResponse(result.sources, result.provider, { executionTime });
+      const hexData = (result as any).hexData as string | undefined;
+      return buildSuccessResponse(result.sources, result.provider, {
+        executionTime,
+        ...(hexData && { hexData, needsClientDecrypt: true }),
+      });
     } catch (error) {
       pendingRequests.delete(cacheKey);
       throw error;
@@ -591,7 +598,7 @@ export async function GET(request: NextRequest) {
 async function extractFromSpecificProvider(
   providerName: string,
   request: ExtractionRequest,
-): Promise<{ sources: any[]; provider: string }> {
+): Promise<{ sources: any[]; provider: string; hexData?: string; needsClientDecrypt?: boolean }> {
   const provider = registry.get(providerName);
   if (!provider) {
     // Fallback: try direct extractor call
@@ -613,7 +620,12 @@ async function extractFromSpecificProvider(
     throw new Error(`${provider.name} extraction threw: ${msg}`);
   }
 
-  console.log(`[EXTRACT] ${provider.name} result: success=${result.success}, sources=${result.sources.length}, error=${result.error || 'none'}`);
+  console.log(`[EXTRACT] ${provider.name} result: success=${result.success}, sources=${result.sources.length}, error=${result.error || 'none'}, needsClientDecrypt=${result.needsClientDecrypt || false}`);
+
+  // Deferred decryption: server returned hex, client (browser) must decrypt
+  if (result.needsClientDecrypt && result.hexData) {
+    return { sources: [], provider: provider.name, hexData: result.hexData, needsClientDecrypt: true };
+  }
 
   if (result.success && result.sources.length > 0) {
     console.log(`[EXTRACT] ✓ ${provider.name}: ${result.sources.length} sources`);

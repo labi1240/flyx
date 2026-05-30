@@ -1,9 +1,12 @@
 /**
  * Videasy Server-Side Extractor
  *
- * Thin wrapper around the shared videasy-crypto module.
- * Fetches hex from CF Worker /videasy/extract, then runs the
- * WASM + AES decryption pipeline client-side.
+ * Thin wrapper that fetches encrypted hex from the CF Worker proxy, then
+ * runs the WASM + AES decryption pipeline. Uses the shared videasy-crypto
+ * module which handles WASM loading for all runtimes:
+ *   Node.js: fs + instantiate(buffer)
+ *   CF Pages: dynamic .wasm import → compiled module → instantiate(module)
+ *   Browser: fetch + instantiate(buffer)
  *
  * Uses direct fetch (not cfFetch) for worker→worker calls.
  */
@@ -20,34 +23,24 @@ function getCfWorkerBaseUrl(): string {
 
 /**
  * Load WASM for server-side use.
- *
- * Node.js dev: loads from `public/videasy-module-patched.wasm` via fs.
- * CF Pages Worker: fetches from absolute CDN URLs (relative URLs like
- *   /videasy.bin loop back to the worker function, not static assets).
+ * Node.js: loads from filesystem via fs.
+ * CF Pages: uses dynamic .wasm import (compiled module).
  */
 async function loadWasmServer(): Promise<void> {
-  // getWasm() is a singleton — if already loaded this returns immediately.
-  // On first call with no opts it tries relative URLs which fail on CF Pages,
-  // but the singleton is reset on failure so we can retry below.
+  // Try the shared loader first (handles compiled module import on CF)
+  try { await getWasm(); return; } catch { /* continue */ }
 
-  // Node.js dev: load from filesystem
+  // Node.js: load from filesystem
   const isNode = typeof process !== 'undefined' && process.versions?.node;
   if (isNode) {
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const wasmPath = path.join(process.cwd(), 'public', 'videasy-module-patched.wasm');
-      await getWasm({ wasmBuffer: fs.readFileSync(wasmPath).buffer as ArrayBuffer });
-      return;
-    } catch (e) {
-      console.warn('[Videasy] fs load failed, falling back to CDN:', e instanceof Error ? e.message : e);
-    }
+    const fs = await import('fs');
+    const path = await import('path');
+    const wasmPath = path.join(process.cwd(), 'public', 'videasy-module-patched.wasm');
+    await getWasm({ wasmBuffer: fs.readFileSync(wasmPath).buffer as ArrayBuffer });
+    return;
   }
 
-  // CF Pages Worker / production: fetch from media-proxy Worker.
-  // tv.vynx.cc (same zone) fetches from within a Pages Function may fail;
-  // the media-proxy Worker is on a different zone (workers.dev) and proxies
-  // the WASM file from tv.vynx.cc.
+  // Last resort: fetch from URL
   const baseUrl = getCfWorkerBaseUrl();
   await getWasm({
     wasmUrls: [
@@ -63,8 +56,12 @@ async function loadWasmServer(): Promise<void> {
 export interface VideasyExtractionResult {
   success: boolean;
   sources: StreamSource[];
+  /** Raw hex from CF proxy — set when server can't decrypt (CF Pages) */
+  hexData?: string;
   subtitles?: Array<{ label: string; url: string; language: string }>;
   error?: string;
+  /** True when the client (browser) must run WASM+AES decryption */
+  needsClientDecrypt?: boolean;
 }
 
 export async function extractVideasyStreams(
@@ -81,14 +78,13 @@ export async function extractVideasyStreams(
   }
 
   try {
-    // 1. Fetch hex from CF Worker proxy (direct fetch, not cfFetch)
+    // 1. Fetch hex from CF Worker proxy
     const baseUrl = getCfWorkerBaseUrl();
     const params = new URLSearchParams({ tmdbId, type, title });
     if (type === 'tv' && season != null) params.set('season', season.toString());
     if (type === 'tv' && episode != null) params.set('episode', episode.toString());
 
     const extractUrl = `${baseUrl}/videasy/extract?${params}`;
-
     const res = await fetch(extractUrl, { signal: AbortSignal.timeout(25000) });
 
     if (!res.ok) {
@@ -97,62 +93,62 @@ export async function extractVideasyStreams(
     }
 
     const data = await res.json() as {
-      success: boolean;
-      hexData?: string;
-      error?: string;
-      endpoint?: string;
+      success: boolean; hexData?: string; error?: string; endpoint?: string;
     };
 
     if (!data.success || !data.hexData) {
       return { success: false, sources: [], error: data.error || 'No hex data from proxy' };
     }
 
-    if (data.endpoint) {
-      console.log(`[Videasy] Resolved via endpoint: ${data.endpoint}`);
+    if (data.endpoint) console.log(`[Videasy] Resolved via endpoint: ${data.endpoint}`);
+
+    // 2. Try server-side WASM + AES decrypt.
+    // On CF Pages Workers WebAssembly.instantiate(buffer) is blocked, so
+    // we return the hex to the client for browser-side decryption.
+    try {
+      await loadWasmServer();
+      const wasmDecrypted = wasmDecrypt(data.hexData, parseFloat(tmdbId));
+      const json = await aesDecrypt(wasmDecrypted, '');
+
+      const parsed = JSON.parse(json);
+      const rawSources = parsed.sources || [];
+      const rawSubtitles = parsed.subtitles || [];
+
+      const sources: StreamSource[] = rawSources
+        .filter((s: any) => s.url)
+        .map((s: any) => ({
+          quality: s.quality || 'auto',
+          title: s.title || `Videasy ${s.quality || 'auto'}`,
+          url: s.url,
+          type: (s.type || 'hls') as 'hls' | 'mp4',
+          referer: s.referer || 'https://player.videasy.net/',
+          requiresSegmentProxy: true,
+          status: 'working' as const,
+          language: s.language || s.lang || 'en',
+          server: s.server || 'videasy',
+        }));
+
+      return {
+        success: sources.length > 0, sources,
+        subtitles: rawSubtitles.length > 0 ? rawSubtitles.map((s: any) => ({
+          label: s.label || s.lang || s.language || 'unknown',
+          url: s.url, language: s.lang || s.language || 'unknown',
+        })) : undefined,
+      };
+    } catch (wasmErr) {
+      // WASM failed (likely CF Pages) — return hex for client to decrypt
+      console.warn('[Videasy] Server-side decrypt failed, deferring to client:',
+        wasmErr instanceof Error ? wasmErr.message : wasmErr);
+      return {
+        success: true,
+        sources: [],
+        hexData: data.hexData,
+        needsClientDecrypt: true,
+      };
     }
-
-    // 2. WASM stream-cipher decrypt (keyed by tmdbId)
-    await loadWasmServer();
-    const wasmDecrypted = wasmDecrypt(data.hexData, parseFloat(tmdbId));
-
-    // 3. AES-256-CBC decrypt (key="" always)
-    const json = await aesDecrypt(wasmDecrypted, '');
-
-    // 4. Parse → sources + subtitles
-    const parsed = JSON.parse(json);
-    const rawSources = parsed.sources || [];
-    const rawSubtitles = parsed.subtitles || [];
-
-    const sources: StreamSource[] = rawSources
-      .filter((s: any) => s.url)
-      .map((s: any) => ({
-        quality: s.quality || 'auto',
-        title: s.title || `Videasy ${s.quality || 'auto'}`,
-        url: s.url,
-        type: (s.type || 'hls') as 'hls' | 'mp4',
-        referer: s.referer || 'https://player.videasy.net/',
-        requiresSegmentProxy: true,
-        status: 'working' as const,
-        language: s.language || s.lang || 'en',
-        server: s.server || 'videasy',
-      }));
-
-    return {
-      success: sources.length > 0,
-      sources,
-      subtitles: rawSubtitles.length > 0 ? rawSubtitles.map((s: any) => ({
-        label: s.label || s.lang || s.language || 'unknown',
-        url: s.url,
-        language: s.lang || s.language || 'unknown',
-      })) : undefined,
-    };
   } catch (err) {
     console.error(`[Videasy] Error:`, err instanceof Error ? err.message : err);
-    return {
-      success: false,
-      sources: [],
-      error: err instanceof Error ? err.message : 'Videasy extraction failed',
-    };
+    return { success: false, sources: [], error: err instanceof Error ? err.message : 'Videasy extraction failed' };
   }
 }
 
