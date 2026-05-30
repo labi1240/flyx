@@ -13,9 +13,9 @@ import { solveRecaptchaV3 } from './lib/recaptcha.js';
 // ── Constants ────────────────────────────────────────────────────────────
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
-const DLHD_DOMAIN = 'newkso.ru';
+const DLHD_ORIGIN_IP = '213.21.239.30';
+const DLHD_VHOST = 'chevy.newkso.ru'; // Host header for origin IP
 const DLHD_PLAYER = 'www.newkso.ru';
-const LOOKUP_DOMAINS = ['newkso.ru', 'enviromentalanimal.horse', 'vovlacosa.sbs', 'soyspace.cyou'];
 const RECAPTCHA_KEY = '6LfJv4AsAAAAALTLEHKaQ7LN_VYfFqhLPrB2Tvgj';
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -92,33 +92,44 @@ async function handleProxy(msg) {
   };
 }
 
-// ── DLHD Handler ─────────────────────────────────────────────────────────
+// ── DLHD Handler (uses origin IP — bypasses Cloudflare WAF) ──────────
 
 async function handleDLHD(pu) {
   var channelId = pu.searchParams.get('channel') || pu.pathname.split('/').pop() || '';
-  if (channelId.startsWith('play/')) channelId = channelId.replace('play/', '');
-  var channelKey = channelId.startsWith('premium') ? channelId : 'premium' + channelId;
+  if (channelId.indexOf('play/') === 0) channelId = channelId.replace('play/', '');
+  var channelKey = channelId.indexOf('premium') === 0 ? channelId : 'premium' + channelId;
 
-  // Server lookup
+  console.log('[Flyx Bypass SW] DLHD channel:', channelKey);
+
+  // Server lookup via origin IP (HTTP, bypasses Cloudflare WAF)
   var serverKey = await getServerKey(channelKey);
-  var m3u8Url = 'https://chevy.' + DLHD_DOMAIN + '/proxy/' + serverKey + '/' + channelKey + '/mono.css';
+  console.log('[Flyx Bypass SW] DLHD server:', serverKey);
 
-  // Add DNR rule for this domain
-  addDlhdRule('chevy.' + DLHD_DOMAIN);
+  // Fetch M3U8 from origin IP
+  var m3u8Url = 'http://' + DLHD_ORIGIN_IP + '/proxy/' + serverKey + '/' + channelKey + '/mono.css';
+  console.log('[Flyx Bypass SW] DLHD M3U8 URL:', m3u8Url);
 
-  // Fetch M3U8 directly from CDN
-  var resp = await fetchCdn(m3u8Url, 'GET', {
-    Origin: 'https://' + DLHD_PLAYER,
-    Referer: 'https://' + DLHD_PLAYER + '/'
-  });
-
+  var resp = await fetchOrigin(m3u8Url);
   if (!resp.ok) {
     stats.error++;
-    return { err: 'DLHD M3U8 fetch failed: HTTP ' + resp.status + ' from ' + m3u8Url };
+    console.error('[Flyx Bypass SW] DLHD M3U8 failed:', resp.status);
+    return { err: 'DLHD M3U8 fetch failed: HTTP ' + resp.status };
   }
 
   var text = await resp.text();
-  var rewritten = rewriteDLHDM3U8(text, resp.url || m3u8Url);
+  console.log('[Flyx Bypass SW] DLHD M3U8 received, length:', text.length, 'first 200:', text.substring(0, 200));
+
+  if (text.indexOf('#EXT') === -1) {
+    console.error('[Flyx Bypass SW] DLHD response is not M3U8:', text.substring(0, 500));
+    return { err: 'DLHD response is not an M3U8 playlist' };
+  }
+
+  // Rewrite M3U8: resolve relative URLs against HTTPS chevy.newkso.ru
+  // (segments use HTTPS so no mixed content blocking in the page)
+  var httpsBase = 'https://chevy.newkso.ru/proxy/' + serverKey + '/' + channelKey + '/';
+  var rewritten = rewriteDLHDM3U8(text, httpsBase);
+  console.log('[Flyx Bypass SW] DLHD M3U8 rewritten, first 300:', rewritten.substring(0, 300));
+
   stats.m3u8++;
   stats.success++;
   return {
@@ -128,56 +139,64 @@ async function handleDLHD(pu) {
   };
 }
 
-// ── DLHD Server Lookup ───────────────────────────────────────────────────
+// ── DLHD Server Lookup (origin IP) ────────────────────────────────────
 
 async function getServerKey(channelKey) {
   var now = Date.now();
   if (serverKeyCache.key && serverKeyCache.channel === channelKey && (now - serverKeyCache.ts) < 60000) {
     return serverKeyCache.key;
   }
-  for (var i = 0; i < LOOKUP_DOMAINS.length; i++) {
-    try {
-      var url = 'https://chevy.' + LOOKUP_DOMAINS[i] + '/server_lookup?channel_id=' + channelKey;
-      var resp = await fetchCdn(url, 'GET', { Origin: 'https://' + DLHD_PLAYER, Referer: 'https://' + DLHD_PLAYER + '/' });
-      if (resp.ok) {
-        var t = await resp.text();
-        if (t.startsWith('{')) {
+  // Try origin IP first (bypasses Cloudflare WAF)
+  var lu = 'http://' + DLHD_ORIGIN_IP + '/server_lookup?channel_id=' + channelKey;
+  console.log('[Flyx Bypass SW] Server lookup:', lu);
+  try {
+    var resp = await fetchOrigin(lu);
+    if (resp.ok) {
+      var t = await resp.text();
+      console.log('[Flyx Bypass SW] Lookup response:', t.substring(0, 200));
+      if (t.charAt(0) === '{') {
+        try {
           var d = JSON.parse(t);
-          if (d.server_key) {
-            serverKeyCache = { key: d.server_key, channel: channelKey, ts: now };
-            return d.server_key;
-          }
-        }
+          if (d.server_key) { serverKeyCache = { key: d.server_key, channel: channelKey, ts: now }; return d.server_key; }
+        } catch(e) {}
       }
-    } catch(e) {}
+      if (t.trim().length < 20 && t.trim().length > 1 && t.indexOf('<') === -1) {
+        serverKeyCache = { key: t.trim(), channel: channelKey, ts: now };
+        return t.trim();
+      }
+    } else {
+      console.warn('[Flyx Bypass SW] Lookup status:', resp.status);
+    }
+  } catch(e) {
+    console.warn('[Flyx Bypass SW] Lookup error:', e.message);
   }
-  return 'ddy6'; // fallback
+  return 'ddy6';
 }
 
-// ── CDN Fetch ────────────────────────────────────────────────────────────
+// ── Origin IP Fetch (HTTP with Host header for nginx vhost routing) ───
 
-async function fetchCdn(url, method, extraHeaders, bodyB64) {
-  var h = new Headers();
-  h.set('User-Agent', UA);
-  h.set('Accept', '*/*');
+function originHeaders() {
+  return {
+    'User-Agent': UA,
+    'Accept': '*/*',
+    'Host': DLHD_VHOST,
+    'Origin': 'https://' + DLHD_PLAYER,
+    'Referer': 'https://' + DLHD_PLAYER + '/'
+  };
+}
 
-  if (extraHeaders) {
-    Object.keys(extraHeaders).forEach(function(k) {
-      if (extraHeaders[k]) h.set(k, extraHeaders[k]);
-    });
+async function fetchOrigin(url) {
+  var ctrl = new AbortController();
+  var t = setTimeout(function() { ctrl.abort(); }, 15000);
+  try {
+    var resp = await fetch(url, { headers: originHeaders(), signal: ctrl.signal });
+    clearTimeout(t);
+    return resp;
+  } catch(e) {
+    clearTimeout(t);
+    throw e;
   }
-
-  // DLHD domains always need Origin + Referer
-  if (url.includes('newkso.ru') || url.includes('keylocking.ru')) {
-    h.set('Origin', 'https://' + DLHD_PLAYER);
-    h.set('Referer', 'https://' + DLHD_PLAYER + '/');
-  }
-
-  // MegaUp CDN: STRIP Origin/Referer
-  if (isMegaUp(url)) {
-    h.delete('Origin');
-    h.delete('Referer');
-  }
+}
 
   var init = { method: method || 'GET', headers: h, redirect: 'follow' };
   if (bodyB64 && method && method !== 'GET' && method !== 'HEAD') {
