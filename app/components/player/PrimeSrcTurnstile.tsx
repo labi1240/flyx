@@ -67,7 +67,7 @@ export default function PrimeSrcTurnstile({ onToken, onError, autoSolve = true }
   }, []);
 
   const renderWidget = useCallback(() => {
-    if (!containerRef.current) return;
+    if (!mountedRef.current || !containerRef.current) return;
     if (widgetIdRef.current !== null) return; // Already rendered
 
     const turnstile = (window as any).turnstile;
@@ -86,7 +86,14 @@ export default function PrimeSrcTurnstile({ onToken, onError, autoSolve = true }
           onToken(token);
         },
         'error-callback': (err: any) => {
-          if (!mountedRef.current) return;
+          if (!mountedRef.current || widgetIdRef.current === null) return;
+          // 110200 = domain not authorized for this sitekey (expected — tv.vynx.cc
+          // isn't in primesrc.me's Turnstile allowlist). Suppress to avoid noise.
+          const code = err?.toString?.() || '';
+          if (code.includes('110200')) {
+            console.warn('[PrimeSrc Turnstile] Domain not authorized for sitekey (expected)');
+            return;
+          }
           console.error('[PrimeSrc Turnstile] Error:', err);
           onError?.(typeof err === 'string' ? err : 'Turnstile challenge failed');
         },

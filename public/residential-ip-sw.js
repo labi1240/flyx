@@ -124,9 +124,14 @@ var CDN_PROVIDERS = [
       'p.10020.workers.dev',
       'afc7d47f',
       'flixer.su',
+      'tylerfisher55',
     ],
     referer: 'https://flixer.su/',
-    // NO origin — Flixer CDN blocks Origin header with 403
+    // NO origin — Flixer CDN blocks Origin header with 403.
+    // NOTE: the browser's fetch() always adds Origin in cors mode,
+    // so the SW can't actually strip it. The CDN will 403 the SW's
+    // fetch too. The real fix routes through the CF Worker's
+    // /flixer/stream (server-side fetch, no Origin header).
   },
 
   // ── 2. MegaUp CDN (AnimeKai) ─────────────────────────────────

@@ -1159,7 +1159,7 @@ async function extractAllServers(
       url: src.url,
       type: 'hls',
       referer: 'https://hexa.su/',
-      requiresSegmentProxy: false,
+      requiresSegmentProxy: true, // Route through /flixer/stream — CF Worker strips Origin header
       status: 'working',
       language: 'en',
       server: src.server,
@@ -1762,7 +1762,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
                 url: retryResult.url,
                 type: 'hls',
                 referer: 'https://hexa.su/',
-                requiresSegmentProxy: false,
+                requiresSegmentProxy: true, // Route through /flixer/stream — CF Worker strips Origin header
                 status: 'working',
                 language: 'en',
                 server,
@@ -1792,7 +1792,7 @@ export async function handleFlixerRequest(request: Request, env: Env): Promise<R
           url: result.url,
           type: 'hls',
           referer: 'https://hexa.su/',
-          requiresSegmentProxy: false,
+          requiresSegmentProxy: true, // Route through /flixer/stream — CF Worker strips Origin header
           status: 'working',
           language: 'en',
           server,

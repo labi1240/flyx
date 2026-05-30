@@ -129,6 +129,27 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     } catch (e) {}
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Flixer CDN URL detection (by pattern, not provider name).
+  // Flixer CDN workers (*.tylerfisher55.workers.dev, p.*.workers.dev)
+  // use /s/afc7d47f/ and /p/afc7d47f/ path prefixes. These URLs may
+  // come from ANY provider (Flixer, Videasy /mb-flix, etc.) and MUST
+  // route through /flixer/stream — the CF Worker's server-side fetch
+  // strips the Origin header that the CDN blocks with 403.
+  // ═══════════════════════════════════════════════════════════════
+  const isFlixerCdn = sourceUrl.includes('afc7d47f') ||
+    sourceUrl.includes('frostcomet') ||
+    sourceUrl.includes('thunderleaf') ||
+    sourceUrl.includes('skyember') ||
+    sourceUrl.includes('nightbreeze') ||
+    sourceUrl.includes('tylerfisher55.workers.dev');
+
+  if (isFlixerCdn && !sourceUrl.includes('/flixer/stream')) {
+    const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+    console.log('[applyStreamProxy] Flixer CDN detected, routing via /flixer/stream:', sourceUrl.substring(0, 80));
+    return `${baseUrl}/flixer/stream?url=${encodeURIComponent(sourceUrl)}`;
+  }
+
   // Already proxied — don't double-wrap
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
@@ -139,11 +160,14 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     return sourceUrl;
   }
 
-  // Flixer CDN blocks ALL proxy IPs (CF Worker datacenter + RPI residential).
-  // Only the browser's own residential IP works. The Service Worker
-  // (residential-ip-sw.js) fetches CDN content directly from the browser
-  // browser-to-CDN requests. Return Flixer URLs raw — don't proxy them.
-  if (providerName === 'flixer') return sourceUrl;
+  // Flixer CDN blocks requests with Origin header (SW can't strip it).
+  // Route through /flixer/stream — CF Worker's server-side fetch strips
+  // Origin and adds CORS headers. If the CDN blocks CF Worker IPs,
+  // /flixer/stream falls back to RPI residential proxy.
+  if (providerName === 'flixer') {
+    const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+    return `${baseUrl}/flixer/stream?url=${encodeURIComponent(sourceUrl)}`;
+  }
 
   // AnimeKai: MegaUp CDN blocks datacenter IPs. Return raw CDN URL so the
   // Service Worker intercepts it directly from the browser's residential IP.
@@ -170,6 +194,7 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   }
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
 
+  // Safety net: unproxied workers.dev / known CDN URLs → route through CF Worker
   const needsProxy = requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
@@ -177,7 +202,11 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
     sourceUrl.includes('skyember') ||
     sourceUrl.includes('nightbreeze') ||
     sourceUrl.includes('wind.');
-  if (!needsProxy) return sourceUrl;
+  if (needsProxy) {
+    const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+    console.log('[applyStreamProxy] Wrapping unproxied CDN URL:', sourceUrl.substring(0, 80));
+    return `${baseUrl}/stream?url=${encodeURIComponent(sourceUrl)}&source=unknown`;
+  }
 
   return sourceUrl;
 }

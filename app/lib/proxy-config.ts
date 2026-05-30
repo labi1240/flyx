@@ -426,7 +426,7 @@ export function getFlixerDecryptUrl(): string {
  * Check if a URL is from Flixer/Hexa CDN
  */
 export function isFlixerCdnUrl(url: string): boolean {
-  return url.includes('flixer') || url.includes('plsdontscrapemelove') || url.includes('hexa.su') || url.includes('themoviedb.hexa') || url.includes('theemoviedb.hexa') || url.includes('p.10020.workers.dev') || url.includes('afc7d47f');
+  return url.includes('flixer') || url.includes('plsdontscrapemelove') || url.includes('hexa.su') || url.includes('themoviedb.hexa') || url.includes('theemoviedb.hexa') || url.includes('p.10020.workers.dev') || url.includes('afc7d47f') || url.includes('tylerfisher55.workers.dev');
 }
 
 /**
