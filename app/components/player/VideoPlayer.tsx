@@ -1077,7 +1077,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         }
       }
 
-      console.log(`[VideoPlayer] Sequential fetch: [${priorityOrder.join(' → ')}]`);
+      console.log(`[VideoPlayer] Sequential fetch: [${priorityOrder.join(' → ')}]`, 'isAnime:', isAnime, 'isMalDirect:', isMalDirect, 'disabled:', [...disabledProviders]);
       setProviderTabOrder([...priorityOrder]);
 
       const contentKey = `${tmdbId}-${mediaType}${season ? `-s${season}` : ''}${episode ? `-e${episode}` : ''}`;
@@ -1125,11 +1125,17 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         // Videasy: browser-direct extraction via CF Worker
         if (providerName === 'videasy') {
           console.log(`[VideoPlayer] Trying videasy (browser-direct)...`);
-          const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
-          const sources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
-          if (sources.length === 0) throw new Error('videasy: no sources');
-          console.log(`[VideoPlayer] ✓ videasy: ${sources.length} source(s)`);
-          return { providerName: 'videasy', data: { success: true, provider: 'videasy' }, sources };
+          try {
+            const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
+            console.log('[VideoPlayer] videasy module loaded, calling extractVideasyClient...');
+            const sources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+            if (sources.length === 0) throw new Error('videasy: no sources');
+            console.log(`[VideoPlayer] ✓ videasy: ${sources.length} source(s)`);
+            return { providerName: 'videasy', data: { success: true, provider: 'videasy' }, sources };
+          } catch (e) {
+            console.error('[VideoPlayer] ✗ videasy browser-direct FAILED:', e instanceof Error ? e.message : e, e instanceof Error ? e.stack : '');
+            throw e;
+          }
         }
 
         // BingeBox: server-side extraction via Next.js API (bypasses CF Worker IP block)
