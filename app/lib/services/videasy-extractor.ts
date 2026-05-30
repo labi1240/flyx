@@ -44,11 +44,15 @@ async function loadWasmServer(): Promise<void> {
     }
   }
 
-  // CF Pages Worker / production: fetch from absolute CDN URLs
+  // CF Pages Worker / production: fetch from media-proxy Worker.
+  // tv.vynx.cc (same zone) fetches from within a Pages Function may fail;
+  // the media-proxy Worker is on a different zone (workers.dev) and proxies
+  // the WASM file from tv.vynx.cc.
+  const baseUrl = getCfWorkerBaseUrl();
   await getWasm({
     wasmUrls: [
-      'https://tv.vynx.cc/videasy.bin',
-      'https://tv.vynx.cc/videasy-module-patched.wasm',
+      `${baseUrl}/videasy.bin`,
+      `${baseUrl}/videasy-module-patched.wasm`,
     ],
   });
 }

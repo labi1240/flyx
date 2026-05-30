@@ -128,6 +128,33 @@ export async function handleVideasyRequest(
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // Serve patched WASM module — needed by CF Pages Functions which can't
+  // fetch from their own zone (tv.vynx.cc). The media-proxy worker is on a
+  // different zone (workers.dev), so this cross-zone fetch works.
+  if (path === '/videasy-module-patched.wasm' || path === '/videasy.bin') {
+    try {
+      const wasmResp = await fetch('https://tv.vynx.cc/videasy.bin', {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!wasmResp.ok) throw new Error(`Upstream returned ${wasmResp.status}`);
+      const wasmBytes = await wasmResp.arrayBuffer();
+      return new Response(wasmBytes, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/wasm',
+          'Cache-Control': 'public, max-age=86400',
+          ...CORS_HEADERS,
+        },
+      });
+    } catch (err) {
+      logger.error('Videasy WASM serve error', err as Error);
+      return new Response(JSON.stringify({ error: 'WASM not available' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      });
+    }
+  }
+
   // Health check
   if (path === '/videasy/health') {
     return new Response(JSON.stringify({ status: 'ok', endpoints: API_ENDPOINTS.length }), {
