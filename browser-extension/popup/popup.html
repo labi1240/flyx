@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flyx Bypass</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:320px;min-height:400px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#e4e4e7;background:#0a0a0f}
+.container{padding:14px}
+h1{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+h1 svg{color:#facc15}
+h2{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#71717a;margin:12px 0 6px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px}
+.stat{text-align:center;padding:8px 4px;background:#18181b;border-radius:6px;border:1px solid #27272a}
+.stat-val{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat-val.ok{color:#22c55e}
+.stat-val.err{color:#ef4444}
+.stat-lbl{font-size:9px;color:#52525b;text-transform:uppercase;margin-top:1px}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#18181b;border-radius:5px;border:1px solid #27272a;margin-bottom:3px}
+.toggle-row.off{opacity:.5}
+.toggle-name{font-size:11px;font-weight:500}
+.toggle{position:relative;width:34px;height:18px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#3f3f46;border-radius:9px;transition:.15s}
+.toggle-slider::before{content:'';position:absolute;height:14px;width:14px;left:2px;bottom:2px;background:#f4f4f5;border-radius:50%;transition:.15s}
+.toggle input:checked+.toggle-slider{background:#facc15}
+.toggle input:checked+.toggle-slider::before{transform:translateX(16px)}
+input[type=text]{width:100%;padding:6px 8px;background:#18181b;border:1px solid #27272a;border-radius:5px;color:#e4e4e7;font-size:11px;outline:none;margin-bottom:6px}
+input[type=text]:focus{border-color:#facc15}
+button{padding:6px 12px;border:none;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;transition:.15s}
+.btn-yellow{background:#facc15;color:#0a0a0f}
+.btn-yellow:hover:not(:disabled){background:#fbbf24}
+.btn-yellow:disabled{opacity:.5}
+.btn-gray{background:#27272a;color:#a1a1aa;width:100%}
+.btn-gray:hover{background:#3f3f46}
+.whitelist{margin-top:8px}
+#wlStatus{font-size:10px;margin-top:4px;min-height:16px}
+#wlStatus .ok{color:#22c55e}
+#wlStatus .err{color:#ef4444}
+#wlStatus .pending{color:#facc15}
+.footer{margin-top:12px;padding-top:10px;border-top:1px solid#18181b;text-align:center;font-size:9px;color:#3f3f46}
+</style>
+</head>
+<body>
+<div class="container">
+<h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h6l-1 8 10-12h-6l1-8z" fill="currentColor"/></svg>Flyx Bypass v2</h1>
+<div class="stats">
+<div class="stat"><div class="stat-val" id="sInt">0</div><div class="stat-lbl">Intercepted</div></div>
+<div class="stat"><div class="stat-val ok" id="sOk">0</div><div class="stat-lbl">Success</div></div>
+<div class="stat"><div class="stat-val err" id="sErr">0</div><div class="stat-lbl">Errors</div></div>
+<div class="stat"><div class="stat-val" id="sM3">0</div><div class="stat-lbl">M3U8</div></div>
+</div>
+<h2>Providers</h2>
+<div id="providers"></div>
+<h2>DLHD reCAPTCHA</h2>
+<div class="whitelist">
+<input type="text" id="wlChan" placeholder="Channel ID (e.g. 51)">
+<button class="btn-yellow" id="wlBtn">Whitelist IP</button>
+<div id="wlStatus"></div>
+</div>
+<button class="btn-gray" id="resetBtn" style="margin-top:10px">Reset Stats</button>
+<div class="footer">Fetches directly from your residential IP</div>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

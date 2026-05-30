@@ -1,0 +1,203 @@
+[
+  {
+    "id": 1,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Origin", "operation": "set", "value": "https://www.newkso.ru"},
+        {"header": "Referer", "operation": "set", "value": "https://www.newkso.ru/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://chevy.newkso.ru/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Origin", "operation": "set", "value": "https://www.newkso.ru"},
+        {"header": "Referer", "operation": "set", "value": "https://www.newkso.ru/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://chevy.soyspace.cyou/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Origin", "operation": "set", "value": "https://www.newkso.ru"},
+        {"header": "Referer", "operation": "set", "value": "https://www.newkso.ru/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.newkso.ru/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Origin", "operation": "set", "value": "https://www.newkso.ru"},
+        {"header": "Referer", "operation": "set", "value": "https://www.newkso.ru/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://key.keylocking.ru/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://hexa.su/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://hexa.su/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://hexa.su/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.hexa.su/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://player.videasy.net/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://player.videasy.net/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://www.2embed.cc/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.2embed.cc/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://bingebox.to/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://bingebox.to/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://themoviebox.org/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://themoviebox.org/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 20,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Origin", "operation": "remove"},
+        {"header": "Referer", "operation": "remove"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.megaup.*/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 13,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://miruro.to/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://uwucdn.top/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://ufreetv.com/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.ufreetv.com/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 10,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {"header": "Referer", "operation": "set", "value": "https://globetv.app/"}
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.globetv.app/*",
+      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+    }
+  }
+]

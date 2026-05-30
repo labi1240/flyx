@@ -1,0 +1,106 @@
+{
+  "manifest_version": 3,
+  "name": "Flyx Bypass",
+  "version": "2.0.0",
+  "description": "Bypasses residential proxy for tv.vynx.cc by intercepting CF Worker M3U8 requests and fetching directly from CDNs using your browser's residential IP.",
+  "author": "Vynx-Velvet",
+  "homepage_url": "https://tv.vynx.cc",
+
+  "permissions": [
+    "storage",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+
+  "host_permissions": [
+    "https://*.vynx.cc/*",
+    "https://*.workers.dev/*",
+    "http://localhost:3000/*",
+    "http://localhost:3001/*",
+    "https://chevy.newkso.ru/*",
+    "https://chevy.soyspace.cyou/*",
+    "https://chevy.enviromentalanimal.horse/*",
+    "https://chevy.vovlacosa.sbs/*",
+    "https://*.newkso.ru/*",
+    "https://key.keylocking.ru/*",
+    "https://*.keylocking.ru/*",
+    "https://hexa.su/*",
+    "https://*.hexa.su/*",
+    "https://flixer.su/*",
+    "https://*.flixer.su/*",
+    "https://player.videasy.net/*",
+    "https://*.megaup.*/*",
+    "https://*.hub26link.*/*",
+    "https://*.app28base.*/*",
+    "https://*.net22lab.*/*",
+    "https://*.pro25zone.*/*",
+    "https://*.tech20hub.*/*",
+    "https://*.code29wave.*/*",
+    "https://*.4spromax.*/*",
+    "https://uwucdn.top/*",
+    "https://*.2embed.cc/*",
+    "https://thetvapp.to/*",
+    "https://bingebox.to/*",
+    "https://themoviebox.org/*",
+    "https://*.ntv.cx/*",
+    "https://*.globetv.app/*",
+    "https://*.ufreetv.com/*",
+    "https://*.poocloud.in/*",
+    "https://*.cdn-live.tv/*",
+    "https://www.google.com/recaptcha/*"
+  ],
+
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.vynx.cc/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://*.vynx.cc/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "static_rules",
+        "enabled": true,
+        "path": "rules/rules.json"
+      }
+    ]
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Flyx Bypass",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

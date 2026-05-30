@@ -15,7 +15,7 @@
  * Replaces and extends: public/flixer-cdn-sw.js (v4)
  */
 
-const SW_VERSION = 'v10';
+const SW_VERSION = 'v11';
 
 console.log('[ResiSW] Loading ' + SW_VERSION);
 
@@ -65,6 +65,22 @@ function isOwnHostname(hostname) {
 //
 
 var CDN_PROVIDERS = [
+  // ── 0. DLHD / daddylive CDN ──────────────────────────────────
+  {
+    label: 'DLHD',
+    patterns: [
+      'chevy.newkso.ru',
+      'chevy.soyspace.cyou',
+      'chevy.enviromentalanimal.horse',
+      'chevy.vovlacosa.sbs',
+      'newkso.ru',
+      'key.keylocking.ru',
+      'keylocking.ru',
+    ],
+    referer: 'https://www.newkso.ru/',
+    origin: 'https://www.newkso.ru',
+  },
+
   // ── 0a. HiAnime Extraction API (aniwatchtv.to) ──────────────
   {
     label: 'HiAnimeAPI',
