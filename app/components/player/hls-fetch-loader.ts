@@ -4,6 +4,12 @@
  * (Referer/Origin) that CDNs require. XHR bypasses the SW entirely.
  *
  * Implements the hls.js Loader interface for both playlist and fragment loads.
+ *
+ * Must respect context.responseType:
+ *   'text'        → playlist parsers call `response.data as string`
+ *   'arraybuffer' → fragment loader treats data as binary
+ *   'json'        → JSON responses
+ * Returning the wrong type breaks manifest parsing → no levels → no playback.
  */
 
 import type { Loader, LoaderContext, LoaderConfiguration, LoaderCallbacks, LoaderStats } from 'hls.js';
@@ -56,6 +62,9 @@ class FetchLoader implements Loader<LoaderContext> {
     const maxRetry = config.maxRetry ?? DEFAULT_RETRY;
     const timeout = config.timeout ?? DEFAULT_TIMEOUT;
 
+    const isArrayBuffer = context.responseType === 'arraybuffer';
+    const isJson = context.responseType === 'json';
+
     const doFetch = (retryCount: number) => {
       if (this.aborted) return;
 
@@ -66,9 +75,15 @@ class FetchLoader implements Loader<LoaderContext> {
         this.controller?.abort();
       }, timeout);
 
+      // Merge byte-range header for fragments that use it
+      const headers = new Headers((context.headers as Record<string, string> | undefined) || {});
+      if (context.rangeEnd) {
+        headers.set('Range', 'bytes=' + (context.rangeStart || 0) + '-' + String(context.rangeEnd - 1));
+      }
+
       fetch(context.url, {
         method: 'GET',
-        headers: context.headers as Record<string, string> | undefined,
+        headers,
         signal,
         credentials: 'same-origin',
       })
@@ -76,23 +91,35 @@ class FetchLoader implements Loader<LoaderContext> {
           if (this.aborted) return;
           if (this.timeoutId) { clearTimeout(this.timeoutId); this.timeoutId = null; }
           this.stats.loading.first = performance.now();
-          this.stats.loading.end = performance.now();
 
           if (!res.ok && res.status >= 400) {
             throw { code: res.status, text: res.statusText };
           }
 
-          const data = await res.arrayBuffer();
+          // Decode body according to context.responseType — hls.js's playlist
+          // parsers do `response.data as string`, fragment loader treats data
+          // as ArrayBuffer. Mismatched types break manifest parsing silently.
+          const data: string | ArrayBuffer | any = isArrayBuffer
+            ? await res.arrayBuffer()
+            : isJson
+              ? await res.json()
+              : await res.text();
+
           if (this.aborted) return;
-          this.stats.loaded = data.byteLength;
-          this.stats.total = data.byteLength;
+          this.stats.loading.end = performance.now();
+
+          const len = typeof data === 'string'
+            ? data.length
+            : (data instanceof ArrayBuffer ? data.byteLength : 0);
+          this.stats.loaded = len;
+          this.stats.total = len;
 
           if (callbacks.onProgress) {
             callbacks.onProgress(this.stats, context, data, null as any);
           }
 
           callbacks.onSuccess(
-            { url: res.url, data: data },
+            { url: res.url, data },
             this.stats,
             context,
             null as any,
@@ -103,7 +130,7 @@ class FetchLoader implements Loader<LoaderContext> {
           if (this.timeoutId) { clearTimeout(this.timeoutId); this.timeoutId = null; }
 
           const isTimeout = err?.name === 'AbortError' || signal.aborted;
-          const code = err?.code ?? (isTimeout ? 0 : 0);
+          const code = err?.code ?? 0;
           const text = err?.text ?? err?.message ?? (isTimeout ? 'Request timed out' : 'Fetch failed');
 
           if (retryCount < maxRetry) {

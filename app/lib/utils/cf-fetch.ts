@@ -58,15 +58,23 @@ function isCloudflareWorker(): boolean {
  * On CF Workers, secrets like RPI_PROXY_URL are NOT in process.env.
  * They're only accessible via getCloudflareContext() from @opennextjs/cloudflare.
  */
+// Strip UTF-8 BOM (﻿) and surrounding whitespace from secret values.
+// Some secrets were set from BOM-prefixed files via `wrangler secret put`,
+// which makes them fail URL parsing and emits non-ASCII header warnings.
+function cleanSecret(v: string | undefined): string | undefined {
+  if (!v) return v;
+  return v.replace(/^﻿/, '').trim();
+}
+
 function getRpiConfig(): { url: string | undefined; key: string | undefined } {
   // Return cached config if still fresh
   if (_rpiConfigCached && (Date.now() - _rpiConfigCacheTime) < RPI_CONFIG_CACHE_TTL) {
     return _rpiConfigCached;
   }
-  
+
   // Try process.env first (works in Node.js dev and for NEXT_PUBLIC_ vars baked at build time)
-  let url = process.env.RPI_PROXY_URL || process.env.NEXT_PUBLIC_RPI_PROXY_URL;
-  let key = process.env.RPI_PROXY_KEY || process.env.NEXT_PUBLIC_RPI_PROXY_KEY;
+  let url = cleanSecret(process.env.RPI_PROXY_URL || process.env.NEXT_PUBLIC_RPI_PROXY_URL);
+  let key = cleanSecret(process.env.RPI_PROXY_KEY || process.env.NEXT_PUBLIC_RPI_PROXY_KEY);
   
   // If we already have both from process.env, cache and return
   if (url && key) {
@@ -85,8 +93,8 @@ function getRpiConfig(): { url: string | undefined; key: string | undefined } {
       // Use synchronous version — works in request context
       const ctx = getCloudflareContext({ async: false });
       if (ctx?.env) {
-        url = url || ctx.env.RPI_PROXY_URL;
-        key = key || ctx.env.RPI_PROXY_KEY;
+        url = url || cleanSecret(ctx.env.RPI_PROXY_URL);
+        key = key || cleanSecret(ctx.env.RPI_PROXY_KEY);
         if (url && key) {
           console.log('[cfFetch] Got RPI config from getCloudflareContext');
           _rpiConfigCached = { url, key };
@@ -97,22 +105,22 @@ function getRpiConfig(): { url: string | undefined; key: string | undefined } {
     } catch (e) {
       console.debug('[cfFetch] getCloudflareContext sync failed:', e instanceof Error ? e.message : e);
     }
-    
+
     // Method 2: Check globalThis.__env__ (some OpenNext versions expose env here)
     try {
       const gEnv = (globalThis as any).__env__;
       if (gEnv) {
-        url = url || gEnv.RPI_PROXY_URL;
-        key = key || gEnv.RPI_PROXY_KEY;
+        url = url || cleanSecret(gEnv.RPI_PROXY_URL);
+        key = key || cleanSecret(gEnv.RPI_PROXY_KEY);
       }
     } catch { /* ignore */ }
-    
+
     // Method 3: Check globalThis.process.env (nodejs_compat shim)
     try {
       const pEnv = (globalThis as any).process?.env;
       if (pEnv) {
-        url = url || pEnv.RPI_PROXY_URL;
-        key = key || pEnv.RPI_PROXY_KEY;
+        url = url || cleanSecret(pEnv.RPI_PROXY_URL);
+        key = key || cleanSecret(pEnv.RPI_PROXY_KEY);
       }
     } catch { /* ignore */ }
     
@@ -127,19 +135,62 @@ function getRpiConfig(): { url: string | undefined; key: string | undefined } {
 }
 
 /**
+ * Validate an RPI URL — must be parseable and have a real host (not a CF zone
+ * error page). Catches BOM-prefixed secrets and "https://" with no host.
+ */
+function isValidRpiUrl(s: string | undefined): s is string {
+  if (!s) return false;
+  try {
+    const u = new URL(s);
+    return !!u.host && (u.protocol === 'http:' || u.protocol === 'https:');
+  } catch {
+    return false;
+  }
+}
+
+// Stop logging the same "RPI is dead" warning on every request.
+let _rpiDeadLogged = false;
+
+// Cache the MEDIA_PROXY service binding lookup result.
+type FetcherLike = { fetch: (input: any, init?: any) => Promise<Response> };
+let _mediaProxyBindingCached: FetcherLike | null | undefined;
+
+function getMediaProxyBinding(): FetcherLike | null {
+  if (_mediaProxyBindingCached !== undefined) return _mediaProxyBindingCached;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getCloudflareContext } = require('@opennextjs/cloudflare');
+    const ctx = getCloudflareContext({ async: false });
+    const binding = ctx?.env?.MEDIA_PROXY;
+    if (binding && typeof binding.fetch === 'function') {
+      _mediaProxyBindingCached = binding as FetcherLike;
+      return _mediaProxyBindingCached;
+    }
+  } catch {
+    // getCloudflareContext only available on CF Workers
+  }
+  _mediaProxyBindingCached = null;
+  return null;
+}
+
+/**
  * Fetch that automatically routes through RPI proxy when on Cloudflare.
- * 
+ *
  * Decision logic:
- * 1. forceProxy=true → always proxy through RPI
- * 2. Target is a CF Worker URL (*.workers.dev) AND we're on CF Workers → proxy
- *    CF Workers on the same account cannot directly fetch each other (404/hang).
- * 3. isCloudflareWorker() AND target is external → proxy (datacenter IP blocking)
- * 4. Otherwise → direct fetch
- * 
- * Proxy strategy (when proxying):
- *   1. Try /fetch-rust first — Chrome-like TLS fingerprint, bypasses bot detection
- *   2. Fall back to /proxy — standard Node.js https (if rust-fetch fails or is unavailable)
- *   3. Last resort: direct fetch
+ *  - forceProxy=true → proxy through RPI (caller knows it's needed)
+ *  - workers.dev target → direct fetch. Worker→worker calls on our own
+ *    infrastructure don't need IP rotation, and the RPI subdomain is
+ *    currently NXDOMAIN — routing through it just breaks the call.
+ *  - On CF Worker + RPI valid → try RPI for external URLs (datacenter IP blocking)
+ *  - Otherwise → direct fetch
+ *
+ * Proxy strategy when proxying:
+ *   1. /fetch-rust — Chrome TLS fingerprint, bypasses bot detection
+ *   2. /proxy — standard Node.js https
+ *   3. direct fetch — last resort
+ * Any non-2xx response from RPI now falls through to the next strategy
+ * instead of being returned as-is (RPI returning a CF zone error is not a
+ * real upstream response).
  */
 export async function cfFetch(
   url: string,
@@ -147,47 +198,60 @@ export async function cfFetch(
   forceProxy: boolean = false
 ): Promise<Response> {
   const isCfWorker = isCloudflareWorker();
-  
+
   const { url: RPI_PROXY_URL, key: RPI_PROXY_KEY } = getRpiConfig();
-  const rpiConfigured = !!(RPI_PROXY_URL && RPI_PROXY_KEY);
-  
+  const rpiUsable = isValidRpiUrl(RPI_PROXY_URL) && !!RPI_PROXY_KEY;
+
   const isCfWorkerUrl = url.includes('.workers.dev');
-  
-  // On CF Workers: proxy everything (datacenter IP blocking + same-account fetch issue)
-  // For CF Worker URLs in production: always proxy (same-account can't fetch each other)
-  const useProxy = forceProxy || 
-    (isCfWorker && rpiConfigured) ||
-    (isCfWorkerUrl && isCfWorker);
-  
-  if (useProxy && RPI_PROXY_URL && RPI_PROXY_KEY) {
+  const isMediaProxyUrl = url.includes('media-proxy.vynx-3b3.workers.dev');
+
+  // Our own media-proxy worker: route via Service Binding when available.
+  // env.MEDIA_PROXY.fetch() is a private RPC channel — subrequests inside
+  // media-proxy (e.g. 27 parallel hexa.su fetches in /flixer/extract-all) do
+  // NOT cascade against this worker's subrequest budget, so we don't hit
+  // CF error 1042 when called from the Next.js worker.
+  if (isMediaProxyUrl && !forceProxy) {
+    const binding = getMediaProxyBinding();
+    if (binding) {
+      try {
+        return await binding.fetch(url, options as any);
+      } catch (err) {
+        console.warn('[cfFetch] MEDIA_PROXY binding fetch failed, falling back to HTTP:', err instanceof Error ? err.message : err);
+      }
+    }
+    // No binding (or binding failed) → direct HTTP. Worker→worker via plain
+    // fetch still works for endpoints that don't fan out internally.
+    return fetch(url, options);
+  }
+
+  // Other workers.dev URLs (sync, dlhd, cdn-live, etc.): direct fetch.
+  if (isCfWorkerUrl && !forceProxy) {
+    return fetch(url, options);
+  }
+
+  const useProxy = forceProxy || (isCfWorker && rpiUsable);
+
+  if (useProxy && rpiUsable) {
     const headers = new Headers(options.headers);
-    headers.set('X-API-Key', RPI_PROXY_KEY);
+    headers.set('X-API-Key', RPI_PROXY_KEY!);
 
     // ── Strategy 1: /fetch-rust (Chrome TLS fingerprint) ──
-    // Prefer rust-fetch for external URLs — it mimics Chrome's exact TLS
-    // handshake which bypasses Cloudflare bot detection that blocks Node.js https.
-    // Skip for CF Worker URLs — those just need residential IP, not TLS mimicry.
-    if (!isCfWorkerUrl) {
-      try {
-        const rustUrl = `${RPI_PROXY_URL}/fetch-rust?url=${encodeURIComponent(url)}`;
-        const rustResponse = await fetch(rustUrl, {
-          method: 'GET',
-          headers,
-          signal: options.signal || AbortSignal.timeout(20_000),
-        });
+    try {
+      const rustUrl = `${RPI_PROXY_URL}/fetch-rust?url=${encodeURIComponent(url)}`;
+      const rustResponse = await fetch(rustUrl, {
+        method: 'GET',
+        headers,
+        signal: options.signal || AbortSignal.timeout(20_000),
+      });
 
-        if (rustResponse.ok || (rustResponse.status >= 200 && rustResponse.status < 500)) {
-          // Any non-server-error means rust-fetch handled it (even 4xx from upstream)
-          console.log(`[cfFetch] rust-fetch OK (${rustResponse.status}) for: ${url.substring(0, 60)}`);
-          return rustResponse;
-        }
-
-        // 502/503/504 = rust-fetch binary issue or not installed — fall through to /proxy
-        console.warn(`[cfFetch] rust-fetch ${rustResponse.status} for: ${url.substring(0, 60)}, falling back to /proxy`);
-      } catch (rustError) {
-        console.warn(`[cfFetch] rust-fetch error for ${url.substring(0, 60)}:`, rustError instanceof Error ? rustError.message : rustError);
-        // Fall through to /proxy
+      // Only accept real upstream responses. 5xx from RPI itself = fall through.
+      if (rustResponse.status < 500) {
+        console.log(`[cfFetch] rust-fetch OK (${rustResponse.status}) for: ${url.substring(0, 60)}`);
+        return rustResponse;
       }
+      console.warn(`[cfFetch] rust-fetch ${rustResponse.status} for: ${url.substring(0, 60)}, falling back to /proxy`);
+    } catch (rustError) {
+      console.warn(`[cfFetch] rust-fetch error for ${url.substring(0, 60)}:`, rustError instanceof Error ? rustError.message : rustError);
     }
 
     // ── Strategy 2: /proxy (standard Node.js https) ──
@@ -199,27 +263,30 @@ export async function cfFetch(
         signal: options.signal,
         body: options.body,
       });
-      
-      if (response.status === 429) {
-        console.warn(`[cfFetch] RPI /proxy rate limited (429) for: ${url.substring(0, 60)}...`);
+
+      // RPI returning 4xx/5xx is NOT a real upstream response — fall through.
+      // (Returning RPI's own error page leaks "error code: 1042" etc. to callers.)
+      if (response.status < 500) {
+        if (response.status === 429) {
+          console.warn(`[cfFetch] RPI /proxy rate limited (429) for: ${url.substring(0, 60)}...`);
+        }
+        return response;
       }
-      
-      return response;
+      console.warn(`[cfFetch] RPI /proxy ${response.status} for: ${url.substring(0, 60)}, falling back to direct`);
     } catch (error) {
       console.error(`[cfFetch] RPI /proxy error for ${url.substring(0, 60)}:`, error instanceof Error ? error.message : error);
-      // Fall through to direct fetch
     }
 
     // ── Strategy 3: direct fetch (last resort) ──
     console.warn(`[cfFetch] Both RPI routes failed, trying direct fetch: ${url.substring(0, 60)}`);
     return fetch(url, options);
   }
-  
-  // Not on CF Workers or RPI not configured — log a warning in production
-  if (isCfWorker && !rpiConfigured) {
-    console.warn(`[cfFetch] On CF Worker but RPI not configured! Direct fetch to: ${url.substring(0, 80)}`);
+
+  if (isCfWorker && !rpiUsable && !_rpiDeadLogged) {
+    console.warn(`[cfFetch] RPI not usable (URL invalid or missing). Direct-fetching external URLs from CF Worker. First target: ${url.substring(0, 80)}`);
+    _rpiDeadLogged = true;
   }
-  
+
   return fetch(url, options);
 }
 

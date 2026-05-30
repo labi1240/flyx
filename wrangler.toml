@@ -25,6 +25,15 @@ binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
 database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
 
+# Service Binding: media-proxy
+# Direct worker→worker calls via env.MEDIA_PROXY.fetch() bypass the public HTTP
+# edge, so media-proxy's internal subrequests (e.g. 27 parallel hexa.su fetches
+# in /flixer/extract-all) don't cascade against this worker's subrequest budget
+# and no longer trigger CF error 1042.
+[[services]]
+binding = "MEDIA_PROXY"
+service = "media-proxy"
+
 # =============================================================================
 # ENVIRONMENT VARIABLES
 # =============================================================================
@@ -113,6 +122,10 @@ binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
 database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
 
+[[env.production.services]]
+binding = "MEDIA_PROXY"
+service = "media-proxy"
+
 # =============================================================================
 # Preview environment (for PR deployments)
 # =============================================================================
@@ -155,3 +168,7 @@ database_id = "07bf7704-5198-4f57-80f3-8e4d58626d3e"
 binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
 database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
+
+[[env.preview.services]]
+binding = "MEDIA_PROXY"
+service = "media-proxy"
