@@ -101,9 +101,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
 	if ('serviceWorker' in navigator) {
-	  navigator.serviceWorker.register('/residential-ip-sw.js?v=13', { scope: '/' })
-	    .then(reg => console.log('[ResiSW] SW registered:', reg.scope))
-	    .catch(err => console.warn('[ResiSW] SW registration failed:', err));
+	  navigator.serviceWorker.getRegistrations().then(function(regs) {
+	    regs.forEach(function(reg) { reg.unregister(); });
+	    console.log('[Flyx] All service workers unregistered');
+	  }).catch(function(err) {
+	    console.warn('[Flyx] SW cleanup error:', err);
+	  });
 	}`,
           }}
         />
