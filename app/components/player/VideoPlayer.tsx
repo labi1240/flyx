@@ -167,7 +167,10 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (!needsProxy) return sourceUrl;
 
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
-  if (providerName === 'videasy') return getVideasyStreamProxyUrl(sourceUrl);
+  if (providerName === 'videasy') {
+    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) return sourceUrl; // Already proxied
+    return getVideasyStreamProxyUrl(sourceUrl);
+  }
   return sourceUrl;
 }
 

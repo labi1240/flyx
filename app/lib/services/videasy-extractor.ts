@@ -1,16 +1,14 @@
 /**
  * Videasy Server-Side Extractor
  *
- * Decryption pipeline:
- *   1. Fetch raw hex from CF Worker /videasy/extract
- *   2. WASM stream cipher decrypt
- *   3. AES-256-CBC decrypt (key="" always)
- *   4. Parse JSON → sources + subtitles
+ * Thin wrapper around the shared videasy-crypto module.
+ * Fetches hex from CF Worker /videasy/extract, then runs the
+ * WASM + AES decryption pipeline client-side.
  *
- * Uses pure JS MD5 + Web Crypto API — works in Node.js 19+, CF Pages Workers, browsers.
+ * Uses direct fetch (not cfFetch) for worker→worker calls.
  */
 
-import { cfFetch } from '@/app/lib/utils/cf-fetch';
+import { getWasm, wasmDecrypt, aesDecrypt } from './videasy-crypto';
 import type { StreamSource } from '../providers/types';
 
 function getCfWorkerBaseUrl(): string {
@@ -20,168 +18,39 @@ function getCfWorkerBaseUrl(): string {
   return cfProxyUrl.replace(/\/stream\/?$/, '');
 }
 
-// ============================================================================
-// Pure JS MD5 — works everywhere (Node, CF Worker, browser)
-// ============================================================================
-function md5bytes(data: Uint8Array): Uint8Array {
-  const len = data.length;
-  const totalLen = len + 1 + ((len + 1) % 64 < 56 ? 56 - (len + 1) % 64 : 120 - (len + 1) % 64) + 8;
-  const words = new Uint8Array(totalLen);
-  words.set(data, 0);
-  words[len] = 0x80;
-  const bitLen = len * 8;
-  const view = new DataView(words.buffer);
-  view.setUint32(totalLen - 8, bitLen & 0xffffffff, true);
-  view.setUint32(totalLen - 4, (bitLen / 0x100000000) | 0, true);
+/**
+ * Load WASM for server-side use.
+ *
+ * Node.js dev: loads from `public/videasy-module-patched.wasm` via fs.
+ * CF Pages Worker: fetches from absolute CDN URLs (relative URLs like
+ *   /videasy.bin loop back to the worker function, not static assets).
+ */
+async function loadWasmServer(): Promise<void> {
+  // getWasm() is a singleton — if already loaded this returns immediately.
+  // On first call with no opts it tries relative URLs which fail on CF Pages,
+  // but the singleton is reset on failure so we can retry below.
 
-  let a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476;
-  const S = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
-  const K = new Int32Array([0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391]);
-
-  for (let offset = 0; offset < totalLen; offset += 64) {
-    let A = a, B = b, C = c, D = d;
-    const M = new Int32Array(16);
-    for (let i = 0; i < 16; i++) {
-      M[i] = words[offset + i*4] | (words[offset + i*4 + 1] << 8) | (words[offset + i*4 + 2] << 16) | (words[offset + i*4 + 3] << 24);
-    }
-    for (let i = 0; i < 64; i++) {
-      let f: number, g: number;
-      if (i < 16) { f = (B & C) | (~B & D); g = i; }
-      else if (i < 32) { f = (D & B) | (~D & C); g = (5*i + 1) % 16; }
-      else if (i < 48) { f = B ^ C ^ D; g = (3*i + 5) % 16; }
-      else { f = C ^ (B | ~D); g = (7*i) % 16; }
-      const tmp = D; D = C; C = B;
-      B = (B + ((A + f + K[i] + M[g]) << S[i] | (A + f + K[i] + M[g]) >>> (32 - S[i]))) | 0;
-      A = tmp;
-    }
-    a = (a + A) | 0; b = (b + B) | 0; c = (c + C) | 0; d = (d + D) | 0;
-  }
-  const out = new Uint8Array(16);
-  for (let i = 0; i < 4; i++) { out[i] = a>>> (i*8); out[i+4] = b>>> (i*8); out[i+8] = c>>> (i*8); out[i+12] = d>>> (i*8); }
-  return out;
-}
-
-// ============================================================================
-// EVP_BytesToKey with MD5 (key="" always)
-// ============================================================================
-function deriveKeyIv(salt: Uint8Array, password: string): { key: Uint8Array; iv: Uint8Array } {
-  const pwBytes = new TextEncoder().encode(password);
-  let hash: Uint8Array = new Uint8Array(0);
-  let derived: Uint8Array = new Uint8Array(0);
-
-  while (derived.length < 48) {
-    const input = new Uint8Array(hash.length + pwBytes.length + salt.length);
-    input.set(hash, 0);
-    input.set(pwBytes, hash.length);
-    input.set(salt, hash.length + pwBytes.length);
-    hash = md5bytes(input) as unknown as Uint8Array;
-    const tmp = new Uint8Array(derived.length + hash.length);
-    tmp.set(derived, 0);
-    tmp.set(hash, derived.length);
-    derived = tmp;
-  }
-  return { key: derived.slice(0, 32), iv: derived.slice(32, 48) };
-}
-
-// ============================================================================
-// AES decrypt via Web Crypto API
-// ============================================================================
-function toArrayBuffer(data: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  return buf;
-}
-
-async function aesDecrypt(base64Data: string, password: string): Promise<string> {
-  const binary = atob(base64Data);
-  const raw = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) raw[i] = binary.charCodeAt(i);
-
-  if (raw.length < 16) throw new Error('Data too short for salted format');
-  if (new TextDecoder().decode(raw.slice(0, 8)) !== 'Salted__') throw new Error('Not OpenSSL salted format');
-
-  const salt = raw.slice(8, 16);
-  const ciphertext = raw.slice(16);
-  const { key, iv } = deriveKeyIv(salt, password);
-
-  const cryptoKey = await crypto.subtle.importKey('raw', toArrayBuffer(key), { name: 'AES-CBC' }, false, ['decrypt']);
-  const plaintext = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: toArrayBuffer(iv) }, cryptoKey, toArrayBuffer(ciphertext));
-  return new TextDecoder().decode(plaintext);
-}
-
-// ============================================================================
-// WASM Singleton
-// ============================================================================
-let wasmExports: any = null;
-let wasmMemory: WebAssembly.Memory | null = null;
-let wasmInitPromise: Promise<void> | null = null;
-
-async function getWasmServer(): Promise<void> {
-  if (wasmExports) return;
-  if (wasmInitPromise) return wasmInitPromise;
-
-  wasmInitPromise = (async () => {
-    let wasmBuffer: ArrayBuffer;
-
-    if (typeof process !== 'undefined' && process.versions?.node) {
+  // Node.js dev: load from filesystem
+  const isNode = typeof process !== 'undefined' && process.versions?.node;
+  if (isNode) {
+    try {
       const fs = await import('fs');
       const path = await import('path');
       const wasmPath = path.join(process.cwd(), 'public', 'videasy-module-patched.wasm');
-      wasmBuffer = fs.readFileSync(wasmPath).buffer;
-    } else {
-      // CF Pages Worker — try .bin first (bypasses WAF blocking .wasm), then .wasm, then CF Worker
-      const urls = [
-        'https://tv.vynx.cc/videasy.bin',
-        'https://tv.vynx.cc/videasy-module-patched.wasm',
-        `${getCfWorkerBaseUrl()}/videasy-module-patched.wasm`,
-      ];
-      let res: Response | null = null;
-      for (const url of urls) {
-        try {
-          res = await fetch(url);
-          if (res.ok) break;
-        } catch { /* try next */ }
-      }
-      if (!res || !res.ok) throw new Error('Videasy WASM not available from any URL');
-      wasmBuffer = await res.arrayBuffer();
+      await getWasm({ wasmBuffer: fs.readFileSync(wasmPath).buffer as ArrayBuffer });
+      return;
+    } catch (e) {
+      console.warn('[Videasy] fs load failed, falling back to CDN:', e instanceof Error ? e.message : e);
     }
-
-    const mod = await WebAssembly.instantiate(wasmBuffer, {
-      env: {
-        seed() { return Date.now() * Math.random(); },
-        abort() { throw new Error('WASM abort'); },
-      },
-    });
-    wasmExports = mod.instance.exports;
-    wasmMemory = wasmExports.memory as WebAssembly.Memory;
-  })();
-
-  return wasmInitPromise;
-}
-
-function allocWasmString(str: string): number {
-  const byteLen = str.length * 2;
-  const ptr = wasmExports.__new(byteLen, 2) as number;
-  const buf = new Uint8Array(wasmMemory!.buffer); // Fresh view after __new (memory may have grown)
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    buf[ptr + i * 2] = code & 0xff;
-    buf[ptr + i * 2 + 1] = (code >> 8) & 0xff;
   }
-  return ptr;
-}
 
-function readWasmString(ptr: number, maxChars: number): string {
-  if (!ptr) return '';
-  const buf = new Uint8Array(wasmMemory!.buffer);
-  let result = '';
-  const limit = Math.min(ptr + maxChars * 2, buf.length - 1);
-  for (let i = ptr; i < limit; i += 2) {
-    const code = buf[i] | (buf[i + 1] << 8);
-    if (code === 0) break;
-    result += String.fromCharCode(code);
-  }
-  return result;
+  // CF Pages Worker / production: fetch from absolute CDN URLs
+  await getWasm({
+    wasmUrls: [
+      'https://tv.vynx.cc/videasy.bin',
+      'https://tv.vynx.cc/videasy-module-patched.wasm',
+    ],
+  });
 }
 
 // ============================================================================
@@ -208,6 +77,7 @@ export async function extractVideasyStreams(
   }
 
   try {
+    // 1. Fetch hex from CF Worker proxy (direct fetch, not cfFetch)
     const baseUrl = getCfWorkerBaseUrl();
     const params = new URLSearchParams({ tmdbId, type, title });
     if (type === 'tv' && season != null) params.set('season', season.toString());
@@ -215,31 +85,36 @@ export async function extractVideasyStreams(
 
     const extractUrl = `${baseUrl}/videasy/extract?${params}`;
 
-    const res = await cfFetch(extractUrl, { signal: AbortSignal.timeout(25000) });
+    const res = await fetch(extractUrl, { signal: AbortSignal.timeout(25000) });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`Videasy proxy ${res.status}: ${errText.substring(0, 100)}`);
     }
 
-    const data = await res.json() as { success: boolean; hexData?: string; error?: string };
+    const data = await res.json() as {
+      success: boolean;
+      hexData?: string;
+      error?: string;
+      endpoint?: string;
+    };
+
     if (!data.success || !data.hexData) {
       return { success: false, sources: [], error: data.error || 'No hex data from proxy' };
     }
 
-    // WASM decrypt
-    await getWasmServer();
-    const ptr = allocWasmString(data.hexData);
-    const decryptedPtr = wasmExports.decrypt(ptr, parseFloat(tmdbId)) as number;
-    if (!decryptedPtr) {
-      return { success: false, sources: [], error: 'WASM decrypt returned null' };
+    if (data.endpoint) {
+      console.log(`[Videasy] Resolved via endpoint: ${data.endpoint}`);
     }
-    const wasmDecrypted = readWasmString(decryptedPtr, Math.floor(data.hexData.length / 2));
 
-    // AES decrypt
+    // 2. WASM stream-cipher decrypt (keyed by tmdbId)
+    await loadWasmServer();
+    const wasmDecrypted = wasmDecrypt(data.hexData, parseFloat(tmdbId));
+
+    // 3. AES-256-CBC decrypt (key="" always)
     const json = await aesDecrypt(wasmDecrypted, '');
 
-    // Parse
+    // 4. Parse → sources + subtitles
     const parsed = JSON.parse(json);
     const rawSources = parsed.sources || [];
     const rawSubtitles = parsed.subtitles || [];
@@ -252,7 +127,7 @@ export async function extractVideasyStreams(
         url: s.url,
         type: (s.type || 'hls') as 'hls' | 'mp4',
         referer: s.referer || 'https://player.videasy.net/',
-        requiresSegmentProxy: true, // CDN requires Referer: player.videasy.net — must proxy
+        requiresSegmentProxy: true,
         status: 'working' as const,
         language: s.language || s.lang || 'en',
         server: s.server || 'videasy',
@@ -269,7 +144,11 @@ export async function extractVideasyStreams(
     };
   } catch (err) {
     console.error(`[Videasy] Error:`, err instanceof Error ? err.message : err);
-    return { success: false, sources: [], error: err instanceof Error ? err.message : 'Videasy extraction failed' };
+    return {
+      success: false,
+      sources: [],
+      error: err instanceof Error ? err.message : 'Videasy extraction failed',
+    };
   }
 }
 

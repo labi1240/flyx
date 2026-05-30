@@ -3,6 +3,10 @@
  *
  * Wraps the Videasy source extraction pipeline behind the unified Provider interface.
  * Primary streaming provider — zero-auth, direct HLS, 4K support.
+ *
+ * Environment-aware:
+ *   Server (SSR/ISR): uses videasy-extractor (direct fetch to CF Worker)
+ *   Client (browser): uses videasy-client-extractor (browser fetch + WASM)
  */
 
 import type {
@@ -15,10 +19,10 @@ import type {
   ContentCategory,
 } from '../types';
 
-// Avoid referencing process.env at import time on CF Pages
 const VIDEASY_ENABLED = true;
-
 const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
+
+const isServer = typeof window === 'undefined';
 
 export class VideasyProvider implements Provider {
   readonly name = 'videasy';
@@ -34,25 +38,47 @@ export class VideasyProvider implements Provider {
   async extract(request: ExtractionRequest): Promise<ExtractionResult> {
     const start = Date.now();
     try {
-      // Dynamic import to avoid bundling server-side deps on client
-      const { extractVideasyClient } = await import('../../services/videasy-client-extractor');
+      if (isServer) {
+        // Server-side: use the server extractor (direct fetch → CF Worker → WASM → AES)
+        const { extractVideasyStreams } = await import('../../services/videasy-extractor');
 
-      const sources = await extractVideasyClient(
-        request.tmdbId,
-        request.mediaType,
-        request.title || '',
-        request.season,
-        request.episode,
-      );
+        const result = await extractVideasyStreams(
+          request.tmdbId,
+          request.mediaType,
+          request.title || '',
+          request.season,
+          request.episode,
+        );
 
-      return {
-        success: sources.length > 0,
-        sources: sources.map(s => this.normalizeSource(s)),
-        subtitles: [],
-        provider: this.name,
-        error: sources.length === 0 ? 'No sources found' : undefined,
-        timing: Date.now() - start,
-      };
+        return {
+          success: result.success,
+          sources: (result.sources || []).map(s => this.normalizeSource(s)),
+          subtitles: result.subtitles || [],
+          provider: this.name,
+          error: result.error,
+          timing: Date.now() - start,
+        };
+      } else {
+        // Client-side: use the browser extractor (browser fetch → WASM → AES)
+        const { extractVideasyClient } = await import('../../services/videasy-client-extractor');
+
+        const sources = await extractVideasyClient(
+          request.tmdbId,
+          request.mediaType,
+          request.title || '',
+          request.season,
+          request.episode,
+        );
+
+        return {
+          success: sources.length > 0,
+          sources: sources.map(s => this.normalizeSource(s)),
+          subtitles: [],
+          provider: this.name,
+          error: sources.length === 0 ? 'No sources found' : undefined,
+          timing: Date.now() - start,
+        };
+      }
     } catch (err: any) {
       return {
         success: false,
@@ -66,7 +92,6 @@ export class VideasyProvider implements Provider {
   }
 
   async fetchSourceByName(sourceName: string, request: ExtractionRequest): Promise<StreamSource | null> {
-    // Videasy doesn't have named servers — re-extract all sources and find match
     try {
       const result = await this.extract(request);
       if (!result.success) return null;
@@ -97,7 +122,7 @@ export class VideasyProvider implements Provider {
       language: s.language,
       server: s.server,
       referer: s.referer,
-      requiresSegmentProxy: s.requiresSegmentProxy ?? false,
+      requiresSegmentProxy: s.requiresSegmentProxy ?? true,
       ...(s.status && { status: s.status }),
     };
   }

@@ -1,9 +1,13 @@
 /**
  * Videasy Source Proxy
  *
- * Lightweight CORS proxy for api.videasy.net. Fetches the raw hex-encrypted
- * API response and returns it to the client. All WASM decryption and AES
- * decryption happens client-side in the browser (Web Crypto API + public WASM).
+ * CORS proxy for api.videasy.net. Fetches the raw hex-encrypted API response
+ * and returns it to the caller. All WASM decryption and AES decryption happen
+ * client-side (Web Crypto API + public WASM).
+ *
+ * Multi-endpoint fallback: tries 5 known API endpoints in priority order.
+ * Different endpoints may have different source availability for the same
+ * content, so falling back increases the chance of finding working sources.
  *
  * Routes:
  *   GET /videasy/extract?tmdbId=X&type=movie|tv&title=Y&...
@@ -21,6 +25,23 @@ const API_HEADERS: Record<string, string> = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 };
 
+/**
+ * All known Videasy API endpoints, ordered by reliability.
+ * The proxy tries each in sequence until one returns hex data.
+ *
+ * Recon May 29, 2026: Only 'cdn' and 'mb-flix' return hex.
+ * All other endpoints (1movies, moviebox, m4uhd, myflixerzupcloud, etc.)
+ * return JSON errors or 404-like route-not-found responses.
+ *   - cdn:    works for movies + TV (primary)
+ *   - mb-flix: works for TV only (fallback)
+ */
+const API_ENDPOINTS = [
+  '/cdn/sources-with-title',
+  '/mb-flix/sources-with-title',
+];
+
+const ENDPOINT_TIMEOUT_MS = 15_000;
+
 interface VideasyExtractParams {
   tmdbId: string;
   title: string;
@@ -32,8 +53,8 @@ interface VideasyExtractParams {
   totalSeasons?: string;
 }
 
-async function fetchVideasyApi(params: VideasyExtractParams): Promise<string> {
-  const apiParams = new URLSearchParams({
+function buildApiParams(params: VideasyExtractParams): URLSearchParams {
+  return new URLSearchParams({
     title: params.title,
     mediaType: params.type === 'tv' ? 'TV Series' : 'Movie',
     year: params.year || '',
@@ -43,15 +64,56 @@ async function fetchVideasyApi(params: VideasyExtractParams): Promise<string> {
     tmdbId: params.tmdbId,
     imdbId: params.imdbId || '',
   });
+}
 
-  const url = `${VIDEOASY_API}/cdn/sources-with-title?${apiParams.toString()}`;
-  const res = await fetch(url, { headers: API_HEADERS });
+/**
+ * Try all known endpoints in priority order.
+ * Returns the hex response from the first successful endpoint.
+ * Throws if all endpoints fail.
+ */
+async function fetchVideasyApi(params: VideasyExtractParams): Promise<{ hexData: string; endpoint: string }> {
+  const apiParams = buildApiParams(params);
+  const errors: string[] = [];
 
-  if (!res.ok) {
-    throw new Error(`Videasy API returned ${res.status}: ${res.statusText}`);
+  for (const endpoint of API_ENDPOINTS) {
+    try {
+      const url = `${VIDEOASY_API}${endpoint}?${apiParams.toString()}`;
+      const res = await fetch(url, {
+        headers: API_HEADERS,
+        signal: AbortSignal.timeout(ENDPOINT_TIMEOUT_MS),
+      });
+
+      if (!res.ok) {
+        errors.push(`${endpoint}: HTTP ${res.status}`);
+        continue;
+      }
+
+      const text = await res.text();
+
+      // JSON response = API error for this endpoint, try next
+      if (text.startsWith('{')) {
+        try {
+          const err = JSON.parse(text);
+          errors.push(`${endpoint}: ${err.message || err.error || 'API error'}`);
+        } catch {
+          errors.push(`${endpoint}: JSON error response`);
+        }
+        continue;
+      }
+
+      // Got hex data — success!
+      return { hexData: text, endpoint };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${endpoint}: ${msg}`);
+      // Continue to next endpoint
+    }
   }
 
-  return res.text();
+  // All endpoints failed
+  throw new Error(
+    `All ${API_ENDPOINTS.length} Videasy endpoints failed: ${errors.join('; ')}`,
+  );
 }
 
 // ============================================================================
@@ -68,7 +130,7 @@ export async function handleVideasyRequest(
 
   // Health check
   if (path === '/videasy/health') {
-    return new Response(JSON.stringify({ status: 'ok' }), {
+    return new Response(JSON.stringify({ status: 'ok', endpoints: API_ENDPOINTS.length }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     });
@@ -91,7 +153,7 @@ export async function handleVideasyRequest(
     }
 
     try {
-      const hexData = await fetchVideasyApi({
+      const { hexData, endpoint } = await fetchVideasyApi({
         tmdbId,
         title,
         type,
@@ -102,34 +164,26 @@ export async function handleVideasyRequest(
         totalSeasons: url.searchParams.get('totalSeasons') || undefined,
       });
 
-      // Check for JSON error response
-      if (hexData.startsWith('{')) {
-        const err = JSON.parse(hexData);
-        return new Response(JSON.stringify({
-          success: false,
-          error: err.message || err.error || 'Videasy API returned an error',
-        }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-        });
-      }
+      logger.info('Videasy extract OK', { endpoint, hexLen: hexData.length });
 
-      // Return raw hex to client — client does WASM + AES decrypt
       return new Response(JSON.stringify({
         success: true,
         hexData,
         provider: 'videasy',
+        endpoint,
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Videasy extract error', error as Error);
       return new Response(JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errMsg,
+        retryable: true,
       }), {
-        status: 500,
+        status: 502,
         headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
       });
     }
