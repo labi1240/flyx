@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
 import FetchLoader from './hls-fetch-loader';
+import { getWasm, wasmDecrypt, aesDecrypt } from '@/app/lib/services/videasy-crypto';
 import { getHiAnimeStreamProxyUrl, getVideasyStreamProxyUrl } from '@/app/lib/proxy-config';
 import { useAnalytics } from '../analytics/AnalyticsProvider';
 import { useWatchProgress } from '@/lib/hooks/useWatchProgress';
@@ -876,6 +877,34 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const response = await fetch(`/api/stream/extract?${params}`, { priority: 'high' as RequestPriority, cache: 'no-store' });
       const data = await response.json();
 
+      // Deferred decryption: server returned hex, client (browser) must decrypt
+      if (data.needsClientDecrypt && data.hexData) {
+        try {
+          console.log('[VideoPlayer] Running client-side Videasy decryption...');
+          await getWasm();
+          const wasmDecrypted = wasmDecrypt(data.hexData, parseFloat(params.get('tmdbId') || '0'));
+          const json = await aesDecrypt(wasmDecrypted, '');
+          const parsed = JSON.parse(json);
+          const sources = (parsed.sources || []).filter((s: any) => s.url).map((s: any) => ({
+            quality: s.quality || 'auto',
+            title: s.title || `Videasy ${s.quality || 'auto'}`,
+            url: s.url,
+            type: (s.type || 'hls') as 'hls' | 'mp4',
+            referer: s.referer || 'https://player.videasy.net/',
+            requiresSegmentProxy: true,
+            status: 'working' as const,
+            language: s.language || s.lang || 'en',
+            server: s.server || 'videasy',
+          }));
+          console.log(`[VideoPlayer] ✓ client-side decrypt: ${sources.length} sources from hex`);
+          if (sources.length > 0) {
+            return { sources, provider: 'videasy' };
+          }
+        } catch (e) {
+          console.error('[VideoPlayer] Client-side decrypt failed:', e instanceof Error ? e.message : e);
+        }
+      }
+
       if (data.sources && data.sources.length > 0) {
         // Use the actual provider from response (may differ due to fallback)
         const actualProvider = data.provider || providerName;
@@ -889,7 +918,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         }
         return { sources: data.sources, provider: actualProvider };
       }
-      
+
       // Log detailed error info for debugging
       console.warn(`[VideoPlayer] ✗ ${providerName} failed:`, {
         error: data.error,
