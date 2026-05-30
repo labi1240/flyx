@@ -160,8 +160,13 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
 
   // Providers that ALWAYS need proxying regardless of the requiresSegmentProxy flag
   if (providerName === 'videasy') {
-    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) return sourceUrl; // Already proxied
-    return getVideasyStreamProxyUrl(sourceUrl);
+    if (sourceUrl.includes('media-proxy') || sourceUrl.includes('/stream?url=')) {
+      console.log('[applyStreamProxy] Videasy URL already proxied, returning as-is:', sourceUrl.substring(0, 100));
+      return sourceUrl;
+    }
+    const wrapped = getVideasyStreamProxyUrl(sourceUrl);
+    console.log('[applyStreamProxy] Videasy wrapping:', sourceUrl.substring(0, 80), '→', wrapped.substring(0, 100));
+    return wrapped;
   }
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
 
