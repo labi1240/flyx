@@ -203,15 +203,19 @@ export async function getWasm(opts?: WasmLoadOptions): Promise<void> {
         '/videasy-module-patched.wasm',
       ];
       let res: Response | null = null;
+      const errors: string[] = [];
       for (const url of urls) {
         try {
-          res = await fetch(url);
+          res = await fetch(url, { signal: AbortSignal.timeout(10000) });
           if (res.ok) break;
+          errors.push(`${url}: HTTP ${res.status}`);
           res = null;
-        } catch { /* try next */ }
+        } catch (e) {
+          errors.push(`${url}: ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
       if (!res || !res.ok) {
-        throw new Error('[VideasyCrypto] WASM not available from any URL');
+        throw new Error(`[VideasyCrypto] WASM not available. Tried: ${errors.join('; ')}`);
       }
       wasmBuffer = await res.arrayBuffer();
     }
