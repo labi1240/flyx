@@ -14,6 +14,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useLiveTVData, LiveEvent, TVChannel, ProviderFilter } from './hooks/useLiveTVData';
 import { VideoPlayer } from './components/VideoPlayer';
+import { ExtensionGate } from './components/ExtensionGate';
 import { LiveHero } from './components/LiveHero';
 import { ProviderChips } from './components/ProviderChips';
 import { CategorySidebar } from './components/CategorySidebar';
@@ -125,10 +126,11 @@ export default function LiveTVRefactored() {
   }, [selectedProvider]);
 
   return (
-    <div className={styles.liveTVPage}>
-      <main className={styles.mainContent}>
-        {/* ── Header ── */}
-        <header className={styles.header}>
+    <ExtensionGate>
+      <div className={styles.liveTVPage}>
+        <main className={styles.mainContent}>
+          {/* ── Header ── */}
+          <header className={styles.header}>
           <div className={styles.headerContent}>
             <div className={styles.titleSection}>
               <h1 className={styles.title}>Live TV</h1>
@@ -260,5 +262,6 @@ export default function LiveTVRefactored() {
         onClose={handleClosePlayer}
       />
     </div>
+    </ExtensionGate>
   );
 }

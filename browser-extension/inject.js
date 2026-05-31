@@ -8,6 +8,9 @@
 (function () {
   'use strict';
 
+  // Extension detection flag — web app checks this to gate Live TV access
+  window.__FLYX_EXTENSION__ = { version: '2.1.0', installed: true };
+
   var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
   var DLHD_CACHE = {};
 
@@ -20,56 +23,36 @@
     try { return new URL(url, location.origin).hostname === 'dlhd.vynx-3b3.workers.dev'; } catch(e) { return false; }
   }
 
-  // ── DLHD Handler ─────────────────────────────────────────────────────
+  // ── DLHD Handler (v8 — May 30 2026) ──────────────────────────────────
+  //
+  // The DLHD media-playlist token is IP-BOUND to whatever IP fetched daddy.php.
+  // So extraction MUST happen from the browser's residential IP (not a CF
+  // datacenter IP), otherwise the browser's media-playlist fetch gets 403.
+  //
+  // inject.js runs in the MAIN world and has no chrome.* APIs, so it asks the
+  // extension service worker (via the ISOLATED-world bridge.js) to run the flow.
+  // The SW fetches from the same residential IP, mints a matching token, and
+  // returns a master playlist whose media URL is absolute on the CORS-open CDN.
+  // hls.js then fetches media + segments directly (same residential IP) → 200.
 
-  async function handleDLHD(url) {
-    var pu = new URL(url);
-    var ch = pu.searchParams.get('channel') || pu.pathname.split('/').pop() || '';
-    var ck = ch.indexOf('premium') === 0 ? ch : 'premium' + ch;
-    console.log('[Flyx] DLHD: ' + ck);
+  function handleDLHD(url) {
+    return new Promise(function (resolve, reject) {
+      var pu = new URL(url, location.origin);
+      var ch = pu.searchParams.get('channel') || pu.pathname.split('/').pop() || '';
+      var reqId = 'flyx_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      console.log('[Flyx] DLHD ch=' + ch + ' → SW (' + reqId + ')');
 
-    // Server lookup (cached 60s)
-    var sk;
-    if (DLHD_CACHE[ck] && DLHD_CACHE[ck].ts > Date.now() - 60000) {
-      sk = DLHD_CACHE[ck].key;
-    } else {
-      sk = await lookupServer(ck);
-      DLHD_CACHE[ck] = { key: sk, ts: Date.now() };
-    }
-    console.log('[Flyx] Server: ' + sk);
-
-    // Fetch M3U8
-    var m3u8 = 'https://chevy.newkso.ru/proxy/' + sk + '/' + ck + '/mono.css';
-    console.log('[Flyx] M3U8: ' + m3u8);
-    var r = await fetch(m3u8, { headers: { 'User-Agent': UA, 'Accept': '*/*' } });
-    if (!r.ok) throw new Error('M3U8 HTTP ' + r.status);
-    var t = await r.text();
-    if (t.indexOf('#EXT') === -1) throw new Error('Not M3U8: ' + t.substring(0, 200));
-    console.log('[Flyx] M3U8 OK, ' + t.length + ' bytes');
-
-    // Rewrite: relative → absolute HTTPS
-    var base = 'https://chevy.newkso.ru/proxy/' + sk + '/' + ck + '/';
-    var rw = rewrite(t, base);
-    console.log('[Flyx] M3U8 rewritten');
-    return rw;
-  }
-
-  async function lookupServer(ck) {
-    var domains = ['newkso.ru', 'enviromentalanimal.horse', 'soyspace.cyou'];
-    for (var i = 0; i < domains.length; i++) {
-      try {
-        var url = 'https://chevy.' + domains[i] + '/server_lookup?channel_id=' + ck;
-        var r = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': '*/*' } });
-        if (r.ok) {
-          var t = await r.text();
-          console.log('[Flyx] Lookup: ' + t.substring(0, 100));
-          if (t.charAt(0) === '{') { try { var d = JSON.parse(t); if (d.server_key) return d.server_key; } catch(e) {} }
-          t = t.trim();
-          if (t.length > 1 && t.length < 20 && t.indexOf('<') === -1) return t;
-        } else { console.warn('[Flyx] Lookup HTTP ' + r.status); }
-      } catch(e) { console.warn('[Flyx] Lookup err: ' + e.message); }
-    }
-    return 'ddy6';
+      var timer = setTimeout(function () { cleanup(); reject(new Error('SW extract timeout')); }, 25000);
+      function cleanup() { clearTimeout(timer); window.removeEventListener('message', onMsg); }
+      function onMsg(e) {
+        if (e.source !== window || !e.data || e.data.__flyx !== 'res' || e.data.id !== reqId) return;
+        cleanup();
+        if (e.data.ok && e.data.playlist) { console.log('[Flyx] DLHD OK (' + e.data.playlist.length + 'b)'); resolve(e.data.playlist); }
+        else reject(new Error(e.data.error || 'SW extract failed'));
+      }
+      window.addEventListener('message', onMsg);
+      window.postMessage({ __flyx: 'req', id: reqId, channel: String(ch) }, '*');
+    });
   }
 
   function rewrite(list, base) {
@@ -181,5 +164,5 @@
   window.XMLHttpRequest.HEADERS_RECEIVED = 2; window.XMLHttpRequest.LOADING = 3;
   window.XMLHttpRequest.DONE = 4;
 
-  console.log('[Flyx Bypass v7] Ready — direct CDN fetch + DNR headers');
+  console.log('[Flyx Bypass v8] Ready — DLHD minted in-browser via SW (IP-bound token) + generic CDN fetch');
 })();
