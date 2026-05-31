@@ -12,8 +12,6 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
 import { LiveEvent, TVChannel } from '../hooks/useLiveTVData';
 import { getTvPlaylistUrl, getAvailableBackends, resolveBackendId } from '@/app/lib/proxy-config';
-import { extractCDNLiveStream } from '@/app/lib/livetv/cdnlive-extractor';
-import { DLHDWhitelist } from '@/app/lib/livetv/dlhd-whitelist';
 import styles from './VideoPlayer.module.css';
 
 interface VideoPlayerProps {
@@ -65,51 +63,21 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
   // Get current channel from event
   const currentEventChannel = event?.channels?.[selectedChannelIndex];
 
-  // Get stream URL based on source
+  // Get stream URL — DLHD only
   const getStreamUrl = useCallback((): string | null => {
-    // Channel playback (DLHD or CDN Live)
+    // Channel playback
     if (channel) {
       if (channel.source === 'dlhd') {
         return getTvPlaylistUrl(channel.channelId, selectedBackend);
       }
-      if (channel.source === 'cdnlive') {
-        const [name, country] = channel.channelId.split('|');
-        // Return sentinel — actual extraction happens async in initPlayer
-        return `cdnlive://${encodeURIComponent(name)}/${country || 'us'}`;
-      }
-      if (channel.source === 'ufreetv') {
-        // uFreeTV channels have direct .m3u8 URLs that need proxying
-        const cfProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL;
-        if (cfProxy) {
-          const baseUrl = cfProxy.replace(/\/stream\/?$/, '');
-          return `${baseUrl}/ufreetv/stream?url=${encodeURIComponent(channel.channelId)}`;
-        }
-        return channel.channelId; // fallback: direct URL
-      }
-      if (channel.source === 'globetv') {
-        return `/api/livetv/globetv-stream?channelId=${encodeURIComponent(channel.channelId)}`;
-      }
     }
 
-    // Event playback - use selected channel
+    // Event playback — use selected channel
     if (event) {
       if (event.source === 'dlhd' && event.channels.length > 0) {
         const ch = event.channels[selectedChannelIndex] || event.channels[0];
         console.log('[LiveTV Player] Using channel:', ch.channelId, ch.name);
         return getTvPlaylistUrl(ch.channelId, selectedBackend);
-      }
-
-      if (event.source === 'ppv' && event.ppvSlug) {
-        // Browser fetches m3u8 directly from user's residential IP.
-        // poocloud.in blocks datacenter IPs → CF Worker proxy fails.
-        // Segments are on Cloudflare R2 → no proxy needed after init.
-        return `https://gg.poocloud.in/${encodeURIComponent(event.ppvSlug)}/index.m3u8`;
-      }
-
-      // NTV: stream URL resolved via /api/livetv/ntv-stream?t={token}
-      if (event.source === 'ntv' && event.channels.length > 0) {
-        const ch = event.channels[selectedChannelIndex] || event.channels[0];
-        return ch.href || `/api/livetv/ntv-stream?t=${encodeURIComponent(ch.channelId)}`;
       }
     }
 
@@ -118,13 +86,6 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
 
   // Ref to hold initPlayer for use in attemptFullReload (avoids circular deps)
   const initPlayerRef = useRef<() => void>(() => {});
-
-  // DLHD whitelist — singleton, persists across channel switches
-  const whitelistRef = useRef<DLHDWhitelist | null>(null);
-  if (!whitelistRef.current) {
-    const cfTvProxy = process.env.NEXT_PUBLIC_CF_TV_PROXY_URL || '';
-    whitelistRef.current = new DLHDWhitelist(cfTvProxy);
-  }
 
   // Attempt full stream reload (destroy + re-init) as last-resort recovery
   const attemptFullReload = useCallback(() => {
@@ -399,30 +360,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
       return;
     }
 
-    // Handle CDN-Live channels — client-side extraction (browser fetches cdn-live.tv directly)
-    if (streamUrl.startsWith('cdnlive://')) {
-      try {
-        const parts = streamUrl.replace('cdnlive://', '').split('/');
-        const name = decodeURIComponent(parts[0]);
-        const code = parts[1] || 'us';
-        console.log('[VideoPlayer] CDN-Live client extraction:', name, code);
-        const result = await extractCDNLiveStream(name, code);
-        console.log('[VideoPlayer] CDN-Live result:', result);
-        if (result.success && result.streamUrl) {
-          loadHlsStream(video, result.streamUrl);
-        } else {
-          setError(result.error || 'CDN-Live extraction failed');
-          setIsLoading(false);
-        }
-      } catch (err) {
-        console.error('[VideoPlayer] CDN-Live extraction error:', err);
-        setError('CDN-Live extraction failed');
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    // Handle API endpoints that return JSON
+    // Handle API endpoints that return JSON (e.g., stream resolution APIs)
     if (streamUrl.includes('/api/livetv/')) {
       try {
         console.log('[VideoPlayer] Fetching from API:', streamUrl);

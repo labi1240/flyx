@@ -17,6 +17,7 @@ import {
   decodeBase64Url
 } from './proxy';
 import { runPipeline, setPipelineProxyConfig } from './direct/dlhd-pipeline';
+import { buildDLHDPlaylist } from './direct/dlhd-v8';
 import { isFakeKey, toHex, parseKeyUrl, upstreamHeaders } from './direct/dlhd-config';
 import { extractFast, getServerForChannel, getServersForChannel, extractWithFallback, getCacheStats, generateJWT, getAllServers, getAllDomains, channelExists, lookupServer, getServersForChannelDynamic, getLookupCacheStats, getAllWorkingServersForChannel, findWorkingServerQuick, getServersForChannelMultiServer } from './direct/fast-extractor';
 import { getMultiServerCacheStats, invalidateCache } from './direct/multi-server';
@@ -1332,6 +1333,33 @@ grecaptcha.ready(function(){
     // TODO: Implement in-memory rate limiting if abuse becomes an issue
     
     try {
+      // ──────────────────────────────────────────────────────────────────
+      // v8 (May 30 2026): Current DLHD flow. The old server_lookup/newkso
+      // pipeline below is DEAD infra. New flow resolves {id} → signed master
+      // playlist on a CORS-open, non-WAF CDN. Browser plays media+segments
+      // directly; no proxying/keys needed. See ./direct/dlhd-v8.ts.
+      // `backend` param is legacy and ignored by the v8 path.
+      if (!url.searchParams.get('legacy')) {
+        try {
+          const v8 = await buildDLHDPlaylist(channelId);
+          if (v8) {
+            console.log(`[/play] ✅ v8 HIT: ch${channelId} → ${v8.masterUrl} (${Date.now() - startTime}ms)`);
+            return new Response(v8.playlist, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/vnd.apple.mpegurl',
+                'Access-Control-Allow-Origin': allowedOrigin,
+                'Cache-Control': 'no-store',
+                'X-DLHD-Flow': 'v8',
+              },
+            });
+          }
+          console.log(`[/play] v8 miss for ch${channelId}, falling back to legacy pipeline`);
+        } catch (e) {
+          console.log(`[/play] v8 error: ${e instanceof Error ? e.message : e}, falling back`);
+        }
+      }
+
       // Step 1: Check for forced backend from query param
       const forcedBackend = url.searchParams.get('backend');
       let servers: string[];

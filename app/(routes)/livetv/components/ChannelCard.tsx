@@ -13,10 +13,6 @@ interface ChannelCardProps {
 
 const SOURCE_ACCENT: Record<string, string> = {
   dlhd: styles.accentBlue,
-  cdnlive: styles.accentGreen,
-  ntv: styles.accentOrange,
-  ufreetv: styles.accentPink,
-  globetv: styles.accentTeal,
 };
 
 export const ChannelCard = memo(function ChannelCard({ channel, onPlay }: ChannelCardProps) {

@@ -30,14 +30,8 @@ export const EventCard = memo(function EventCard({
   };
 
   const getSourceBadge = () => {
-    switch (event.source) {
-      case 'dlhd':
-        return { label: 'DLHD', color: 'blue' };
-      case 'cdnlive':
-        return { label: 'CDN', color: 'green' };
-      default:
-        return { label: 'LIVE', color: 'gray' };
-    }
+    if (event.source === 'dlhd') return { label: 'DLHD', color: 'blue' };
+    return { label: 'LIVE', color: 'gray' };
   };
 
   const sourceBadge = getSourceBadge();

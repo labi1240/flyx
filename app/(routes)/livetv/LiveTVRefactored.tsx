@@ -1,9 +1,8 @@
 /**
- * LiveTV Page — Unified browsing experience
+ * LiveTV Page — DLHD
  *
  * Single unified view with:
  * - Hero carousel for currently live/featured events
- * - Provider filter chips for quick source switching
  * - Category sidebar (desktop) / horizontal pills (mobile)
  * - Responsive content grid with infinite scroll
  * - Timeline/EPG view toggle for upcoming events
@@ -12,11 +11,10 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { useLiveTVData, LiveEvent, TVChannel, ProviderFilter } from './hooks/useLiveTVData';
+import { useLiveTVData, LiveEvent, TVChannel } from './hooks/useLiveTVData';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ExtensionGate } from './components/ExtensionGate';
 import { LiveHero } from './components/LiveHero';
-import { ProviderChips } from './components/ProviderChips';
 import { CategorySidebar } from './components/CategorySidebar';
 import { ContentGrid } from './components/ContentGrid';
 import { TimelineView } from './components/TimelineView';
@@ -24,8 +22,6 @@ import styles from './LiveTV.module.css';
 
 export default function LiveTVRefactored() {
   const {
-    selectedProvider,
-    setSelectedProvider,
     events,
     channels,
     currentlyLive,
@@ -36,7 +32,6 @@ export default function LiveTVRefactored() {
     error,
     searchQuery,
     setSearchQuery,
-    stats,
     totalLive,
     totalEvents,
     totalChannels,
@@ -72,19 +67,6 @@ export default function LiveTVRefactored() {
     return channels.filter(c => c.category === selectedCategory);
   }, [channels, selectedCategory]);
 
-  // Determine what types of content we have
-  const hasEvents = useMemo(() => {
-    if (selectedProvider === 'ufreetv' || selectedProvider === 'globetv') {
-      return false;
-    }
-    return true;
-  }, [selectedProvider]);
-
-  const hasChannels = useMemo(() => {
-    if (selectedProvider === 'ppv') return false;
-    return true;
-  }, [selectedProvider]);
-
   // Handlers
   const handlePlayEvent = useCallback((event: LiveEvent) => {
     setSelectedEvent(event);
@@ -104,12 +86,6 @@ export default function LiveTVRefactored() {
     setSelectedChannel(null);
   }, []);
 
-  const handleProviderChange = (provider: ProviderFilter) => {
-    setSelectedProvider(provider);
-    setSelectedCategory('all');
-    setShowLiveOnly(false);
-  };
-
   const handleCategoryChange = (category: string) => {
     setSelectedCategory(category);
     setShowLiveOnly(false);
@@ -119,11 +95,6 @@ export default function LiveTVRefactored() {
     setShowLiveOnly(!showLiveOnly);
     if (!showLiveOnly) setSelectedCategory('all');
   };
-
-  // Show timeline only for event providers
-  const showTimelineToggle = useMemo(() => {
-    return selectedProvider === 'all' || selectedProvider === 'dlhd' || selectedProvider === 'ntv' || selectedProvider === 'ppv' || selectedProvider === 'cdnlive';
-  }, [selectedProvider]);
 
   return (
     <ExtensionGate>
@@ -163,28 +134,26 @@ export default function LiveTVRefactored() {
                 )}
               </div>
 
-              {showTimelineToggle && (
-                <div className={styles.viewToggle}>
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`${styles.viewToggleBtn} ${viewMode === 'grid' ? styles.active : ''}`}
-                    title="Grid view"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M3 3h6v6H3V3zm8 0h6v6h-6V3zM3 11h6v6H3v-6zm8 0h6v6h-6v-6z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('timeline')}
-                    className={`${styles.viewToggleBtn} ${viewMode === 'timeline' ? styles.active : ''}`}
-                    title="Timeline view"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              )}
+              <div className={styles.viewToggle}>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`${styles.viewToggleBtn} ${viewMode === 'grid' ? styles.active : ''}`}
+                  title="Grid view"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M3 3h6v6H3V3zm8 0h6v6h-6V3zM3 11h6v6H3v-6zm8 0h6v6h-6v-6z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={`${styles.viewToggleBtn} ${viewMode === 'timeline' ? styles.active : ''}`}
+                  title="Timeline view"
+                >
+                  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
 
               <button
                 onClick={refresh}
@@ -208,14 +177,6 @@ export default function LiveTVRefactored() {
           loading={loading && events.length === 0}
         />
 
-        {/* ── Provider Chips ── */}
-        <ProviderChips
-          selectedProvider={selectedProvider}
-          onProviderChange={handleProviderChange}
-          stats={stats}
-          loading={loading}
-        />
-
         {/* ── Main Content Area ── */}
         <div className={styles.contentArea}>
           {/* Desktop Category Sidebar */}
@@ -227,12 +188,12 @@ export default function LiveTVRefactored() {
             onLiveToggle={handleLiveToggle}
             liveCount={totalLive}
             channelCategories={channelCategories}
-            showChannels={selectedProvider === 'all'}
+            showChannels={true}
           />
 
           {/* Content */}
           <div className={styles.contentMain}>
-            {viewMode === 'timeline' && showTimelineToggle ? (
+            {viewMode === 'timeline' ? (
               <TimelineView
                 liveEvents={currentlyLive}
                 upcomingEvents={upcoming}
@@ -246,8 +207,8 @@ export default function LiveTVRefactored() {
                 onPlayChannel={handlePlayChannel}
                 loading={loading}
                 error={error}
-                hasEvents={hasEvents}
-                hasChannels={hasChannels}
+                hasEvents={true}
+                hasChannels={true}
               />
             )}
           </div>

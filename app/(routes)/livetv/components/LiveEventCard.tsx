@@ -16,9 +16,6 @@ const SPORT_ICONS: Record<string, string> = {
 
 const SOURCE_STYLES: Record<string, { label: string; className: string }> = {
   dlhd: { label: 'DLHD', className: 'sourceBlue' },
-  ppv: { label: 'PPV', className: 'sourcePurple' },
-  ntv: { label: 'NTV', className: 'sourceOrange' },
-  cdnlive: { label: 'CDN', className: 'sourceGreen' },
 };
 
 function getSportIcon(sport: string): string {

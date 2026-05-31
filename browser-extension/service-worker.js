@@ -8,12 +8,6 @@
 // ── Dynamic DNR rules — add Origin+Referer to CDN requests ─────────────
 
 var RULES = [
-  // DLHD
-  { id: 1001, domain: 'chevy.newkso.ru', origin: 'https://www.newkso.ru', referer: 'https://www.newkso.ru/' },
-  { id: 1002, domain: 'chevy.soyspace.cyou', origin: 'https://www.newkso.ru', referer: 'https://www.newkso.ru/' },
-  { id: 1003, domain: 'chevy.enviromentalanimal.horse', origin: 'https://www.newkso.ru', referer: 'https://www.newkso.ru/' },
-  { id: 1004, domain: 'newkso.ru', origin: 'https://www.newkso.ru', referer: 'https://www.newkso.ru/' },
-  { id: 1005, domain: 'key.keylocking.ru', origin: 'https://www.newkso.ru', referer: 'https://www.newkso.ru/' },
   // Flixer
   { id: 1010, domain: 'hexa.su', referer: 'https://hexa.su/' },
   { id: 1011, domain: 'flixer.su', referer: 'https://hexa.su/' },
@@ -45,18 +39,90 @@ function buildRules() {
   });
 }
 
+// DLHD requires Referer: https://dlhd.pk/ on the stream page AND on daddy.php
+// (403 without it). The extension SW cannot set Referer via fetch() (forbidden
+// header), so DNR injects it. daddy.php lives on a rotating player domain, so we
+// match by path, not host.
+var DLHD_REFERER = 'https://dlhd.pk/';
+function dlhdRefererRules() {
+  function hdr() { return [{ header: 'Referer', operation: 'set', value: DLHD_REFERER }]; }
+  return [
+    { id: 1100, priority: 20, action: { type: 'modifyHeaders', requestHeaders: hdr() },
+      condition: { urlFilter: '/stream/stream-', resourceTypes: ['xmlhttprequest', 'other'] } },
+    { id: 1101, priority: 20, action: { type: 'modifyHeaders', requestHeaders: hdr() },
+      condition: { urlFilter: '/premiumtv/daddy', resourceTypes: ['xmlhttprequest', 'other'] } },
+  ];
+}
+
 async function installRules() {
   try {
     var oldRules = await chrome.declarativeNetRequest.getDynamicRules();
     var oldIds = oldRules.map(function (r) { return r.id; });
+    var rules = buildRules().concat(dlhdRefererRules());
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: oldIds,
-      addRules: buildRules()
+      addRules: rules
     });
-    console.log('[Flyx SW] DNR rules installed:', RULES.length);
+    console.log('[Flyx SW] DNR rules installed:', rules.length);
   } catch (e) {
     console.error('[Flyx SW] DNR install failed:', e.message);
   }
+}
+
+// ── DLHD extraction (runs from the browser's residential IP) ────────────────
+//
+// stream-{id}.php → daddy{N}.php iframe → base64 signed master URL → master
+// playlist with media line resolved to an absolute (CORS-open) CDN URL.
+// The signed media token is IP-bound to THIS browser's IP, so hls.js can then
+// fetch the media playlist + segments directly. See dlhd-extractor-worker/
+// src/direct/dlhd-v8.ts for the canonical reference.
+
+var DLHD_STREAM_DOMAINS = ['dlhd.pk', 'dlhd.sx', 'dlstreams.com'];
+
+async function dlhdExtract(channel) {
+  var id = String(channel).replace(/^premium/i, '').trim();
+  if (!/^\d+$/.test(id)) throw new Error('bad channel id: ' + channel);
+
+  // 1. stream page → daddy{N}.php iframe (DNR injects the required Referer)
+  var playerUrl = null;
+  for (var i = 0; i < DLHD_STREAM_DOMAINS.length; i++) {
+    try {
+      var sresp = await fetch('https://' + DLHD_STREAM_DOMAINS[i] + '/stream/stream-' + id + '.php', { credentials: 'omit' });
+      if (!sresp.ok) continue;
+      var shtml = await sresp.text();
+      var im = shtml.match(/<iframe[^>]+src=["']([^"']*\/premiumtv\/daddy\d*\.php\?id=[^"']+)["']/i);
+      if (im) { playerUrl = im[1]; break; }
+    } catch (e) { /* next domain */ }
+  }
+  if (!playerUrl) throw new Error('no daddy iframe found');
+
+  // 2. daddy.php → base64 signed master URL (DNR injects Referer)
+  var presp = await fetch(playerUrl, { credentials: 'omit' });
+  if (!presp.ok) throw new Error('daddy.php HTTP ' + presp.status);
+  var phtml = await presp.text();
+  var master = null;
+  var re = /atob\(\s*["']([A-Za-z0-9+/=]+)["']\s*\)/g, mm;
+  while ((mm = re.exec(phtml)) !== null) {
+    try {
+      var dec = atob(mm[1]);
+      if (/^https?:\/\/\S+\.m3u8/i.test(dec)) { master = dec.trim(); break; }
+    } catch (e) {}
+  }
+  if (!master) throw new Error('no signed master in daddy.php');
+
+  // 3. master playlist → resolve the relative media line to absolute
+  var mresp = await fetch(master, { credentials: 'omit' });
+  if (!mresp.ok) throw new Error('master HTTP ' + mresp.status);
+  var body = await mresp.text();
+  if (body.indexOf('#EXTM3U') === -1 && body.indexOf('#EXT-X-') === -1) throw new Error('master not m3u8');
+
+  var playlist = body.split('\n').map(function (line) {
+    var t = line.trim();
+    if (!t || t.charAt(0) === '#') return line;
+    try { return new URL(t, master).toString(); } catch (e) { return line; }
+  }).join('\n');
+
+  return { playlist: playlist, master: master };
 }
 
 chrome.runtime.onInstalled.addListener(installRules);
@@ -73,6 +139,18 @@ chrome.storage.local.get(['stats', 'providerState'], function (r) {
 });
 
 chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
+  if (msg.type === 'extractDLHD') {
+    dlhdExtract(msg.channel).then(function (r) {
+      stats.ok = (stats.ok || 0) + 1;
+      console.log('[Flyx SW] DLHD ch' + msg.channel + ' → ' + r.master);
+      respond({ ok: true, playlist: r.playlist });
+    }).catch(function (e) {
+      stats.err = (stats.err || 0) + 1;
+      console.error('[Flyx SW] DLHD ch' + msg.channel + ' failed:', e.message);
+      respond({ ok: false, error: e.message });
+    });
+    return true; // async
+  }
   if (msg.type === 'getStatus') { respond({ stats: stats, providerState: providerState }); return true; }
   if (msg.type === 'toggle') { providerState[msg.id] = msg.on; chrome.storage.local.set({ providerState: providerState }); respond({ ok: 1 }); return true; }
   if (msg.type === 'resetStats') { stats = { ok: 0, err: 0 }; respond({ ok: 1 }); return true; }
