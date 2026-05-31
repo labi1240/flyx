@@ -66,16 +66,6 @@
         "http://localhost:3000/*",
         "http://localhost:3001/*"
       ],
-      "js": ["bridge.js"],
-      "run_at": "document_start",
-      "world": "ISOLATED"
-    },
-    {
-      "matches": [
-        "https://*.vynx.cc/*",
-        "http://localhost:3000/*",
-        "http://localhost:3001/*"
-      ],
       "js": ["inject.js"],
       "run_at": "document_start",
       "world": "MAIN"
