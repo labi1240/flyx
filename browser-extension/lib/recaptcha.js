@@ -1,8 +1,8 @@
 /**
- * Flyx Bypass v2 — HTTP-Only reCAPTCHA v3 Solver
+ * Flyx Bypass v3 — HTTP-Only reCAPTCHA v3 Solver
  *
- * Ported from cloudflare-proxy/src/tv-proxy.ts solveRecaptchaV3().
- * Solves reCAPTCHA without loading any Google scripts in the browser.
+ * Solves reCAPTCHA v3 without loading any Google scripts in the browser.
+ * Used by the extension SW for DLHD IP whitelisting.
  *
  * Flow:
  *   1. GET recaptcha/api.js → extract version
@@ -37,7 +37,7 @@ export async function solveRecaptchaV3(pageUrl, action) {
   var co;
   try {
     co = btoa(unescape(encodeURIComponent(origin))).replace(/=+$/, '') + '.';
-  } catch(e) {
+  } catch (e) {
     var bytes = new TextEncoder().encode(origin);
     var bin = '';
     for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);

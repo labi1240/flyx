@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Flyx Bypass",
-  "version": "2.2.0",
-  "description": "Bypasses IP-bound DLHD tokens for tv.vynx.cc by minting the signed stream in your browser (residential IP) so live TV plays. Also proxies other CDN streams.",
+  "version": "3.0.0",
+  "description": "Bypasses IP-bound DLHD tokens for tv.vynx.cc by minting the signed stream in your browser (residential IP). Manages per-provider CDN header injection with real-time stats and activity logging.",
   "author": "Vynx-Velvet",
   "homepage_url": "https://tv.vynx.cc",
 

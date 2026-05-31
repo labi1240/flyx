@@ -61,143 +61,30 @@
   },
   {
     "id": 5,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://hexa.su/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://hexa.su/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 6,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://hexa.su/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://*.hexa.su/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 8,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://player.videasy.net/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://player.videasy.net/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 9,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://www.2embed.cc/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://*.2embed.cc/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 10,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://bingebox.to/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://bingebox.to/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 11,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://themoviebox.org/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://themoviebox.org/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 12,
     "priority": 20,
     "action": {
       "type": "modifyHeaders",
       "requestHeaders": [
-        {"header": "Origin", "operation": "remove"},
-        {"header": "Referer", "operation": "remove"}
+        {"header": "Referer", "operation": "set", "value": "https://dlhd.pk/"}
       ]
     },
     "condition": {
-      "urlFilter": "*://*.megaup.*/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+      "urlFilter": "/stream/stream-",
+      "resourceTypes": ["xmlhttprequest", "other"]
     }
   },
   {
-    "id": 13,
-    "priority": 10,
+    "id": 6,
+    "priority": 20,
     "action": {
       "type": "modifyHeaders",
       "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://miruro.to/"}
+        {"header": "Referer", "operation": "set", "value": "https://dlhd.pk/"}
       ]
     },
     "condition": {
-      "urlFilter": "*://uwucdn.top/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 14,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://ufreetv.com/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://*.ufreetv.com/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
-    }
-  },
-  {
-    "id": 15,
-    "priority": 10,
-    "action": {
-      "type": "modifyHeaders",
-      "requestHeaders": [
-        {"header": "Referer", "operation": "set", "value": "https://globetv.app/"}
-      ]
-    },
-    "condition": {
-      "urlFilter": "*://*.globetv.app/*",
-      "resourceTypes": ["xmlhttprequest", "script", "image", "media", "other"]
+      "urlFilter": "/premiumtv/daddy",
+      "resourceTypes": ["xmlhttprequest", "other"]
     }
   }
 ]
