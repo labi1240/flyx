@@ -62,9 +62,6 @@ async function installRules() {
 chrome.runtime.onInstalled.addListener(installRules);
 chrome.runtime.onStartup.addListener(installRules);
 
-// Install immediately on SW start
-installRules();
-
 // ── Message handlers for popup ──────────────────────────────────────────
 
 var stats = { ok: 0, err: 0 };
