@@ -17,7 +17,7 @@
 
     // Ping/pong for extension detection — web app polls this to gate Live TV
     if (e.data.__flyx === 'ping') {
-      window.postMessage({ __flyx: 'pong', version: '2.1.0' }, '*');
+      window.postMessage({ __flyx: 'pong', version: '2.2.0' }, '*');
       return;
     }
 

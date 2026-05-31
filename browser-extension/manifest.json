@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Flyx Bypass",
-  "version": "2.0.0",
-  "description": "Bypasses residential proxy for tv.vynx.cc by intercepting CF Worker M3U8 requests and fetching directly from CDNs using your browser's residential IP.",
+  "version": "2.2.0",
+  "description": "Bypasses IP-bound DLHD tokens for tv.vynx.cc by minting the signed stream in your browser (residential IP) so live TV plays. Also proxies other CDN streams.",
   "author": "Vynx-Velvet",
   "homepage_url": "https://tv.vynx.cc",
 
@@ -13,21 +13,16 @@
   ],
 
   "host_permissions": [
+    "<all_urls>",
     "https://*.vynx.cc/*",
     "https://*.workers.dev/*",
     "http://localhost:3000/*",
     "http://localhost:3001/*",
-    "http://213.21.239.30/*",
-    "http://chevy.newkso.ru/*",
-    "http://chevy.enviromentalanimal.horse/*",
-    "http://chevy.soyspace.cyou/*",
-    "https://chevy.newkso.ru/*",
-    "https://chevy.soyspace.cyou/*",
-    "https://chevy.enviromentalanimal.horse/*",
-    "https://chevy.vovlacosa.sbs/*",
-    "https://*.newkso.ru/*",
-    "https://key.keylocking.ru/*",
-    "https://*.keylocking.ru/*",
+    "https://dlhd.pk/*",
+    "https://dlhd.sx/*",
+    "https://dlstreams.com/*",
+    "https://*.phantemlis.top/*",
+    "https://tomompakis.shop/*",
     "https://hexa.su/*",
     "https://*.hexa.su/*",
     "https://flixer.su/*",
@@ -69,6 +64,16 @@
       "js": ["inject.js"],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://*.vynx.cc/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
     }
   ],
 

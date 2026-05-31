@@ -14,7 +14,7 @@ import { useExtensionDetected } from '@/hooks/useExtensionDetected';
 import styles from './ExtensionGate.module.css';
 
 const GITHUB_RELEASES = 'https://github.com/Vynx-Velvet/Flyx-main/releases';
-const EXTENSION_VERSION = '2.1.0';
+const EXTENSION_VERSION = '2.2.0';
 
 // Detect browser for tailored instructions
 function getBrowser(): 'chrome' | 'firefox' | 'edge' | 'other' {

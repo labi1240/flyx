@@ -9,7 +9,7 @@
   'use strict';
 
   // Extension detection flag — web app checks this to gate Live TV access
-  window.__FLYX_EXTENSION__ = { version: '2.1.0', installed: true };
+  window.__FLYX_EXTENSION__ = { version: '2.2.0', installed: true };
 
   var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
   var DLHD_CACHE = {};
