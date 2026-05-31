@@ -183,7 +183,7 @@ async function handleStream(
     return jsonResponse({ error: 'Missing required parameter: t (embed token)' }, 400);
   }
 
-  // Fetch the NTV embed page using the token
+  // Step 1: Fetch the NTV embed page to get the upstream iframe URL
   const embedUrl = `${NTV_BASE}/embed?t=${encodeURIComponent(token)}`;
   logger.info('Resolving NTV stream', { embedUrl });
 
@@ -201,16 +201,13 @@ async function handleStream(
   const html = await res.text();
 
   // Extract iframe src from the embed page
-  // Pattern: <iframe ... src="https://upstream-provider/embed/..." ...>
   const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["'][^>]*>/i);
 
   if (!iframeMatch) {
-    // Try alternate pattern: window.location or meta redirect
     const redirectMatch = html.match(/window\.location\s*=\s*["']([^"']+)["']/);
     if (redirectMatch) {
       return jsonResponse({ streamUrl: redirectMatch[1], upstream: 'redirect' });
     }
-
     logger.warn('No iframe found in NTV embed page');
     return jsonResponse({ error: 'No stream source found in embed page' }, 404);
   }
@@ -226,10 +223,73 @@ async function handleStream(
     }
   }
 
+  // Step 2: Deep-resolve — fetch the upstream embed page to extract the actual HLS URL.
+  // The first iframe points to another HTML embed page (e.g., embedsports.top/embed/XXX),
+  // not an HLS stream. We must fetch that page and extract the real stream URL.
+  let streamUrl = upstreamUrl; // fallback: return the upstream URL as-is
+  try {
+    logger.info('Deep-resolving upstream embed', { upstream, upstreamUrl: upstreamUrl.substring(0, 100) });
+
+    const upstreamRes = await fetch(upstreamUrl, {
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'text/html,application/xhtml+xml,*/*',
+        'Referer': `${NTV_BASE}/`,
+      },
+    });
+
+    if (upstreamRes.ok) {
+      const upstreamHtml = await upstreamRes.text();
+
+      // Try multiple extraction strategies (in priority order):
+
+      // 1. Video tag with m3u8 source
+      let m3u8Match = upstreamHtml.match(/<source[^>]+src=["']([^"']*\.m3u8[^"']*)["']/i)
+        || upstreamHtml.match(/<video[^>]+src=["']([^"']*\.m3u8[^"']*)["']/i);
+
+      // 2. JavaScript player source: 'https://...m3u8' or "https://...m3u8"
+      if (!m3u8Match) {
+        m3u8Match = upstreamHtml.match(/(?:source|src|url|file)\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i);
+      }
+
+      // 3. Bare m3u8 URL in the page
+      if (!m3u8Match) {
+        m3u8Match = upstreamHtml.match(/(https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*)/i);
+      }
+
+      // 4. Nested iframe (go one level deeper)
+      if (!m3u8Match) {
+        const nestedIframe = upstreamHtml.match(/<iframe[^>]+src=["']([^"']+)["'][^>]*>/i);
+        if (nestedIframe) {
+          logger.info('Found nested iframe, fetching...', { url: nestedIframe[1].substring(0, 80) });
+          try {
+            const nestedRes = await fetch(nestedIframe[1], {
+              headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,*/*' },
+            });
+            if (nestedRes.ok) {
+              const nestedHtml = await nestedRes.text();
+              m3u8Match = nestedHtml.match(/(https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*)/i);
+            }
+          } catch { /* continue */ }
+        }
+      }
+
+      if (m3u8Match) {
+        streamUrl = m3u8Match[1];
+        logger.info('Deep-resolved NTV stream', { upstream, streamUrl: streamUrl.substring(0, 100) });
+      } else {
+        logger.warn('Could not extract HLS URL from upstream embed, returning upstream URL as-is', { upstream });
+      }
+    } else {
+      logger.warn('Upstream embed fetch failed, returning URL as-is', { upstream, status: upstreamRes.status });
+    }
+  } catch (e) {
+    logger.warn('Upstream embed fetch error, returning URL as-is', { upstream, error: (e as Error).message });
+  }
+
   return jsonResponse({
-    streamUrl: upstreamUrl,
+    streamUrl,
     upstream,
-    embedPageUrl: embedUrl,
   });
 }
 

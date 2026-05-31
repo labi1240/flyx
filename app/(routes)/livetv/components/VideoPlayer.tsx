@@ -87,12 +87,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         return channel.channelId; // fallback: direct URL
       }
       if (channel.source === 'globetv') {
-        const cfProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL;
-        if (cfProxy) {
-          const baseUrl = cfProxy.replace(/\/stream\/?$/, '');
-          return `${baseUrl}/globetv/stream?url=${encodeURIComponent(channel.channelId)}`;
-        }
-        return null;
+        return `/api/livetv/globetv-stream?channelId=${encodeURIComponent(channel.channelId)}`;
       }
     }
 
@@ -105,15 +100,10 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
       }
 
       if (event.source === 'ppv' && event.ppvSlug) {
-        const cfProxy = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL;
-        if (cfProxy) {
-          const baseUrl = cfProxy.replace(/\/stream\/?$/, '');
-          // PPV 24/7 streams: poocloud slug from poster URL -> gg.poocloud.in/{slug}/index.m3u8
-          // PPV live events: use uri_name to construct the poocloud URL
-          const m3u8Url = `https://gg.poocloud.in/${encodeURIComponent(event.ppvSlug)}/index.m3u8`;
-          return `${baseUrl}/ppv/stream?url=${encodeURIComponent(m3u8Url)}`;
-        }
-        return null; // PPV requires the CF Worker proxy
+        // Browser fetches m3u8 directly from user's residential IP.
+        // poocloud.in blocks datacenter IPs → CF Worker proxy fails.
+        // Segments are on Cloudflare R2 → no proxy needed after init.
+        return `https://gg.poocloud.in/${encodeURIComponent(event.ppvSlug)}/index.m3u8`;
       }
 
       // NTV: stream URL resolved via /api/livetv/ntv-stream?t={token}
@@ -215,6 +205,14 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         setQualities(levels);
         setIsLoading(false);
         setRecoveryStatus(null);
+        // Stream loaded successfully — cancel the "slow to load" auto-recovery
+        // timer. Its callback closes over a stale `isLoading` (true at init) and
+        // would otherwise force a full reload every ~25s even on healthy live
+        // playback, which the user sees as periodic buffering.
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+          loadingTimeoutRef.current = null;
+        }
         video.play().then(() => {
           console.log('[VideoPlayer] Autoplay started');
           setIsPlaying(true);

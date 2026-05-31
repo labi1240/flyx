@@ -513,7 +513,7 @@ export function useLiveTVData() {
           category: ch.category || 'general',
           country: '',
           source: 'ufreetv' as const,
-          channelId: ch.id,
+          channelId: ch.url || ch.id, // url = actual m3u8 stream URL; id = internal "wp-123" key
         }));
         setUfreetvChannels(channels);
       }
