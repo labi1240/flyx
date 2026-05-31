@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings } from '@/lib/sync';
 import { sourceMatchesAudioPreference, type AnimeAudioPreference } from '@/lib/utils/player-preferences';
+import { ExtensionGate } from '@/components/ExtensionGate';
 import { jikanFull, type JikanAnime } from '@/lib/anime/jikan-client';
 import styles from '../../../watch/[id]/WatchPage.module.css';
 
@@ -47,7 +48,15 @@ interface StreamSource {
 
 const PROVIDER_ORDER = ['miruro', 'animekai'] as const;
 
-export default function AnimeWatchClient({ malId, episode: initialEpisode }: { malId: number; episode: number }) {
+export default function AnimeWatchClient(props: { malId: number; episode: number }) {
+  return (
+    <ExtensionGate type="anime">
+      <AnimeWatchClientInner {...props} />
+    </ExtensionGate>
+  );
+}
+
+function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: number; episode: number }) {
   const router = useRouter();
   const mobileInfo = useIsMobile();
 

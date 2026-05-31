@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { getProviderSettings, saveProviderSettings, SYNC_DATA_CHANGED_EVENT } from '@/lib/sync';
 import { getAnimeKaiProxyUrl, getHiAnimeStreamProxyUrl } from '@/app/lib/proxy-config';
+import { ExtensionGate } from '@/components/ExtensionGate';
 import styles from './WatchPage.module.css';
 
 // Proxy source URLs for mobile player — mirrors applyStreamProxy in VideoPlayer.tsx
@@ -927,7 +928,16 @@ function WatchContent() {
 }
 
 export default function WatchPageClient() {
-  return (
+  // Detect anime watch from URL (malId query param) at the page level
+  const [isAnime, setIsAnime] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setIsAnime(params.has('malId'));
+    }
+  }, []);
+
+  const content = (
     <Suspense fallback={
       <div className={styles.container}>
         <div className={styles.loading}>
@@ -939,4 +949,9 @@ export default function WatchPageClient() {
       <WatchContent />
     </Suspense>
   );
+
+  if (isAnime) {
+    return <ExtensionGate type="anime">{content}</ExtensionGate>;
+  }
+  return content;
 }

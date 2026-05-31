@@ -1,10 +1,12 @@
 /**
- * ExtensionGate — Hard gate requiring Flyx Bypass extension for Live TV
+ * ExtensionGate — Hard gate requiring Flyx Bypass extension
  *
- * DLHD media tokens are IP-bound to the browser that fetches daddy.php.
- * Without the extension minting the signed stream from the user's residential IP,
- * every media playlist fetch from the CF Worker datacenter IP gets 403'd.
- * The extension is the ONLY way to make DLHD Live TV work.
+ * DLHD (Live TV) media tokens are IP-bound to the browser that fetches daddy.php.
+ * Anime CDNs (Miruro, AnimeKai) require residential IP Referer/Origin headers
+ * that only the browser extension can inject via DNR rules.
+ *
+ * Without the extension, the CF Worker datacenter IP gets blocked or rate-limited.
+ * The extension is the ONLY way to make Live TV and Anime work reliably.
  */
 
 'use client';
@@ -14,7 +16,115 @@ import { useExtensionDetected } from '@/hooks/useExtensionDetected';
 import styles from './ExtensionGate.module.css';
 
 const GITHUB_RELEASES = 'https://github.com/Vynx-Velvet/Flyx-main/releases';
-const EXTENSION_VERSION = '2.2.0';
+const EXTENSION_VERSION = '3.0.1';
+
+type GateType = 'live' | 'anime';
+
+const GATE_CONFIG: Record<GateType, {
+  title: string;
+  subtitle: React.ReactNode;
+  whyTitle: string;
+  whyBody: React.ReactNode;
+  privacyNote: React.ReactNode;
+}> = {
+  live: {
+    title: 'Extension Required',
+    subtitle: (
+      <>
+        Live TV channels use <strong>IP-bound streaming</strong> — a security measure that
+        ties every viewer&apos;s access key to their unique internet address. Our servers
+        can&apos;t unlock these streams for you from a datacenter. The extension lets{' '}
+        <strong>your own device</strong> handle the unlock step, right from your home connection.
+      </>
+    ),
+    whyTitle: '🧠 Why do I need this? (Plain English)',
+    whyBody: (
+      <>
+        <p>
+          Imagine you&apos;re picking up concert tickets at a <strong>will-call booth</strong>.
+          The venue has a strict rule:{' '}
+          <em>&ldquo;We only hand tickets to the person whose name is on the order. Show us your ID.&rdquo;</em>
+        </p>
+        <p>
+          That&apos;s exactly how Live TV streams work. When you click play, the stream
+          source says:{' '}
+          <em>&ldquo;Sure, here&apos;s your access key — but I&apos;m stamping it with{' '}
+            <strong>your</strong> IP address. Only that IP can use it.&rdquo;</em>
+        </p>
+        <p>
+          Here&apos;s the problem: <strong>our website doesn&apos;t live at your house.</strong> It runs on
+          servers in a datacenter somewhere. If our server tries to pick up the
+          ticket for you, the key gets stamped with the <strong>datacenter&apos;s IP</strong> —
+          not yours. When your browser then tries to use that key, the stream
+          source checks the stamp, sees a mismatch, and says:{' '}
+          <em>&ldquo;Sorry, this key wasn&apos;t issued to you. Access denied.&rdquo;</em> (That&apos;s the
+          dreaded <strong>403 Forbidden</strong> error.)
+        </p>
+        <p>
+          <strong>The extension fixes this</strong> by having{' '}
+          <strong>your browser</strong> — running on <strong>your device</strong>, on{' '}
+          <strong>your home internet</strong> — pick up the ticket directly.
+          The key gets stamped with <strong>your IP</strong>, your browser uses it,
+          the stamps match, and the stream plays. ✅
+        </p>
+      </>
+    ),
+    privacyNote: (
+      <>
+        🔒 <strong>Privacy:</strong> The extension doesn&apos;t track you, doesn&apos;t show ads,
+        and doesn&apos;t collect any data. It&apos;s open-source (you can read every line of code).
+        Its <em>only</em> job is to fetch stream keys from your connection instead of ours.
+      </>
+    ),
+  },
+  anime: {
+    title: 'Extension Required for Anime',
+    subtitle: (
+      <>
+        Anime streams use <strong>residential-only CDNs</strong> that verify your
+        browser&apos;s Referer and Origin headers. Datacenter servers (where our website
+        runs) get blocked or throttled. The extension runs{' '}
+        <strong>directly in your browser</strong> — on your home internet — so the
+        CDNs see a real residential connection and serve the video.
+      </>
+    ),
+    whyTitle: '🧠 Why do I need this for anime?',
+    whyBody: (
+      <>
+        <p>
+          Anime hosting sites like <strong>Miruro</strong> and <strong>AnimeKai</strong> serve
+          their video files through CDNs that <strong>check where you&apos;re coming from</strong>.
+          They look at your browser&apos;s <em>Referer</em> header to verify you&apos;re watching
+          from a legitimate anime site, not a bot or a datacenter scraper.
+        </p>
+        <p>
+          When you click play on Flyx, <strong>our servers</strong> (in a datacenter) try to
+          fetch the video for you. But the CDN sees a datacenter IP and says:{' '}
+          <em>&ldquo;Nope — you&apos;re not a real person watching from miruro.to. Access denied.&rdquo;</em>
+        </p>
+        <p>
+          <strong>The extension fixes this</strong> by intercepting the request inside{' '}
+          <strong>your browser</strong>. Instead of our datacenter servers fetching the video,
+          your browser fetches it directly — with the correct Referer header, from your
+          residential IP. The CDN sees a real person on a real connection, and the
+          anime plays instantly. ✅
+        </p>
+        <p>
+          <strong>Movies and TV series</strong> don&apos;t have this restriction — they work
+          without the extension. But anime and live TV require it. Once installed,
+          you never have to think about it again.
+        </p>
+      </>
+    ),
+    privacyNote: (
+      <>
+        🔒 <strong>Privacy:</strong> The extension is fully open-source, contains zero ads,
+        zero tracking, and zero data collection. It does one thing: fetches video
+        from your connection instead of ours. That&apos;s it.
+      </>
+    ),
+  },
+};
 
 // Detect browser for tailored instructions
 function getBrowser(): 'chrome' | 'firefox' | 'edge' | 'other' {
@@ -144,10 +254,11 @@ const STEPS: Record<string, Array<{ title: string; detail: string }>> = {
   ],
 };
 
-export function ExtensionGate({ children }: { children: React.ReactNode }) {
+export function ExtensionGate({ children, type = 'live' }: { children: React.ReactNode; type?: GateType }) {
   const { detected, version, checking, recheck } = useExtensionDetected();
   const [browser, setBrowser] = useState<string>('other');
   const [rechecking, setRechecking] = useState(false);
+  const config = GATE_CONFIG[type];
 
   useEffect(() => {
     setBrowser(getBrowser());
@@ -155,7 +266,6 @@ export function ExtensionGate({ children }: { children: React.ReactNode }) {
 
   const handleRecheck = async () => {
     setRechecking(true);
-    // Small delay so user sees the spinner
     await new Promise((r) => setTimeout(r, 600));
     recheck();
     setRechecking(false);
@@ -192,49 +302,18 @@ export function ExtensionGate({ children }: { children: React.ReactNode }) {
               <circle cx="12" cy="16" r="1" fill="currentColor" />
             </svg>
           </div>
-          <h2 className={styles.gateTitle}>Extension Required</h2>
+          <h2 className={styles.gateTitle}>{config.title}</h2>
           <p className={styles.gateSubtitle}>
-            Live TV channels use <strong>IP-bound streaming</strong> — a security measure that
-            ties every viewer&apos;s access key to their unique internet address. Our servers
-            can&apos;t unlock these streams for you from a datacenter. The extension lets{' '}
-            <strong>your own device</strong> handle the unlock step, right from your home connection.
+            {config.subtitle}
           </p>
         </div>
 
-        {/* Why — layman-friendly explanation */}
+        {/* Why — type-specific explanation */}
         <div className={styles.whySection}>
-          <h3>🧠 Why do I need this? (Plain English)</h3>
-          <p>
-            Imagine you&apos;re picking up concert tickets at a <strong>will-call booth</strong>.
-            The venue has a strict rule:{' '}
-            <em>&ldquo;We only hand tickets to the person whose name is on the order. Show us your ID.&rdquo;</em>
-          </p>
-          <p>
-            That&apos;s exactly how Live TV streams work. When you click play, the stream
-            source says:{' '}
-            <em>&ldquo;Sure, here&apos;s your access key — but I&apos;m stamping it with{' '}
-              <strong>your</strong> IP address. Only that IP can use it.&rdquo;</em>
-          </p>
-          <p>
-            Here&apos;s the problem: <strong>our website doesn&apos;t live at your house.</strong> It runs on
-            servers in a datacenter somewhere. If our server tries to pick up the
-            ticket for you, the key gets stamped with the <strong>datacenter&apos;s IP</strong> —
-            not yours. When your browser then tries to use that key, the stream
-            source checks the stamp, sees a mismatch, and says:{' '}
-            <em>&ldquo;Sorry, this key wasn&apos;t issued to you. Access denied.&rdquo;</em> (That&apos;s the
-            dreaded <strong>403 Forbidden</strong> error.)
-          </p>
-          <p>
-            <strong>The extension fixes this</strong> by having{' '}
-            <strong>your browser</strong> — running on <strong>your device</strong>, on{' '}
-            <strong>your home internet</strong> — pick up the ticket directly.
-            The key gets stamped with <strong>your IP</strong>, your browser uses it,
-            the stamps match, and the stream plays. ✅
-          </p>
+          <h3>{config.whyTitle}</h3>
+          {config.whyBody}
           <p className={styles.whyPrivacy}>
-            🔒 <strong>Privacy:</strong> The extension doesn&apos;t track you, doesn&apos;t show ads,
-            and doesn&apos;t collect any data. It&apos;s open-source (you can read every line of code).
-            Its <em>only</em> job is to fetch stream keys from your connection instead of ours.
+            {config.privacyNote}
           </p>
         </div>
 

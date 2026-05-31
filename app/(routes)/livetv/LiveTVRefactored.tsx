@@ -13,7 +13,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useLiveTVData, LiveEvent, TVChannel } from './hooks/useLiveTVData';
 import { VideoPlayer } from './components/VideoPlayer';
-import { ExtensionGate } from './components/ExtensionGate';
+import { ExtensionGate } from '@/components/ExtensionGate';
 import { LiveHero } from './components/LiveHero';
 import { CategorySidebar } from './components/CategorySidebar';
 import { ContentGrid } from './components/ContentGrid';
