@@ -41,6 +41,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
   const [selectedChannelIndex, setSelectedChannelIndex] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
+  const destroyingRef = useRef(false); // guards against cascading callbacks during teardown
   const recoveryRef = useRef(false); // tracks if auto-recovery is in progress
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -89,7 +90,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
 
   // Attempt full stream reload (destroy + re-init) as last-resort recovery
   const attemptFullReload = useCallback(() => {
-    if (recoveryRef.current) return; // already recovering
+    if (destroyingRef.current || recoveryRef.current) return; // tearing down or already recovering
     recoveryRef.current = true;
     setRecoveryStatus('Reloading stream...');
     console.log('[VideoPlayer] Full reload recovery');
@@ -188,6 +189,7 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
       });
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (destroyingRef.current) return; // teardown in progress — ignore
         console.error('[VideoPlayer] HLS Error:', data.type, data.details, data.fatal);
         
         // Non-fatal: buffer stall — nudge forward
@@ -329,6 +331,9 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
     const video = videoRef.current;
     if (!video) return;
 
+    // Re-arm — we're no longer tearing down
+    destroyingRef.current = false;
+
     // Clear any previous stall detector
     if (stallTimerRef.current) {
       clearInterval(stallTimerRef.current);
@@ -468,8 +473,12 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
     }
 
     return () => {
+      // Set destroying flag FIRST — prevents ERROR/FRAG_BUFFERED
+      // callbacks from triggering attemptFullReload → initPlayer
+      // during hls.destroy(), which would crash the error boundary.
+      destroyingRef.current = true;
       if (hlsRef.current) {
-        hlsRef.current.destroy();
+        try { hlsRef.current.destroy(); } catch {}
         hlsRef.current = null;
       }
       if (stallTimerRef.current) {
@@ -480,7 +489,6 @@ export function VideoPlayer({ event, channel, isOpen, onClose }: VideoPlayerProp
         clearTimeout(loadingTimeoutRef.current);
         loadingTimeoutRef.current = null;
       }
-
     };
   }, [isOpen, event, channel]);
 
