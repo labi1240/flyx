@@ -14,73 +14,11 @@ import {
   type AnimeCard,
 } from '@/lib/anime/jikan-client';
 
-// Cap chain walk so a pathological relations graph can't stall the page.
-const MAX_SEASON_CHAIN = 20;
-
-interface SeasonEntry {
-  malId: number;
-  title: string;
-  titleEnglish: string | null;
-  imageUrl: string;
-  episodes: number | null;
-  score: number | null;
-  type: string;
-  status: string;
-  year: number | null;
-  seasonOrder: number;
-}
-
-function toSeasonEntry(a: JikanAnime, order: number): SeasonEntry {
-  return {
-    malId: a.mal_id,
-    title: a.title,
-    titleEnglish: a.title_english,
-    imageUrl:
-      a.images?.webp?.large_image_url ||
-      a.images?.jpg?.large_image_url ||
-      a.images?.jpg?.image_url || '',
-    episodes: a.episodes,
-    score: a.score,
-    type: a.type,
-    status: a.status,
-    year: a.year,
-    seasonOrder: order,
-  };
-}
-
-// Plain /anime/{id} doesn't include `relations`; only /full does. So we keep
-// using jikanFull while walking the chain — cached by jikan-client, so revisits
-// to a chain neighbour don't re-hit the network.
-async function walkChain(
-  start: JikanAnime,
-  direction: 'Sequel' | 'Prequel',
-  visited: Set<number>,
-): Promise<JikanAnime[]> {
-  const out: JikanAnime[] = [];
-  let current: JikanAnime = start;
-  while (out.length < MAX_SEASON_CHAIN) {
-    const nextRef = current.relations
-      ?.find((r) => r.relation === direction)
-      ?.entry.find((e) => e.type === 'anime' && !visited.has(e.mal_id));
-    if (!nextRef) break;
-    visited.add(nextRef.mal_id);
-    const fetched = await jikanFull(nextRef.mal_id);
-    if (!fetched) break;
-    out.push(fetched);
-    current = fetched;
-  }
-  return out;
-}
-
 type Tab = 'episodes' | 'characters' | 'related';
-
-// ─── Component ──────────────────────────────────────────────────────────────
 
 export default function AnimeDetailsClient({ malId }: { malId: number }) {
   const router = useRouter();
   const [anime, setAnime] = useState<JikanAnime | null>(null);
-  const [seasons, setSeasons] = useState<SeasonEntry[]>([]);
-  const [selectedSeasonIdx, setSelectedSeasonIdx] = useState(0);
   const [episodes, setEpisodes] = useState<JikanEpisode[]>([]);
   const [characters, setCharacters] = useState<JikanCharacter[]>([]);
   const [recommendations, setRecommendations] = useState<AnimeCard[]>([]);
@@ -90,7 +28,6 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [trailerOpen, setTrailerOpen] = useState(false);
 
-  // ─── Main load: primary anime + seasons + side data ─────────────────────
   useEffect(() => {
     if (!malId) { setError(true); setLoading(false); return; }
     let cancelled = false;
@@ -100,33 +37,12 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
       if (cancelled) return;
       if (!data) { setError(true); setLoading(false); return; }
       setAnime(data);
-
-      // Walk the Sequel/Prequel chain so multi-season shows surface every
-      // season — not just the ones directly adjacent to this entry. Side
-      // stories, spin-offs, and OVAs are intentionally excluded; they
-      // belong in "Related", not in the season selector.
-      const visited = new Set<number>([data.mal_id]);
-      const prequels = await walkChain(data, 'Prequel', visited);
-      if (cancelled) return;
-      const sequels = await walkChain(data, 'Sequel', visited);
-      if (cancelled) return;
-
-      const ordered: JikanAnime[] = [...prequels.reverse(), data, ...sequels];
-      const seasonEntries: SeasonEntry[] = ordered.map((a, i) => toSeasonEntry(a, i + 1));
-
-      setSeasons(seasonEntries);
-
-      const idx = seasonEntries.findIndex((s) => s.malId === data.mal_id);
-      if (idx > 0) setSelectedSeasonIdx(idx);
-
       setLoading(false);
 
-      // Side data: episodes for current season, characters, recommendations
-      const targetId = data.mal_id;
       const [eps, chars, recs] = await Promise.all([
-        jikanEpisodes(targetId),
-        jikanCharacters(targetId),
-        jikanRecommendations(targetId),
+        jikanEpisodes(data.mal_id),
+        jikanCharacters(data.mal_id),
+        jikanRecommendations(data.mal_id),
       ]);
       if (cancelled) return;
       setEpisodes(eps);
@@ -137,27 +53,6 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
     return () => { cancelled = true; };
   }, [malId]);
 
-  // ─── When selected season changes, refetch episodes/characters ──────────
-  const selectedSeason = seasons[selectedSeasonIdx];
-  const selectedMalId = selectedSeason?.malId ?? null;
-  useEffect(() => {
-    if (selectedMalId == null || selectedMalId === malId) return;
-    let cancelled = false;
-    (async () => {
-      setEpisodes([]);
-      setCharacters([]);
-      const [eps, chars] = await Promise.all([
-        jikanEpisodes(selectedMalId),
-        jikanCharacters(selectedMalId),
-      ]);
-      if (cancelled) return;
-      setEpisodes(eps);
-      setCharacters(chars);
-    })();
-    return () => { cancelled = true; };
-  }, [selectedMalId, malId]);
-
-  // ─── Derived ────────────────────────────────────────────────────────────
   const isMovie = anime?.type === 'Movie';
   const mainCharacters = useMemo(
     () => characters.filter((c) => c.role === 'Main').slice(0, 12),
@@ -167,17 +62,15 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
   const episodeCountKnown =
     episodes.length > 0
       ? episodes.length
-      : selectedSeason?.episodes ?? anime?.episodes ?? 0;
+      : anime?.episodes ?? 0;
 
   const playable = useCallback((epNum: number) => {
-    const target = selectedSeason?.malId ?? anime?.mal_id ?? malId;
-    if (isMovie) router.push(`/anime/${target}/watch`);
-    else router.push(`/anime/${target}/watch?episode=${epNum}`);
-  }, [selectedSeason, anime, isMovie, malId, router]);
+    if (isMovie) router.push(`/anime/${malId}/watch`);
+    else router.push(`/anime/${malId}/watch?episode=${epNum}`);
+  }, [isMovie, malId, router]);
 
   const handleWatchPrimary = useCallback(() => playable(1), [playable]);
 
-  // ─── States ─────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0812] flex items-center justify-center">
@@ -216,45 +109,91 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
       </button>
 
       {/* Hero */}
-      <Hero
-        anime={anime}
-        poster={poster}
-        seasons={seasons}
-        onWatch={handleWatchPrimary}
-        onTrailer={() => setTrailerOpen(true)}
-        hasTrailer={!!trailerYoutubeId}
-        synopsisExpanded={synopsisExpanded}
-        onToggleSynopsis={() => setSynopsisExpanded((v) => !v)}
-      />
+      <div className="relative pt-24 pb-10 px-4 md:px-8 overflow-hidden">
+        <div className="absolute inset-0">
+          <img src={poster} alt="" aria-hidden className="w-full h-full object-cover blur-3xl opacity-25 scale-110" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0a0812]/40 via-[#0a0812]/80 to-[#0a0812]" />
+        </div>
 
-      {/* Season Selector */}
-      {!isMovie && seasons.length > 1 && (
-        <div className="px-4 md:px-8 py-4 border-b border-white/5">
-          <div className="max-w-6xl mx-auto">
-            <h3 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">
-              Seasons & Related
-            </h3>
-            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              {seasons.map((s, i) => (
-                <button
-                  key={s.malId}
-                  onClick={() => setSelectedSeasonIdx(i)}
-                  className={`flex-shrink-0 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedSeasonIdx === i
-                      ? 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-900/40'
-                      : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  <span className="block">{s.titleEnglish || s.title}</span>
-                  <span className="block text-[10px] opacity-60 mt-0.5">
-                    {s.year ?? '—'} · {s.episodes ?? '?'} eps
+        <div className="relative max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
+          <div className="flex-shrink-0 w-48 md:w-56 mx-auto md:mx-0">
+            <div className="relative rounded-xl overflow-hidden shadow-2xl border border-white/10">
+              <img src={poster} alt={anime.title} className="w-full" />
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl md:text-5xl font-black text-white leading-tight">
+              {anime.title_english || anime.title}
+            </h1>
+            {anime.title_english && anime.title_english !== anime.title && (
+              <p className="text-gray-400 mt-1 text-sm md:text-base">{anime.title}</p>
+            )}
+
+            {/* Clean stat line */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-sm text-gray-300">
+              {anime.score != null && (
+                <span className="inline-flex items-center gap-1 text-yellow-300 font-semibold">
+                  ★ {anime.score.toFixed(2)}
+                </span>
+              )}
+              <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs">{anime.type}</span>
+              <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs">{anime.status}</span>
+              {anime.year && <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs">{anime.year}</span>}
+              {anime.episodes && <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs">{anime.episodes} eps</span>}
+              {anime.duration && <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs">{anime.duration}</span>}
+            </div>
+
+            {/* Genres */}
+            {anime.genres.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {anime.genres.slice(0, 5).map((g) => (
+                  <span key={g.mal_id} className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs text-gray-300 transition-colors">
+                    {g.name}
                   </span>
+                ))}
+              </div>
+            )}
+
+            {/* Synopsis */}
+            {anime.synopsis && (
+              <div className="mt-4">
+                <p className={`text-gray-300 text-sm leading-relaxed ${synopsisExpanded ? '' : 'line-clamp-4'}`}>
+                  {anime.synopsis}
+                </p>
+                {anime.synopsis.length > 280 && (
+                  <button
+                    onClick={() => setSynopsisExpanded((v) => !v)}
+                    className="text-fuchsia-400 hover:text-fuchsia-300 text-xs mt-1 font-medium"
+                  >
+                    {synopsisExpanded ? 'Show less' : 'Read more'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                onClick={handleWatchPrimary}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-400 hover:to-pink-400 text-white font-semibold shadow-lg shadow-fuchsia-900/40 transition-all"
+              >
+                <PlayIcon className="w-4 h-4" />
+                {anime.type === 'Movie' ? 'Watch Movie' : 'Watch Now'}
+              </button>
+              {trailerYoutubeId && (
+                <button
+                  onClick={() => setTrailerOpen(true)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium transition-colors"
+                >
+                  <FilmIcon className="w-4 h-4" />
+                  Trailer
                 </button>
-              ))}
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Tabs */}
       <div className="px-4 md:px-8 pt-6">
@@ -305,163 +244,9 @@ export default function AnimeDetailsClient({ malId }: { malId: number }) {
 
       {/* Trailer modal */}
       {trailerOpen && trailerYoutubeId && (
-        <TrailerModal
-          youtubeId={trailerYoutubeId}
-          onClose={() => setTrailerOpen(false)}
-        />
+        <TrailerModal youtubeId={trailerYoutubeId} onClose={() => setTrailerOpen(false)} />
       )}
     </div>
-  );
-}
-
-// ─── Hero ───────────────────────────────────────────────────────────────────
-
-function Hero({
-  anime, poster, seasons, onWatch, onTrailer, hasTrailer, synopsisExpanded, onToggleSynopsis,
-}: {
-  anime: JikanAnime;
-  poster: string;
-  seasons: SeasonEntry[];
-  onWatch: () => void;
-  onTrailer: () => void;
-  hasTrailer: boolean;
-  synopsisExpanded: boolean;
-  onToggleSynopsis: () => void;
-}) {
-  return (
-    <div className="relative pt-24 pb-10 px-4 md:px-8 overflow-hidden">
-      <div className="absolute inset-0">
-        <img src={poster} alt="" aria-hidden className="w-full h-full object-cover blur-3xl opacity-25 scale-110" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0a0812]/40 via-[#0a0812]/80 to-[#0a0812]" />
-      </div>
-
-      <div className="relative max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
-        <div className="flex-shrink-0 w-48 md:w-56 mx-auto md:mx-0">
-          <div className="relative rounded-xl overflow-hidden shadow-2xl border border-white/10">
-            <img src={poster} alt={anime.title} className="w-full" />
-          </div>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl md:text-5xl font-black text-white leading-tight">
-            {anime.title_english || anime.title}
-          </h1>
-          {anime.title_english && anime.title_english !== anime.title && (
-            <p className="text-gray-400 mt-1 text-sm md:text-base">{anime.title}</p>
-          )}
-
-          {/* Stat strip */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 text-sm text-gray-300">
-            {anime.score != null && (
-              <span className="inline-flex items-center gap-1 text-yellow-300 font-semibold">
-                ★ {anime.score.toFixed(2)}
-              </span>
-            )}
-            {anime.rank && <Pill>#{anime.rank}</Pill>}
-            <Pill>{anime.type}</Pill>
-            <Pill>{anime.status}</Pill>
-            {anime.year && <Pill>{anime.year}</Pill>}
-            {seasons.length > 1 && <Pill>{seasons.length} Seasons</Pill>}
-            {anime.duration && <Pill>{anime.duration}</Pill>}
-            {anime.rating && <Pill>{anime.rating.split(' - ')[0]}</Pill>}
-          </div>
-
-          {/* Genres */}
-          {anime.genres.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {anime.genres.map((g) => (
-                <span
-                  key={g.mal_id}
-                  className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs text-gray-300 transition-colors"
-                >
-                  {g.name}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Synopsis */}
-          {anime.synopsis && (
-            <div className="mt-4">
-              <p className={`text-gray-300 text-sm leading-relaxed ${synopsisExpanded ? '' : 'line-clamp-4'}`}>
-                {anime.synopsis}
-              </p>
-              {anime.synopsis.length > 280 && (
-                <button
-                  onClick={onToggleSynopsis}
-                  className="text-fuchsia-400 hover:text-fuchsia-300 text-xs mt-1 font-medium"
-                >
-                  {synopsisExpanded ? 'Show less' : 'Read more'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Studios */}
-          {anime.studios && anime.studios.length > 0 && (
-            <div className="mt-3 text-xs text-gray-500">
-              <span className="text-gray-600">Studio:</span>{' '}
-              {anime.studios.map((s) => s.name).join(', ')}
-            </div>
-          )}
-
-          {/* Action buttons */}
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              onClick={onWatch}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-400 hover:to-pink-400 text-white font-semibold shadow-lg shadow-fuchsia-900/40 transition-all"
-            >
-              <PlayIcon className="w-4 h-4" />
-              {anime.type === 'Movie' ? 'Watch Movie' : 'Watch Now'}
-            </button>
-            {hasTrailer && (
-              <button
-                onClick={onTrailer}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium transition-colors"
-              >
-                <FilmIcon className="w-4 h-4" />
-                Trailer
-              </button>
-            )}
-          </div>
-
-          {/* Theme songs */}
-          {(anime.theme?.openings?.length || anime.theme?.endings?.length) ? (
-            <details className="mt-5 group">
-              <summary className="text-xs uppercase tracking-wider text-gray-500 cursor-pointer hover:text-gray-300 select-none">
-                Theme Songs
-              </summary>
-              <div className="mt-2 grid sm:grid-cols-2 gap-3 text-xs text-gray-400">
-                {anime.theme?.openings && anime.theme.openings.length > 0 && (
-                  <div>
-                    <div className="text-gray-300 font-semibold mb-1">Openings</div>
-                    <ul className="space-y-0.5">
-                      {anime.theme.openings.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {anime.theme?.endings && anime.theme.endings.length > 0 && (
-                  <div>
-                    <div className="text-gray-300 font-semibold mb-1">Endings</div>
-                    <ul className="space-y-0.5">
-                      {anime.theme.endings.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </details>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs text-gray-300">
-      {children}
-    </span>
   );
 }
 
@@ -488,14 +273,12 @@ function EpisodesGrid({
           onClick={onWatchMovie}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium"
         >
-          <PlayIcon className="w-4 h-4" />
-          Play
+          <PlayIcon className="w-4 h-4" /> Play
         </button>
       </div>
     );
   }
 
-  // Real titled episodes if Jikan returned them; else fallback to numbered tiles
   if (episodes.length > 0) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -516,14 +299,10 @@ function EpisodesGrid({
                       <PlayIcon className="w-3.5 h-3.5" />
                     </div>
                   </div>
-                  <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-white">
-                    EP {epNum}
-                  </div>
+                  <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-white">EP {epNum}</div>
                 </div>
                 <div className="flex-1 p-3 min-w-0">
-                  <div className="font-medium text-white text-sm line-clamp-2 leading-tight">
-                    {ep.title || `Episode ${epNum}`}
-                  </div>
+                  <div className="font-medium text-white text-sm line-clamp-2 leading-tight">{ep.title || `Episode ${epNum}`}</div>
                   <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
                     {ep.aired && <span>{new Date(ep.aired).toLocaleDateString()}</span>}
                     {ep.filler && <span className="text-orange-400">Filler</span>}
@@ -576,21 +355,14 @@ function CharactersGrid({ characters }: { characters: JikanCharacter[] }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {characters.map((c) => {
         const jp = c.voice_actors?.find((v) => v.language === 'Japanese');
-        const img =
-          c.character.images?.webp?.image_url ||
-          c.character.images?.jpg?.image_url || '';
+        const img = c.character.images?.webp?.image_url || c.character.images?.jpg?.image_url || '';
         return (
-          <div
-            key={c.character.mal_id}
-            className="flex gap-3 p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
-          >
+          <div key={c.character.mal_id} className="flex gap-3 p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
             <img src={img} alt={c.character.name} loading="lazy" className="w-14 h-14 rounded-md object-cover bg-black flex-shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-white truncate">{c.character.name}</div>
               <div className="text-[11px] text-fuchsia-300 mt-0.5">{c.role}</div>
-              {jp && (
-                <div className="text-[11px] text-gray-500 mt-0.5 truncate">VA: {jp.person.name}</div>
-              )}
+              {jp && <div className="text-[11px] text-gray-500 mt-0.5 truncate">VA: {jp.person.name}</div>}
             </div>
           </div>
         );
@@ -608,11 +380,7 @@ function RelatedGrid({ items, onOpen }: { items: AnimeCard[]; onOpen: (a: AnimeC
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {items.slice(0, 24).map((item) => (
-        <button
-          key={item.mal_id}
-          onClick={() => onOpen(item)}
-          className="group block text-left"
-        >
+        <button key={item.mal_id} onClick={() => onOpen(item)} className="group block text-left">
           <div className="relative rounded-lg overflow-hidden bg-gray-900 shadow group-hover:shadow-fuchsia-500/20 group-hover:shadow-lg transition-all">
             <img
               src={item.image || '/placeholder-poster.jpg'}
@@ -641,10 +409,7 @@ function TrailerModal({ youtubeId, onClose }: { youtubeId: string; onClose: () =
   }, [onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative w-full max-w-4xl aspect-video" onClick={(e) => e.stopPropagation()}>
         <iframe
           src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0`}
@@ -652,13 +417,7 @@ function TrailerModal({ youtubeId, onClose }: { youtubeId: string; onClose: () =
           allow="autoplay; encrypted-media; fullscreen"
           className="w-full h-full rounded-xl shadow-2xl"
         />
-        <button
-          onClick={onClose}
-          aria-label="Close trailer"
-          className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-black font-bold shadow-lg"
-        >
-          ✕
-        </button>
+        <button onClick={onClose} aria-label="Close trailer" className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-black font-bold shadow-lg">✕</button>
       </div>
     </div>
   );
@@ -667,17 +426,8 @@ function TrailerModal({ youtubeId, onClose }: { youtubeId: string; onClose: () =
 // ─── Icons ─────────────────────────────────────────────────────────────────
 
 function PlayIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M8 5v14l11-7z" />
-    </svg>
-  );
+  return <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M8 5v14l11-7z" /></svg>;
 }
 function FilmIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4" />
-    </svg>
-  );
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4" /></svg>;
 }

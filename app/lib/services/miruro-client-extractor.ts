@@ -68,9 +68,6 @@ export async function extractMiruroClient(
   const targetEp = episode || 1;
   console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref}`);
 
-  // Ensure Service Worker is in control before making cross-origin requests.
-  if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
-
   const cfBase = getCfWorkerBase();
 
   // Step 1: MAL → AniList
