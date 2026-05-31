@@ -144,7 +144,7 @@
   var XHR = window.XMLHttpRequest;
   window.XMLHttpRequest = function () {
     var xhr = new XHR();
-    var _url = '', _intercept = false, _aborted = false;
+    var _url = '', _method = 'GET', _intercept = false, _aborted = false;
     var _rs = 0, _status = 0, _st = '', _rbody = null, _rh = {}, _events = null;
 
     function fire(n) { var a = _events[n]; if (!a) return; if (a._on) try { a._on.call(xhr); } catch(e) {} for (var i=0;i<a.length;i++) try{a[i].call(xhr)}catch(e){} }
