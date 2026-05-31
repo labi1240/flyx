@@ -7,7 +7,7 @@
  *   inject.js  --window.postMessage-->  bridge.js  --chrome.runtime-->  SW
  *   inject.js  <--window.postMessage--  bridge.js  <--sendResponse---   SW
  *
- * VERSION: 3.0.0
+ * VERSION: 3.0.1
  */
 (function () {
   'use strict';
@@ -41,7 +41,7 @@
 
     // Extension detection ping/pong
     if (e.data.__flyx === 'ping') {
-      window.postMessage({ __flyx: 'pong', version: '3.0.0' }, '*');
+      window.postMessage({ __flyx: 'pong', version: '3.0.1' }, '*');
       return;
     }
 

@@ -7,7 +7,7 @@
  * - DLHD extraction (mints IP-bound token from residential IP)
  * - reCAPTCHA v3 solver for DLHD IP whitelist
  *
- * VERSION: 3.0.0
+ * VERSION: 3.0.1
  */
 import { solveRecaptchaV3, verifyToken } from './lib/recaptcha.js';
 
@@ -283,23 +283,27 @@ async function removeProviderRules(providerId) {
 }
 
 async function installAllEnabledRules() {
-  // Remove all existing dynamic rules first
-  try {
-    var existing = await chrome.declarativeNetRequest.getDynamicRules();
-    if (existing.length) {
-      await chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: existing.map(function (r) { return r.id; })
-      });
-    }
-  } catch (e) { /* ignore */ }
-
-  // Install rules for enabled providers
+  // Build all rules in one pass, then install atomically
+  var allRules = [];
   for (var id in PROVIDERS) {
     if (providerState[id] !== false) {
-      await installProviderRules(id);
+      var rules = buildProviderRules(id);
+      for (var i = 0; i < rules.length; i++) allRules.push(rules[i]);
     }
   }
-  console.log('[Flyx SW] DNR rules installed for all enabled providers');
+
+  // Single atomic update: remove all old + add all new
+  try {
+    var existing = await chrome.declarativeNetRequest.getDynamicRules();
+    var removeIds = existing.length ? existing.map(function (r) { return r.id; }) : [];
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: removeIds,
+      addRules: allRules
+    });
+    console.log('[Flyx SW] DNR: -' + removeIds.length + ' old +' + allRules.length + ' new rules installed');
+  } catch (e) {
+    console.error('[Flyx SW] DNR install failed:', e.message);
+  }
 }
 
 // ── Provider State ──────────────────────────────────────────────────────
@@ -479,7 +483,12 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
 
 // ── Init ────────────────────────────────────────────────────────────────
 
+let initDone = false;
+
 async function init() {
+  if (initDone) return;
+  initDone = true;
+
   // Load persisted state
   var stored = await chrome.storage.local.get(['stats', 'providerState', 'activityLog']);
   stats = stored.stats || initStats();
@@ -494,7 +503,7 @@ async function init() {
   }
   if (!stats.global) stats.global = defStats.global;
 
-  // Install DNR rules for enabled providers
+  // Install DNR rules for enabled providers (single atomic update)
   await installAllEnabledRules();
 
   console.log('[Flyx Bypass v3] SW ready — ' +
@@ -503,6 +512,8 @@ async function init() {
     activityLog.length + ' log entries');
 }
 
-chrome.runtime.onInstalled.addListener(init);
+// onStartup ensures SW loads at browser start (before any messages arrive).
+// The direct init() call covers SW wake-up from idle (top-level re-executes).
+// Guard flag prevents double-init when both fire on browser start.
 chrome.runtime.onStartup.addListener(init);
 init();
