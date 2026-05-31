@@ -503,6 +503,10 @@ async function init() {
   }
   if (!stats.global) stats.global = defStats.global;
 
+  // Flush initial stats to storage so popup can read them on fresh install
+  statsDirty = true;
+  flushStats();
+
   // Install DNR rules for enabled providers (single atomic update)
   await installAllEnabledRules();
 
