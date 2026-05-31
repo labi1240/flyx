@@ -1,12 +1,21 @@
 /**
- * Shared Jikan (MAL) v4 client for the /anime client pages.
+ * Shared Jikan (MAL) v4 client for the /anime pages.
  *
- * Jikan rate limit: 3 req/s (anything beyond burst returns 429).
- * This module funnels every request through a single queue so the listing,
- * details, and watch pages cooperate instead of stampeding the API.
+ * Jikan rate limits: 3 req/s (burst returns 429). This module serializes every
+ * request through a single queue so listing, details, and watch pages cooperate
+ * instead of stampeding the API.
  *
- * Also exposes a small in-memory LRU cache so revisiting a recently viewed
- * page does not re-hit the API.
+ * Two-tier cache:
+ *   - detailCache (30 min, 500 entries) for /full, /episodes, /characters,
+ *     /recommendations — stable data that rarely changes
+ *   - listCache  (5 min,  200 entries) for listings, search, seasonal pages —
+ *     volatile data that shifts with airing schedules
+ *
+ * Works both client-side (browser) and server-side (Next.js SSR /
+ * generateMetadata). On the server the module-level caches are shared across
+ * requests, acting as a built-in server-side cache layer.
+ *
+ * Exponential backoff on 429: 1s → 2s → 4s → 8s (max 3 retries).
  */
 
 import { BoundedCache } from './bounded-cache';
@@ -156,13 +165,31 @@ export function toCard(a: any): AnimeCard | null {
   };
 }
 
-// ─── Rate-limited queue (3 req/s, 1 in-flight at a time) ────────────────────
+// ─── Two-tier cache ─────────────────────────────────────────────────────────
 //
-// Single-flight serialization keeps the implementation tiny and is enough to
-// stay under Jikan's burst limit. Empirically the API returns 429 if more
-// than 3 requests fire within a sliding second; we cap at one every ~340ms.
+// Detail cache: 30 min TTL for stable data (anime details, episodes,
+// characters, recommendations don't change day-to-day).
+// List cache: 5 min TTL for volatile data (seasonal, airing, search results).
 
-const MIN_INTERVAL_MS = 350;
+const detailCache = new BoundedCache<string, unknown>(500, 30 * 60_000);
+const listCache   = new BoundedCache<string, unknown>(200,  5 * 60_000);
+
+const DETAIL_PATTERNS = ['/full', '/episodes', '/characters', '/recommendations'];
+
+function getCache(endpoint: string): BoundedCache<string, unknown> {
+  for (const p of DETAIL_PATTERNS) {
+    if (endpoint.includes(p)) return detailCache;
+  }
+  return listCache;
+}
+
+// ─── Rate-limited queue (serialized, ~3 req/s) ──────────────────────────────
+//
+// Single-flight serialization keeps the implementation small. Empirically
+// Jikan returns 429 if more than 3 requests fire within a sliding second.
+// We cap at one every 333ms (3/sec). Works on both client and server.
+
+const MIN_INTERVAL_MS = 334;
 let lastRequestAt = 0;
 let chain: Promise<void> = Promise.resolve();
 
@@ -182,33 +209,57 @@ async function scheduled<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ─── Cache + fetch ──────────────────────────────────────────────────────────
+// ─── Exponential-backoff fetch (429 handling) ───────────────────────────────
+//
+// On 429: wait 1s, retry. If still 429: wait 2s, retry. Then 4s, then 8s.
+// Non-429 errors or non-ok responses after retries return null.
 
-const cache = new BoundedCache<string, unknown>(200, 5 * 60_000);
+async function fetchWithRetry(
+  url: string,
+  signal?: AbortSignal,
+  retries = 3,
+): Promise<Response | null> {
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: signal ?? AbortSignal.timeout(15000) });
+  } catch {
+    return null;
+  }
+
+  if (res.ok) return res;
+  if (res.status !== 429 || retries <= 0) return null;
+
+  // Exponential backoff: 1s, 2s, 4s, 8s
+  const delay = 1000 * Math.pow(2, 3 - retries);
+  console.warn(`[jikan] 429 — backing off ${delay}ms (${retries} retries left)`);
+  await new Promise((r) => setTimeout(r, delay));
+  return fetchWithRetry(url, signal, retries - 1);
+}
+
+// ─── Core fetch ─────────────────────────────────────────────────────────────
 
 async function jikanRaw(endpoint: string, signal?: AbortSignal): Promise<any> {
+  const cache = getCache(endpoint);
   const cached = cache.get(endpoint);
   if (cached !== undefined) return cached;
 
+  const url = `${JIKAN_BASE}${endpoint}`;
+
   const data = await scheduled(async () => {
-    const res = await fetch(`${JIKAN_BASE}${endpoint}`, {
-      signal: signal ?? AbortSignal.timeout(15000),
-    });
-    if (res.status === 429) {
-      await new Promise((r) => setTimeout(r, 1200));
-      const retry = await fetch(`${JIKAN_BASE}${endpoint}`, {
-        signal: signal ?? AbortSignal.timeout(15000),
-      });
-      if (!retry.ok) return null;
-      return retry.json();
+    const res = await fetchWithRetry(url, signal);
+    if (!res) return null;
+    try {
+      return await res.json();
+    } catch {
+      return null;
     }
-    if (!res.ok) return null;
-    return res.json();
   });
 
   if (data) cache.set(endpoint, data);
   return data;
 }
+
+// ─── Public API ─────────────────────────────────────────────────────────────
 
 /** Fetch a Jikan list endpoint and return mapped AnimeCards. */
 export async function jikanList(endpoint: string, signal?: AbortSignal): Promise<AnimeCard[]> {
@@ -222,7 +273,8 @@ export async function jikanList(endpoint: string, signal?: AbortSignal): Promise
   }
 }
 
-/** Fetch a single anime by MAL ID using /anime/{id}/full. */
+/** Fetch a single anime by MAL ID using /anime/{id}/full.
+ *  Works on both client and server (generateMetadata, SSR). */
 export async function jikanFull(malId: number, signal?: AbortSignal): Promise<JikanAnime | null> {
   try {
     const json = await jikanRaw(`/anime/${malId}/full`, signal);
@@ -234,7 +286,7 @@ export async function jikanFull(malId: number, signal?: AbortSignal): Promise<Ji
 
 /**
  * Fetch every page of /anime/{id}/episodes. Most TV series fit one page (100
- * items); long-runners need multiple. We cap at 8 pages (~800 eps) for safety.
+ * items); long-runners need multiple. Cap at 8 pages (~800 eps) for safety.
  */
 export async function jikanEpisodes(malId: number, signal?: AbortSignal): Promise<JikanEpisode[]> {
   const all: JikanEpisode[] = [];
@@ -248,7 +300,7 @@ export async function jikanEpisodes(malId: number, signal?: AbortSignal): Promis
   return all;
 }
 
-/** Fetch /anime/{id}/characters (top-N by main role on consumer side). */
+/** Fetch /anime/{id}/characters. */
 export async function jikanCharacters(
   malId: number,
   signal?: AbortSignal,
