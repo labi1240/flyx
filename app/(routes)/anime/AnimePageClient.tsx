@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { ExtensionGate } from '@/components/ExtensionGate';
 import {
   jikanList,
   jikanSearch,
@@ -33,6 +34,14 @@ const ALL_TAB = 'all';
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function AnimePageClient() {
+  return (
+    <ExtensionGate type="anime">
+      <AnimePageClientInner />
+    </ExtensionGate>
+  );
+}
+
+function AnimePageClientInner() {
   const router = useRouter();
 
   // Active tab: 'all' | genre id (string)

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { ExtensionGate } from '@/components/ExtensionGate';
 import {
   jikanFull,
   jikanEpisodes,
@@ -17,6 +18,14 @@ import {
 type Tab = 'episodes' | 'characters' | 'related';
 
 export default function AnimeDetailsClient({ malId }: { malId: number }) {
+  return (
+    <ExtensionGate type="anime">
+      <AnimeDetailsClientInner malId={malId} />
+    </ExtensionGate>
+  );
+}
+
+function AnimeDetailsClientInner({ malId }: { malId: number }) {
   const router = useRouter();
   const [anime, setAnime] = useState<JikanAnime | null>(null);
   const [episodes, setEpisodes] = useState<JikanEpisode[]>([]);
