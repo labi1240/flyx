@@ -4,10 +4,10 @@
  * Fetches and returns sports events schedule from DLHD.
  * Uses regex-based parsing (no external dependencies).
  * 
- * UPDATED February 28, 2026:
- * - Primary domain: dlhd.link (replaces daddylive.su which no longer resolves)
+ * UPDATED May 31, 2026:
+ * - Primary domain: dlhd.pk (dlhd.link died ~March 2026)
  * - Removed Node.js https module / SNI workaround — standard fetch works now
- * - Fallback: RPI proxy
+ * - Fallback: RPI proxy (dead — dlhd.pk is direct nginx, no Cloudflare)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -285,7 +285,7 @@ function parseCategories(html: string): ScheduleCategory[] {
   return categories;
 }
 
-const SCHEDULE_DOMAIN = 'dlhd.link';
+const SCHEDULE_DOMAIN = 'dlhd.pk';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 /**
