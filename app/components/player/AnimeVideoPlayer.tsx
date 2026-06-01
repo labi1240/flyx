@@ -51,103 +51,83 @@ export default function AnimeVideoPlayer({
   const currentSource = sources[sourceIdx];
 
   // ─── Init hls.js ─────────────────────────────────────────────────────
+  const urlRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!currentSource?.url || !videoRef.current) return;
+    var url = currentSource?.url;
+    if (!url || !videoRef.current) return;
+    // Prevent re-init for the same URL (React Strict Mode double-mount)
+    if (urlRef.current === url && hlsRef.current) return;
+    urlRef.current = url;
 
-    const video = videoRef.current;
+    var video = videoRef.current;
     destroyedRef.current = false;
-    let hls: Hls | null = null;
 
-    function init() {
-      if (destroyedRef.current) return;
+    // Clean previous instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
 
-      // Clean up any previous instance
+    console.log('[AnimePlayer] Loading:', url.substring(0, 100));
+
+    if (Hls.isSupported()) {
+      var hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+        maxBufferLength: 30,
+        maxBufferSize: 60 * 1000 * 1000,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 4,
+        levelLoadingTimeOut: 15000,
+        fragLoadingTimeOut: 30000,
+        fragLoadingMaxRetry: 8,
+        startLevel: -1,
+        pLoader: FetchLoader as any,
+        fLoader: FetchLoader as any,
+      });
+
+      hls.on(Hls.Events.ERROR, function (_event, data) {
+        if (destroyedRef.current) return;
+        if (data.fatal) {
+          console.error('[AnimePlayer] HLS fatal:', data.type, data.details);
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            if ((data.response?.code === 403 || data.response?.code === 404) && sourceIdx < sources.length - 1) {
+              setSourceIdx(function (prev) { return prev + 1; });
+              return;
+            }
+          }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            hls?.recoverMediaError();
+            return;
+          }
+          setError('Stream playback failed: ' + (data.details || 'unknown'));
+          onError?.(data.details || 'HLS error');
+        }
+      });
+
+      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+        if (destroyedRef.current) return;
+        console.log('[AnimePlayer] Manifest ready');
+        // Don't autoplay — let the user click play to avoid
+        // "play() interrupted by new load request" on React remount
+      });
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      hlsRef.current = hls;
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url;
+    }
+
+    return function cleanup() {
+      destroyedRef.current = true;
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
-
-      const url = currentSource.url;
-      console.log('[AnimePlayer] Loading:', url.substring(0, 100));
-
-      if (Hls.isSupported()) {
-        hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          backBufferLength: 90,
-          maxBufferLength: 30,
-          maxBufferSize: 60 * 1000 * 1000,
-          manifestLoadingTimeOut: 15000,
-          manifestLoadingMaxRetry: 4,
-          levelLoadingTimeOut: 15000,
-          fragLoadingTimeOut: 30000,
-          fragLoadingMaxRetry: 8,
-          startLevel: -1,
-          pLoader: FetchLoader as any,
-          fLoader: FetchLoader as any,
-        });
-
-        hls.loadSource(url);
-        hls.attachMedia(video);
-
-        hls.on(Hls.Events.ERROR, function (_event, data) {
-          if (destroyedRef.current) return;
-          if (data.fatal) {
-            console.error('[AnimePlayer] HLS fatal:', data.type, data.details);
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                if (data.response?.code === 403 || data.response?.code === 404) {
-                  // Try next source
-                  if (sourceIdx < sources.length - 1) {
-                    setSourceIdx(prev => prev + 1);
-                    return;
-                  }
-                }
-                hls?.destroy();
-                setError('Network error loading stream. Try another source.');
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls?.recoverMediaError();
-                break;
-              default:
-                hls?.destroy();
-                setError('Stream playback failed.');
-                break;
-            }
-            onError?.(data.details || 'HLS error');
-          }
-        });
-
-        hls.on(Hls.Events.MANIFEST_PARSED, function () {
-          if (destroyedRef.current) return;
-          console.log('[AnimePlayer] Manifest parsed, playing');
-          video.play().catch(function (e) {
-            console.warn('[AnimePlayer] Autoplay blocked:', e.message);
-          });
-        });
-
-        hlsRef.current = hls;
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari native HLS
-        video.src = url;
-        video.addEventListener('loadedmetadata', function () {
-          if (destroyedRef.current) return;
-          video.play().catch(function () {});
-        });
-      }
-    }
-
-    init();
-
-    return function cleanup() {
-      destroyedRef.current = true;
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
-      hlsRef.current = null;
     };
-  }, [currentSource?.url, sourceIdx]);
+  }, [currentSource?.url]);
 
   // ─── Skip intro/outro ────────────────────────────────────────────────
   const handleTimeUpdate = useCallback(function () {
