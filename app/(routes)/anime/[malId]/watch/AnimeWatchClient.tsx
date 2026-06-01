@@ -33,7 +33,10 @@ interface StreamSource {
   skipOutro?: [number, number];
 }
 
-const PROVIDER_ORDER = ['miruro', 'animekai'] as const;
+// AnimeKai (H.264/MegaUp) first: it plays in every browser. Miruro's only
+// working provider (kiwi) serves HEVC/H.265, which Chrome/Edge can't decode
+// via MSE — so it's used as the fallback for HEVC-capable devices only.
+const PROVIDER_ORDER = ['animekai', 'miruro'] as const;
 
 export default function AnimeWatchClient(props: { malId: number; episode: number }) {
   return (

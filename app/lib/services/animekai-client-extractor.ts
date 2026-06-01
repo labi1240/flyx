@@ -62,11 +62,27 @@ function decrypt(text: string): string | null {
 // AnimeKai API (browser-direct via Service Worker)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const KAI_DOMAINS = ['https://animekai.to', 'https://anikai.to'];
+// anikai.to is the current live domain; animekai.to 301-redirects to it.
+const KAI_DOMAINS = ['https://anikai.to', 'https://animekai.to'];
 
 const AJAX_HEADERS: Record<string, string> = {
   'Accept': 'application/json, text/javascript, */*; q=0.01',
+  'X-Requested-With': 'XMLHttpRequest',
 };
+
+/**
+ * Encode a search keyword the way AnimeKai's own jQuery frontend does:
+ * application/x-www-form-urlencoded, i.e. spaces become '+', NOT '%20'.
+ * The search backend/edge-cache is keyed on this exact form — a '%20'
+ * query misses the populated cache and returns "no result" for titles
+ * that DO exist (e.g. "death note"). encodeURIComponent emits '%20', so
+ * we must convert. (Also encode the few chars '+' leaves alone.)
+ */
+function encodeKeyword(query: string): string {
+  return encodeURIComponent(query)
+    .replace(/%20/g, '+')
+    .replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
 
 const PAGE_HEADERS: Record<string, string> = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -177,7 +193,7 @@ interface SearchResult {
 }
 
 async function searchKai(query: string): Promise<SearchResult[]> {
-  const res = await fetchKai(`/ajax/anime/search?keyword=${encodeURIComponent(query)}`, AJAX_HEADERS);
+  const res = await fetchKai(`/ajax/anime/search?keyword=${encodeKeyword(query)}`, AJAX_HEADERS);
   if (!res) return [];
 
   try {

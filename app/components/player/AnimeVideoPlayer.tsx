@@ -119,7 +119,7 @@ export default function AnimeVideoPlayer({
                 setSourceIdx(function (prev) { return prev + 1; });
                 return;
               }
-              setError('Video format not supported by your browser');
+              setError('This episode is only available in HEVC/H.265, which your browser can’t play. Try Chrome/Edge on a device with HEVC support, or Safari.');
               onAllSourcesFailed?.();
               return;
             }
