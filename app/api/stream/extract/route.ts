@@ -836,8 +836,10 @@ async function directExtractWithFallback(
 ): Promise<{ sources: any[]; provider: string }> {
   // Priority order for anime vs movie/tv
   // Only Flixer is active for movies/TV until new sources are added
+  // Anime: ONLY native anime providers. Movie/TV providers don't understand
+  // anime titles and return wrong content. Never fall back to them for anime.
   const providerOrder = isAnime
-    ? ['animekai', 'miruro', 'videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox']
+    ? ['animekai', 'miruro']
     : ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
