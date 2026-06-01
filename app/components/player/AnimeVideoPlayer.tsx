@@ -110,8 +110,15 @@ export default function AnimeVideoPlayer({
             return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            if (data.details === 'bufferAddCodecError' || data.details === 'bufferAppendError' || data.details === 'bufferStalledError') {
-              if (!lastSource) { setSourceIdx(function (prev) { return prev + 1; }); return; }
+            // bufferAddCodecError/bufferAppendError: the browser can't decode
+            // this codec at all (commonly HEVC/H.265 in Chrome) —
+            // recoverMediaError() can never succeed, so switch source instead.
+            if (data.details === 'bufferAddCodecError' || data.details === 'bufferAppendError') {
+              if (!lastSource) {
+                console.warn('[AnimePlayer] Codec incompatible (' + data.details + ') — switching source ' + sourceIdx + ' → ' + (sourceIdx + 1));
+                setSourceIdx(function (prev) { return prev + 1; });
+                return;
+              }
               setError('Video format not supported by your browser');
               onAllSourcesFailed?.();
               return;
@@ -125,8 +132,29 @@ export default function AnimeVideoPlayer({
         }
       });
 
-      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+      hls.on(Hls.Events.MANIFEST_PARSED, function (_evt, data) {
         if (destroyedRef.current) return;
+        // Proactively skip a source whose codec the browser can't decode
+        // (commonly HEVC/H.265, which Chrome can't play via MSE) instead of
+        // waiting for the load → transmux → bufferAddCodecError cycle.
+        try {
+          var levels = (data && (data as any).levels) || [];
+          var playable = false;
+          var sawCodec = false;
+          for (var i = 0; i < levels.length; i++) {
+            var vc = (levels[i].videoCodec || '').toLowerCase();
+            if (!vc) { playable = true; break; } // no codec info → let it try
+            sawCodec = true;
+            var ac = levels[i].audioCodec || '';
+            var mime = 'video/mp4;codecs="' + [vc, ac].filter(Boolean).join(',') + '"';
+            if (typeof MediaSource === 'undefined' || MediaSource.isTypeSupported(mime)) { playable = true; break; }
+          }
+          if (sawCodec && !playable && !lastSource) {
+            console.warn('[AnimePlayer] No playable codec in manifest (likely HEVC) — switching source ' + sourceIdx + ' → ' + (sourceIdx + 1));
+            setSourceIdx(function (prev) { return prev + 1; });
+            return;
+          }
+        } catch { /* let playback proceed; bufferAddCodecError is the safety net */ }
         console.log('[AnimePlayer] Manifest ready');
         // Don't autoplay — let the user click play to avoid
         // "play() interrupted by new load request" on React remount

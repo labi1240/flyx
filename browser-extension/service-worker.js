@@ -590,9 +590,45 @@ async function miruroExtract(malId, episode, audioPref) {
   return sources;
 }
 
+// ── Generic CORS-free Fetch Relay ───────────────────────────────────────
+//
+// The SW runs in the extension background with <all_urls> host permission,
+// so its fetch() can READ cross-origin responses that a page fetch() cannot
+// (page fetches are blocked by CORS when the server sends no
+// Access-Control-Allow-Origin header). Used by the AnimeKai/MegaUp page
+// extractor, whose API servers send no CORS headers. DNR rules still inject
+// any required Origin/Referer request headers transparently; megaup rules
+// strip them. Requests go out from the same residential IP as the page.
+
+async function corsFetch(url, headers, timeoutMs) {
+  var ctrl = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || 15000);
+  try {
+    var res = await fetch(url, {
+      headers: headers || {},
+      credentials: 'omit',
+      signal: ctrl.signal
+    });
+    var body = await res.text();
+    return { status: res.status, body: body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Message Router ──────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
+  // Generic CORS-free fetch (AnimeKai/MegaUp page extractor)
+  if (msg.type === 'corsFetch') {
+    corsFetch(msg.url, msg.headers, msg.timeoutMs).then(function (r) {
+      respond({ ok: true, status: r.status, body: r.body });
+    }).catch(function (e) {
+      respond({ ok: false, error: e.message });
+    });
+    return true; // async
+  }
+
   // DLHD extraction
   if (msg.type === 'extractDLHD') {
     if (providerState.dlhd === false) {

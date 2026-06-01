@@ -1,9 +1,14 @@
 /**
  * AnimeKai Browser-Direct Extractor
  *
- * Calls animekai.to APIs directly from the browser's residential IP.
- * The Service Worker intercepts these requests, adds Referer/Origin headers,
- * and returns responses with CORS headers.
+ * Calls animekai.to APIs from the browser's residential IP. Network calls
+ * are relayed through the Flyx Bypass extension's service worker (via
+ * bridge.js) because the AnimeKai/MegaUp API servers send no CORS headers —
+ * a page fetch() would be blocked. The SW's background fetch has <all_urls>
+ * host permission and is NOT subject to page CORS, so it can read the
+ * responses; DNR rules still inject/strip Origin+Referer transparently.
+ * All crypto stays in the page. Falls back to direct fetch if the extension
+ * is not installed.
  *
  * Crypto: Native position-dependent substitution cipher (183 tables).
  * MegaUp decryption: Native XOR with pre-computed keystream (no external API).
@@ -67,20 +72,65 @@ const PAGE_HEADERS: Record<string, string> = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-// The SW adds Referer/Origin for animekai.to/anikai.to domains automatically
+// ── Transport: SW relay (CORS-free) with direct-fetch fallback ──────────
 
-async function fetchKai(url: string, headers: Record<string, string>, timeoutMs = 10000): Promise<Response | null> {
+function extAvailable(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).__FLYX_EXTENSION__?.installed;
+}
+
+/** Minimal Response-like shim so existing callers (.ok/.json()/.text()) work unchanged. */
+interface KaiResponse {
+  ok: boolean;
+  status: number;
+  json(): Promise<any>;
+  text(): Promise<string>;
+}
+
+function makeKaiResponse(status: number, body: string): KaiResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => JSON.parse(body),
+    text: async () => body,
+  };
+}
+
+/**
+ * Fetch via the extension service worker (no page CORS). Resolves null on
+ * transport failure (relay error / timeout) so the caller can try the next
+ * domain. Returns a KaiResponse (possibly non-ok) on a completed HTTP round-trip.
+ */
+function swFetch(url: string, headers: Record<string, string>, timeoutMs: number): Promise<KaiResponse | null> {
+  return new Promise((resolve) => {
+    const id = 'kai_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { cleanup(); resolve(null); }, timeoutMs + 2000);
+    function cleanup() { clearTimeout(timer); window.removeEventListener('message', onMsg); }
+    function onMsg(e: MessageEvent) {
+      if (e.source !== window || !e.data || e.data.__flyx !== 'corsFetchRes' || e.data.id !== id) return;
+      cleanup();
+      if (e.data.ok) resolve(makeKaiResponse(e.data.status || 0, e.data.body || ''));
+      else resolve(null);
+    }
+    window.addEventListener('message', onMsg);
+    window.postMessage({ __flyx: 'corsFetch', id, url, headers, timeoutMs }, '*');
+  });
+}
+
+async function fetchKai(url: string, headers: Record<string, string>, timeoutMs = 10000): Promise<KaiResponse | null> {
+  const useExt = extAvailable();
   for (const domain of KAI_DOMAINS) {
     try {
       const resolvedUrl = url.startsWith('http')
         ? (domain === KAI_DOMAINS[0] ? url : url.replace(KAI_DOMAINS[0], domain))
         : `${domain}${url}`;
 
-      const res = await fetch(resolvedUrl, {
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (res.ok) return res;
+      if (useExt) {
+        const res = await swFetch(resolvedUrl, headers, timeoutMs);
+        if (res && res.ok) return res;
+      } else {
+        const res = await fetch(resolvedUrl, { headers, signal: AbortSignal.timeout(timeoutMs) });
+        if (res.ok) return makeKaiResponse(res.status, await res.text());
+      }
     } catch { /* try next domain */ }
   }
   return null;
@@ -344,17 +394,19 @@ async function extractMegaUpMedia(embedUrl: string): Promise<string | null> {
 
     console.log(`[AnimeKai] Fetching MegaUp /media/: ${mediaUrl.substring(0, 80)}`);
 
-    // Direct browser fetch — SW intercepts megaup domains, strips Referer/Origin
-    const res = await fetch(mediaUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+    // Fetch via SW relay (no page CORS); DNR strips Referer/Origin for megaup.
+    // Fall back to direct fetch when the extension is not installed.
+    const mediaHeaders = { 'Accept': 'application/json' };
+    let res: KaiResponse | null;
+    if (extAvailable()) {
+      res = await swFetch(mediaUrl, mediaHeaders, 15000);
+    } else {
+      const r = await fetch(mediaUrl, { headers: mediaHeaders, signal: AbortSignal.timeout(15000) });
+      res = makeKaiResponse(r.status, await r.text());
+    }
 
-    if (!res.ok) {
-      console.warn(`[AnimeKai] MegaUp /media/ returned ${res.status}`);
+    if (!res || !res.ok) {
+      console.warn(`[AnimeKai] MegaUp /media/ returned ${res ? res.status : 'no response'}`);
       return null;
     }
 

@@ -68,6 +68,31 @@
       return;
     }
 
+    // CORS-free fetch request (AnimeKai/MegaUp page extractor) → relay to SW
+    if (e.data.__flyx === 'corsFetch') {
+      var cfid = e.data.id;
+      try {
+        chrome.runtime.sendMessage({
+          type: 'corsFetch',
+          url: e.data.url,
+          headers: e.data.headers,
+          timeoutMs: e.data.timeoutMs
+        }, function (resp) {
+          var err = chrome.runtime.lastError;
+          window.postMessage({
+            __flyx: 'corsFetchRes', id: cfid,
+            ok: !!(resp && resp.ok),
+            status: resp && resp.status,
+            body: resp && resp.body,
+            error: (err && err.message) || (resp && resp.error)
+          }, '*');
+        });
+      } catch (ex) {
+        window.postMessage({ __flyx: 'corsFetchRes', id: cfid, ok: false, error: ex.message }, '*');
+      }
+      return;
+    }
+
     // Miruro anime extraction request from inject.js → relay to SW
     if (e.data.__flyx === 'miruro') {
       var mid = e.data.id;
