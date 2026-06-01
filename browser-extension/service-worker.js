@@ -73,15 +73,15 @@ const PROVIDERS = {
     cat: 'anime',
     rules: [
       { f: '*://miruro.to/*', h: { Referer: 'https://miruro.to/' } },
-      { f: '*://uwucdn.top/*', h: { Referer: 'https://miruro.to/' } },
+      { f: '*://*.uwucdn.top/*', h: { Referer: 'https://miruro.to/' }, cors: true },
     ]
   },
   animekai: {
     name: 'AnimeKai/MegaUp',
     cat: 'anime',
     rules: [
-      // MegaUp blocks Origin+Referer — remove them
-      { f: '*://*.megaup.*/*', h: { Origin: '', Referer: '' }, op: 'remove' },
+      // MegaUp blocks Origin+Referer — remove them; add CORS for direct fetch
+      { f: '*://*.megaup.*/*', h: { Origin: '', Referer: '' }, op: 'remove', cors: true },
     ]
   },
   hianime: {
@@ -232,30 +232,61 @@ function buildProviderRules(providerId) {
   var def = PROVIDERS[providerId];
   if (!def || !def.rules) return [];
   var baseId = PID[providerId];
-  return def.rules.map(function (r, i) {
-    var headers = [];
+  var allRules = [];
+  var ruleIdx = 0;
+
+  def.rules.forEach(function (r) {
+    var reqHeaders = [];
     var h = r.h || {};
     Object.keys(h).forEach(function (name) {
       if (r.op === 'remove') {
-        headers.push({ header: name, operation: 'remove' });
+        reqHeaders.push({ header: name, operation: 'remove' });
       } else if (h[name]) {
-        headers.push({ header: name, operation: 'set', value: h[name] });
+        reqHeaders.push({ header: name, operation: 'set', value: h[name] });
       }
-      // empty value means remove
       if (!r.op && !h[name]) {
-        headers.push({ header: name, operation: 'remove' });
+        reqHeaders.push({ header: name, operation: 'remove' });
       }
     });
-    return {
-      id: baseId + i,
-      priority: r.pri || 10,
-      action: { type: 'modifyHeaders', requestHeaders: headers },
-      condition: {
-        urlFilter: r.f,
-        resourceTypes: ['xmlhttprequest', 'script', 'image', 'media', 'other']
-      }
-    };
+
+    // Request header rule
+    if (reqHeaders.length > 0) {
+      allRules.push({
+        id: baseId + ruleIdx,
+        priority: r.pri || 10,
+        action: { type: 'modifyHeaders', requestHeaders: reqHeaders },
+        condition: {
+          urlFilter: r.f,
+          resourceTypes: ['xmlhttprequest', 'script', 'image', 'media', 'other']
+        }
+      });
+      ruleIdx++;
+    }
+
+    // CORS response header rule — injects Access-Control-Allow-Origin
+    // so the browser allows cross-origin fetch to CDN resources
+    if (r.cors) {
+      allRules.push({
+        id: baseId + ruleIdx,
+        priority: r.pri || 10,
+        action: {
+          type: 'modifyHeaders',
+          responseHeaders: [
+            { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
+            { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },
+            { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' },
+          ]
+        },
+        condition: {
+          urlFilter: r.f,
+          resourceTypes: ['xmlhttprequest', 'script', 'image', 'media', 'other']
+        }
+      });
+      ruleIdx++;
+    }
   });
+
+  return allRules;
 }
 
 async function installProviderRules(providerId) {
@@ -271,12 +302,16 @@ async function installProviderRules(providerId) {
 
 async function removeProviderRules(providerId) {
   var baseId = PID[providerId];
-  var def = PROVIDERS[providerId];
-  if (!def || !def.rules || !def.rules.length) return;
-  var ids = def.rules.map(function (_, i) { return baseId + i; });
+  var nextBaseId = baseId + 100; // Provider ID range: baseId to baseId+99
   try {
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
-    console.log('[Flyx SW] -' + ids.length + ' rules for ' + providerId);
+    var existing = await chrome.declarativeNetRequest.getDynamicRules();
+    var ids = existing
+      .filter(function (r) { return r.id >= baseId && r.id < nextBaseId; })
+      .map(function (r) { return r.id; });
+    if (ids.length > 0) {
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
+      console.log('[Flyx SW] -' + ids.length + ' rules for ' + providerId);
+    }
   } catch (e) {
     console.error('[Flyx SW] remove rules failed for ' + providerId + ':', e.message);
   }
