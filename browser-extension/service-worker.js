@@ -73,7 +73,7 @@ const PROVIDERS = {
     cat: 'anime',
     rules: [
       { f: '*://miruro.to/*', h: { Referer: 'https://miruro.to/' } },
-      { f: '*://*.uwucdn.top/*', h: { Referer: 'https://miruro.to/' }, cors: true },
+      { f: '*://*.uwucdn.top/*', h: { Referer: 'https://kwik.cx/' }, cors: true },
     ]
   },
   animekai: {
