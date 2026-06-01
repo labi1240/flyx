@@ -5078,7 +5078,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 <div className={styles.tabsContainer} data-server-tabs="true">
                   {providerTabOrder
                     .filter(p => providerAvailability[p])
-                    .filter(p => tmdbId !== '0' || ['videasy', 'flixer', 'bingebox'].includes(p))
+                    .filter(p => tmdbId !== '0' || ['miruro', 'animekai'].includes(p))
                     .map(p => {
                       const displayNames: Record<string, string> = {
                         videasy: 'Videasy',
