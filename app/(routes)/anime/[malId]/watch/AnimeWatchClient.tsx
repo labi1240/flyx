@@ -27,6 +27,7 @@ interface StreamSource {
   url: string;
   quality?: string;
   provider?: string;
+  language?: string;
   requiresSegmentProxy?: boolean;
   skipIntro?: [number, number];
   skipOutro?: [number, number];
@@ -98,7 +99,9 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       const animeTitle = anime.title_english || anime.title;
       const targetEp = isMovie ? undefined : playEpisode;
 
-      let sources: StreamSource[] = [];
+      // Extract from BOTH providers upfront — the player can switch
+      // between them if one has codec/network issues.
+      let allSources: StreamSource[] = [];
 
       for (const prov of PROVIDER_ORDER) {
         if (cancelled) return;
@@ -106,32 +109,30 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
           if (prov === 'miruro') {
             const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
-            if (results.length > 0) {
-              sources = results.map((s: any) => ({
+            for (const s of results) {
+              allSources.push({
                 title: s.title || 'Miruro',
                 url: s.url,
                 quality: s.quality,
                 provider: 'miruro',
-                language: s.language,
-                skipIntro: s.skipIntro,
-                skipOutro: s.skipOutro,
-              }));
-              break;
+                language: s.language || 'ja',
+                skipIntro: (s as any).skipIntro,
+                skipOutro: (s as any).skipOutro,
+              });
             }
           } else if (prov === 'animekai') {
             const { extractAnimeKaiClient } = await import('@/lib/services/animekai-client-extractor');
             const results = await extractAnimeKaiClient(malId, animeTitle, targetEp, audioPref);
-            if (results.length > 0) {
-              sources = results.map((s: any) => ({
+            for (const s of results) {
+              allSources.push({
                 title: s.title || 'AnimeKai',
                 url: s.url,
                 quality: s.quality,
                 provider: 'animekai',
-                language: s.language,
-                skipIntro: s.skipIntro,
-                skipOutro: s.skipOutro,
-              }));
-              break;
+                language: s.language || 'ja',
+                skipIntro: (s as any).skipIntro,
+                skipOutro: (s as any).skipOutro,
+              });
             }
           }
         } catch (e) {
@@ -140,7 +141,7 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       }
 
       if (cancelled) return;
-      if (sources.length === 0) {
+      if (allSources.length === 0) {
         setStreamError('No anime streams available. Try again or check back later.');
         setStreamLoading(false);
         return;
@@ -148,14 +149,14 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
 
       // Pick best source matching audio preference
       let idx = 0;
-      const matchIdx = sources.findIndex((s) =>
+      const matchIdx = allSources.findIndex((s) =>
         s.title && sourceMatchesAudioPreference(s.title, audioPref),
       );
       if (matchIdx >= 0) idx = matchIdx;
 
-      setStreamSources(sources);
+      setStreamSources(allSources);
       setStreamSourceIndex(idx);
-      setStreamUrl(sources[idx].url);
+      setStreamUrl(allSources[idx].url);
       setStreamLoading(false);
     })();
     return () => { cancelled = true; };

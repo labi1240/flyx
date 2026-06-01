@@ -30,6 +30,7 @@ interface Props {
   onBack?: () => void;
   onError?: (err: string) => void;
   onSourceChange?: (index: number) => void;
+  onAllSourcesFailed?: () => void;
 }
 
 export default function AnimeVideoPlayer({
@@ -40,6 +41,7 @@ export default function AnimeVideoPlayer({
   onBack,
   onError,
   onSourceChange,
+  onAllSourcesFailed,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -95,36 +97,31 @@ export default function AnimeVideoPlayer({
         abrMaxWithRealBitrate: true,
       });
 
+      var lastSource = sourceIdx >= sources.length - 1;
       hls.on(Hls.Events.ERROR, function (_event, data) {
         if (destroyedRef.current) return;
         if (data.fatal) {
           console.error('[AnimePlayer] HLS fatal:', data.type, data.details);
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            if ((data.response?.code === 403 || data.response?.code === 404) && sourceIdx < sources.length - 1) {
-              setSourceIdx(function (prev) { return prev + 1; });
-              return;
-            }
+            if (!lastSource) { setSourceIdx(function (prev) { return prev + 1; }); return; }
             setError('Network error loading stream');
             onError?.(data.details || 'Network error');
+            onAllSourcesFailed?.();
             return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            // bufferAddCodecError / bufferAppendError: unrecoverable.
-            // recoverMediaError() creates an infinite loop. Switch source.
             if (data.details === 'bufferAddCodecError' || data.details === 'bufferAppendError' || data.details === 'bufferStalledError') {
-              if (sourceIdx < sources.length - 1) {
-                setSourceIdx(function (prev) { return prev + 1; });
-                return;
-              }
+              if (!lastSource) { setSourceIdx(function (prev) { return prev + 1; }); return; }
               setError('Video format not supported by your browser');
+              onAllSourcesFailed?.();
               return;
             }
-            // Other media errors (bufferSeekOverHole, etc): try recovery
             hls?.recoverMediaError();
             return;
           }
           setError('Stream playback failed');
           onError?.(data.details || 'unknown');
+          onAllSourcesFailed?.();
         }
       });
 
