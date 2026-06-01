@@ -189,7 +189,7 @@ function getCache(endpoint: string): BoundedCache<string, unknown> {
 // Jikan returns 429 if more than 3 requests fire within a sliding second.
 // We cap at one every 333ms (3/sec). Works on both client and server.
 
-const MIN_INTERVAL_MS = 334;
+const MIN_INTERVAL_MS = 400; // 2.5 req/s — Jikan hard-caps at 3/s; 400ms leaves headroom
 let lastRequestAt = 0;
 let chain: Promise<void> = Promise.resolve();
 

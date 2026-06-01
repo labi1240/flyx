@@ -21,11 +21,11 @@ interface CategoryDef {
 }
 
 const FEATURED_DEFS: CategoryDef[] = [
-  { id: 'airing',   title: 'Currently Airing', subtitle: 'Fresh episodes this season', endpoint: '/seasons/now?limit=30' },
-  { id: 'popular',  title: 'Most Popular',     subtitle: 'All-time fan favorites',   endpoint: '/top/anime?limit=30&filter=bypopularity' },
-  { id: 'top-rated',title: 'Top Rated',         subtitle: 'Highest scored by the community', endpoint: '/top/anime?limit=30' },
-  { id: 'upcoming', title: 'Upcoming',          subtitle: 'Coming next season',      endpoint: '/seasons/upcoming?limit=30' },
-  { id: 'movies',   title: 'Anime Movies',      subtitle: 'Feature-length gems',     endpoint: '/top/anime?limit=30&type=movie' },
+  { id: 'airing',   title: 'Currently Airing', subtitle: 'Fresh episodes this season', endpoint: '/seasons/now?limit=25' },
+  { id: 'popular',  title: 'Most Popular',     subtitle: 'All-time fan favorites',   endpoint: '/top/anime?limit=25&filter=bypopularity' },
+  { id: 'top-rated',title: 'Top Rated',         subtitle: 'Highest scored by the community', endpoint: '/top/anime?limit=25' },
+  { id: 'upcoming', title: 'Upcoming',          subtitle: 'Coming next season',      endpoint: '/seasons/upcoming?limit=25' },
+  { id: 'movies',   title: 'Anime Movies',      subtitle: 'Feature-length gems',     endpoint: '/top/anime?limit=25&type=movie' },
 ];
 
 const ALL_TAB = 'all';
@@ -94,7 +94,7 @@ function AnimePageClientInner() {
     setLoadingGenre(true);
     (async () => {
       const items = await jikanList(
-        `/anime?genres=${genre.id}&order_by=popularity&sort=desc&limit=40&sfw=true`,
+        `/anime?genres=${genre.id}&order_by=popularity&sort=desc&limit=25&sfw=true`,
       );
       if (cancelled) return;
       setGenreData((prev) => ({ ...prev, [activeTab]: items }));
