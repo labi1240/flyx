@@ -1,0 +1,126 @@
+/* AnimeVideoPlayer + shared player styles */
+
+.playerContainer {
+  position: relative;
+  width: 100%;
+  background: #000;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 10;
+}
+
+.backBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.backBtn:hover { background: rgba(255, 255, 255, 0.12); }
+
+.titleInfo {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.epTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.epLabel {
+  font-size: 0.75rem;
+  color: #71717a;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.videoWrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #000;
+}
+
+.video {
+  width: 100%;
+  max-height: 100%;
+}
+
+.errorOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(0, 0, 0, 0.9);
+  color: #ef4444;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.sourcePicker {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sourceBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a1a1aa;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sourceBtn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+.activeSource {
+  composes: sourceBtn;
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.4);
+  color: #a78bfa;
+}
+
+.sourceList {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}

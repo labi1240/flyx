@@ -3,28 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { useIsMobile } from '@/hooks/useIsMobile';
-import { getProviderSettings, saveProviderSettings } from '@/lib/sync';
+import { getProviderSettings } from '@/lib/sync';
 import { sourceMatchesAudioPreference, type AnimeAudioPreference } from '@/lib/utils/player-preferences';
 import { ExtensionGate } from '@/components/ExtensionGate';
 import { jikanFull, type JikanAnime } from '@/lib/anime/jikan-client';
 import styles from '../../../watch/[id]/WatchPage.module.css';
 
-const DesktopVideoPlayer = dynamic(
-  () => import('@/components/player/VideoPlayer'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className={styles.loading}>
-        <div className={styles.spinner} />
-        <p>Loading player...</p>
-      </div>
-    ),
-  },
-);
-
-const MobileVideoPlayer = dynamic(
-  () => import('@/components/player/MobileVideoPlayer'),
+const AnimeVideoPlayer = dynamic(
+  () => import('@/components/player/AnimeVideoPlayer'),
   {
     ssr: false,
     loading: () => (
@@ -58,26 +44,15 @@ export default function AnimeWatchClient(props: { malId: number; episode: number
 
 function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: number; episode: number }) {
   const router = useRouter();
-  const mobileInfo = useIsMobile();
 
   // ─── Anime metadata ──────────────────────────────────────────────────────
   const [anime, setAnime] = useState<JikanAnime | null>(null);
   const [loading, setLoading] = useState(true);
   const [animeError, setAnimeError] = useState(false);
 
-  // ─── Current episode (mutable so prev/next does NOT navigate the route) ──
+  // ─── Current episode ─────────────────────────────────────────────────────
   const [currentEpisode, setCurrentEpisode] = useState(initialEpisode);
   useEffect(() => { setCurrentEpisode(initialEpisode); }, [initialEpisode]);
-
-  // ─── Mobile detection lock ───────────────────────────────────────────────
-  const [useMobilePlayer, setUseMobilePlayer] = useState<boolean | null>(null);
-  const mobileLockedRef = useRef(false);
-  useEffect(() => {
-    if (!mobileLockedRef.current && mobileInfo.screenWidth > 0) {
-      setUseMobilePlayer(mobileInfo.isMobile || mobileInfo.screenWidth < 768);
-      mobileLockedRef.current = true;
-    }
-  }, [mobileInfo.isMobile, mobileInfo.screenWidth]);
 
   // ─── Stream state ────────────────────────────────────────────────────────
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -85,10 +60,7 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
   const [streamSourceIndex, setStreamSourceIndex] = useState(0);
   const [streamLoading, setStreamLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [streamResumeTime, setStreamResumeTime] = useState(0);
-  const [currentProvider, setCurrentProvider] = useState<string>('miruro');
-  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
-  const [audioPref, setAudioPref] = useState<AnimeAudioPreference>(
+  const [audioPref] = useState<AnimeAudioPreference>(
     () => getProviderSettings().animeAudioPreference,
   );
   const [retryNonce, setRetryNonce] = useState(0);
@@ -109,13 +81,12 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
 
   const isMovie = anime?.type === 'Movie';
   const playEpisode = isMovie ? 1 : currentEpisode;
-  const totalEpisodes = anime?.episodes ?? null;
   const title = anime ? (anime.title_english || anime.title) : '';
 
   // ─── Fetch stream ────────────────────────────────────────────────────────
   const lastFetchedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (useMobilePlayer === null || !anime) return;
+    if (!anime) return;
     const key = `${malId}-${playEpisode}-${audioPref}-${retryNonce}`;
     if (lastFetchedRef.current === key) return;
     lastFetchedRef.current = key;
@@ -128,8 +99,6 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       const targetEp = isMovie ? undefined : playEpisode;
 
       let sources: StreamSource[] = [];
-      let activeProvider: string = 'miruro';
-      const providerSuccess: Record<string, boolean> = {};
 
       for (const prov of PROVIDER_ORDER) {
         if (cancelled) return;
@@ -138,17 +107,15 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
             const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
             if (results.length > 0) {
-              // Extension extracts directly from browser IP — raw CDN URL.
-              // DNR rules inject Referer, hls.js resolves relative URIs.
               sources = results.map((s: any) => ({
                 title: s.title || 'Miruro',
                 url: s.url,
                 quality: s.quality,
                 provider: 'miruro',
-                requiresSegmentProxy: false, // Extension DNR handles headers
+                language: s.language,
+                skipIntro: s.skipIntro,
+                skipOutro: s.skipOutro,
               }));
-              activeProvider = 'miruro';
-              providerSuccess.miruro = true;
               break;
             }
           } else if (prov === 'animekai') {
@@ -160,12 +127,10 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
                 url: s.url,
                 quality: s.quality,
                 provider: 'animekai',
-                requiresSegmentProxy: s.requiresSegmentProxy,
+                language: s.language,
                 skipIntro: s.skipIntro,
                 skipOutro: s.skipOutro,
               }));
-              activeProvider = 'animekai';
-              providerSuccess.animekai = true;
               break;
             }
           }
@@ -175,15 +140,8 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       }
 
       if (cancelled) return;
-      // If client-side extraction found no sources, don't error —
-      // fall through to DesktopVideoPlayer's built-in provider extraction
-      // which tries miruro → animekai → movie/TV fallbacks sequentially.
       if (sources.length === 0) {
-        console.log('[AnimeWatch] Client extraction found no sources — falling through to built-in extraction');
-        setStreamSources([]);
-        setStreamUrl(null);
-        setCurrentProvider('miruro');
-        setAvailableProviders([]);
+        setStreamError('No anime streams available. Try again or check back later.');
         setStreamLoading(false);
         return;
       }
@@ -198,12 +156,10 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       setStreamSources(sources);
       setStreamSourceIndex(idx);
       setStreamUrl(sources[idx].url);
-      setCurrentProvider(activeProvider);
-      setAvailableProviders(PROVIDER_ORDER.filter((p) => providerSuccess[p]));
       setStreamLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [useMobilePlayer, malId, playEpisode, audioPref, anime, isMovie, retryNonce]);
+  }, [malId, playEpisode, audioPref, anime, isMovie, retryNonce]);
 
   // ─── Document title ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -212,43 +168,17 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
   }, [title, playEpisode, isMovie]);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
-  const handleAudioPrefChange = useCallback((newPref: AnimeAudioPreference, currentTime = 0) => {
-    setStreamResumeTime(currentTime);
-    setAudioPref(newPref);
-    saveProviderSettings({ animeAudioPreference: newPref });
-    lastFetchedRef.current = '';
-  }, []);
-
-  const handleProviderChange = useCallback((_provider: string, currentTime = 0) => {
-    setStreamResumeTime(currentTime);
-    lastFetchedRef.current = '';
-  }, []);
-
-  const handleSourceChange = useCallback((index: number, currentTime = 0) => {
+  const handleSourceChange = useCallback((index: number) => {
     if (index >= 0 && index < streamSources.length) {
-      setStreamResumeTime(currentTime);
       setStreamSourceIndex(index);
       setStreamUrl(streamSources[index].url);
     }
   }, [streamSources]);
 
-  const handleNextEpisode = useCallback(() => {
-    if (isMovie) return;
-    setStreamResumeTime(0);
-    setCurrentEpisode((e) => {
-      if (totalEpisodes != null && e >= totalEpisodes) return e;
-      return e + 1;
-    });
-  }, [isMovie, totalEpisodes]);
-
-  // Keep URL in sync with currentEpisode so refresh resumes the right episode
   useEffect(() => {
     if (isMovie) return;
-    const url = `/anime/${malId}/watch?episode=${currentEpisode}`;
-    window.history.replaceState({}, '', url);
+    window.history.replaceState({}, '', `/anime/${malId}/watch?episode=${currentEpisode}`);
   }, [malId, currentEpisode, isMovie]);
-
-  const hasNextEpisode = !isMovie && (totalEpisodes == null || currentEpisode < totalEpisodes);
 
   const retryStream = useCallback(() => {
     setStreamError(null);
@@ -257,16 +187,6 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
   }, []);
 
   // ─── Render ──────────────────────────────────────────────────────────────
-  if (useMobilePlayer === null) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.loading}>
-          <div className={styles.spinner} />
-          <p>Loading player...</p>
-        </div>
-      </div>
-    );
-  }
   if (loading) {
     return (
       <div className={styles.container}>
@@ -324,98 +244,32 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
     );
   }
 
-  const nextEp = hasNextEpisode
-    ? { season: 1, episode: currentEpisode + 1, title: `Episode ${currentEpisode + 1}` }
-    : null;
-
-  // When client extraction found no sources, fall through to the player's
-  // built-in provider extraction (DesktopVideoPlayer handles Miruro → AnimeKai →
-  // movie/TV fallbacks). MobileVideoPlayer doesn't have built-in extraction,
-  // so show a sourcing state that retries via the Desktop path.
-  if (!streamUrl && !streamError) {
-    if (useMobilePlayer) {
-      return (
-        <div className={styles.container}>
-          <div className={styles.playerWrapper}>
-            <div className={styles.loading}>
-              <div className={styles.spinner} />
-              <p>Sourcing stream via built-in extraction…</p>
-              <button onClick={retryStream} className={styles.retryButton} style={{ marginTop: 12 }}>
-                Retry
-              </button>
-            </div>
+  if (!streamUrl) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.playerWrapper}>
+          <div className={styles.loading}>
+            <div className={styles.spinner} />
+            <p>Sourcing stream…</p>
+            <button onClick={retryStream} className={styles.retryButton} style={{ marginTop: 12 }}>
+              Retry
+            </button>
           </div>
         </div>
-      );
-    }
-    // Desktop: render VideoPlayer with malId — it has built-in anime extraction
-    return (
-      <div className={styles.container}>
-        <DesktopVideoPlayer
-          tmdbId="0"
-          mediaType={isMovie ? 'movie' : 'tv'}
-          season={isMovie ? undefined : 1}
-          episode={isMovie ? undefined : playEpisode}
-          title={title}
-          onBack={() => router.push(`/anime/${malId}`)}
-          malId={malId}
-          malTitle={title}
-          nextEpisode={nextEp}
-          onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
-        />
-      </div>
-    );
-  }
-
-  if (useMobilePlayer) {
-    return (
-      <div className={styles.container}>
-        <MobileVideoPlayer
-          tmdbId="0"
-          mediaType={isMovie ? 'movie' : 'tv'}
-          season={isMovie ? undefined : 1}
-          episode={isMovie ? undefined : playEpisode}
-          title={title}
-          streamUrl={streamUrl!}
-          availableSources={streamSources}
-          currentSourceIndex={streamSourceIndex}
-          onSourceChange={handleSourceChange}
-          onBack={() => router.push(`/anime/${malId}`)}
-          initialTime={streamResumeTime}
-          onError={(err) => setStreamError(err)}
-          isAnime
-          audioPref={audioPref}
-          onAudioPrefChange={handleAudioPrefChange}
-          availableProviders={availableProviders as any}
-          currentProvider={currentProvider as any}
-          onProviderChange={handleProviderChange}
-          loadingProvider={false}
-          skipIntro={streamSources[streamSourceIndex]?.skipIntro ?? null}
-          skipOutro={streamSources[streamSourceIndex]?.skipOutro ?? null}
-          nextEpisode={nextEp}
-          onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
-        />
       </div>
     );
   }
 
   return (
     <div className={styles.container}>
-      <DesktopVideoPlayer
-        tmdbId="0"
-        mediaType={isMovie ? 'movie' : 'tv'}
-        season={isMovie ? undefined : 1}
-        episode={isMovie ? undefined : playEpisode}
+      <AnimeVideoPlayer
         title={title}
+        sources={streamSources}
+        initialSourceIndex={streamSourceIndex}
+        episodeLabel={!isMovie ? `Episode ${playEpisode}` : undefined}
         onBack={() => router.push(`/anime/${malId}`)}
-        malId={malId}
-        malTitle={title}
-        externalStreamUrl={streamUrl ?? undefined}
-        externalStreamSources={streamSources}
-        externalStreamProvider={currentProvider}
-        externalStreamSourceIndex={streamSourceIndex}
-        nextEpisode={nextEp}
-        onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
+        onError={(err) => setStreamError(err)}
+        onSourceChange={handleSourceChange}
       />
     </div>
   );
