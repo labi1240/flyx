@@ -173,8 +173,15 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       }
 
       if (cancelled) return;
+      // If client-side extraction found no sources, don't error —
+      // fall through to DesktopVideoPlayer's built-in provider extraction
+      // which tries miruro → animekai → movie/TV fallbacks sequentially.
       if (sources.length === 0) {
-        setStreamError('No streams available for this episode.');
+        console.log('[AnimeWatch] Client extraction found no sources — falling through to built-in extraction');
+        setStreamSources([]);
+        setStreamUrl(null);
+        setCurrentProvider('miruro');
+        setAvailableProviders([]);
         setStreamLoading(false);
         return;
       }
@@ -295,13 +302,14 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       </div>
     );
   }
-  if (streamError || !streamUrl) {
+  // Hard error (network failure, etc.) — show error page with retry
+  if (streamError) {
     return (
       <div className={styles.container}>
         <div className={styles.playerWrapper}>
           <div className={styles.error}>
             <h2>Playback Error</h2>
-            <p>{streamError || 'Failed to load video'}</p>
+            <p>{streamError}</p>
             <div className={styles.errorActions}>
               <button onClick={retryStream} className={styles.retryButton}>Try Again</button>
               <button onClick={() => router.push(`/anime/${malId}`)} className={styles.backButton}>
@@ -318,6 +326,45 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
     ? { season: 1, episode: currentEpisode + 1, title: `Episode ${currentEpisode + 1}` }
     : null;
 
+  // When client extraction found no sources, fall through to the player's
+  // built-in provider extraction (DesktopVideoPlayer handles Miruro → AnimeKai →
+  // movie/TV fallbacks). MobileVideoPlayer doesn't have built-in extraction,
+  // so show a sourcing state that retries via the Desktop path.
+  if (!streamUrl && !streamError) {
+    if (useMobilePlayer) {
+      return (
+        <div className={styles.container}>
+          <div className={styles.playerWrapper}>
+            <div className={styles.loading}>
+              <div className={styles.spinner} />
+              <p>Sourcing stream via built-in extraction…</p>
+              <button onClick={retryStream} className={styles.retryButton} style={{ marginTop: 12 }}>
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // Desktop: render VideoPlayer with malId — it has built-in anime extraction
+    return (
+      <div className={styles.container}>
+        <DesktopVideoPlayer
+          tmdbId="0"
+          mediaType={isMovie ? 'movie' : 'tv'}
+          season={isMovie ? undefined : 1}
+          episode={isMovie ? undefined : playEpisode}
+          title={title}
+          onBack={() => router.push(`/anime/${malId}`)}
+          malId={malId}
+          malTitle={title}
+          nextEpisode={nextEp}
+          onNextEpisode={hasNextEpisode ? handleNextEpisode : undefined}
+        />
+      </div>
+    );
+  }
+
   if (useMobilePlayer) {
     return (
       <div className={styles.container}>
@@ -327,7 +374,7 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
           season={isMovie ? undefined : 1}
           episode={isMovie ? undefined : playEpisode}
           title={title}
-          streamUrl={streamUrl}
+          streamUrl={streamUrl!}
           availableSources={streamSources}
           currentSourceIndex={streamSourceIndex}
           onSourceChange={handleSourceChange}
@@ -361,7 +408,7 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
         onBack={() => router.push(`/anime/${malId}`)}
         malId={malId}
         malTitle={title}
-        externalStreamUrl={streamUrl}
+        externalStreamUrl={streamUrl ?? undefined}
         externalStreamSources={streamSources}
         externalStreamProvider={currentProvider}
         externalStreamSourceIndex={streamSourceIndex}

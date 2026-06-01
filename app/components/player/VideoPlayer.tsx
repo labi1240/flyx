@@ -1117,7 +1117,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       const buildApiUrl = (providerName: string): string | null => {
         // Anime providers use browser-direct extraction — no API URL needed
         if (providerName === 'hianime' || providerName === 'miruro') return null;
-        if (isMalDirect) return null;
+        // AnimeKai uses server-side API extraction even for MAL-direct anime
+        if (isMalDirect && providerName !== 'animekai') return null;
         const params = new URLSearchParams({ tmdbId, type: mediaType, provider: providerName });
         if (mediaType === 'tv' && season && episode) {
           params.append('season', season.toString());
