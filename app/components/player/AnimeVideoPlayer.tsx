@@ -104,13 +104,27 @@ export default function AnimeVideoPlayer({
               setSourceIdx(function (prev) { return prev + 1; });
               return;
             }
+            setError('Network error loading stream');
+            onError?.(data.details || 'Network error');
+            return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            // bufferAddCodecError / bufferAppendError: unrecoverable.
+            // recoverMediaError() creates an infinite loop. Switch source.
+            if (data.details === 'bufferAddCodecError' || data.details === 'bufferAppendError' || data.details === 'bufferStalledError') {
+              if (sourceIdx < sources.length - 1) {
+                setSourceIdx(function (prev) { return prev + 1; });
+                return;
+              }
+              setError('Video format not supported by your browser');
+              return;
+            }
+            // Other media errors (bufferSeekOverHole, etc): try recovery
             hls?.recoverMediaError();
             return;
           }
-          setError('Stream playback failed: ' + (data.details || 'unknown'));
-          onError?.(data.details || 'HLS error');
+          setError('Stream playback failed');
+          onError?.(data.details || 'unknown');
         }
       });
 
