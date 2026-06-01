@@ -2,15 +2,14 @@
  * AnimeVideoPlayer — dedicated anime playback component.
  *
  * Lightweight, anime-specific. No movie/TV provider code.
- * Uses hls.js with FetchLoader for extension DNR header injection.
- * Proper lifecycle management to prevent hls.js internal crashes.
+ * Uses vanilla hls.js — DNR rules inject headers at the network layer
+ * for both XHR and fetch, so no custom loader is needed.
  */
 
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
-import FetchLoader from './hls-fetch-loader';
 import styles from './Player.module.css';
 
 interface AnimeSource {
@@ -76,15 +75,24 @@ export default function AnimeVideoPlayer({
         lowLatencyMode: false,
         backBufferLength: 90,
         maxBufferLength: 30,
+        maxMaxBufferLength: 60,
         maxBufferSize: 60 * 1000 * 1000,
-        manifestLoadingTimeOut: 15000,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 15000,
-        fragLoadingTimeOut: 30000,
-        fragLoadingMaxRetry: 8,
+        highBufferWatchdogPeriod: 2,
+        nudgeOffset: 0.1,
+        nudgeMaxRetry: 5,
+        manifestLoadingTimeOut: 10000,
+        manifestLoadingMaxRetry: 2,
+        manifestLoadingRetryDelay: 300,
+        levelLoadingTimeOut: 10000,
+        levelLoadingMaxRetry: 2,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 4,
+        fragLoadingRetryDelay: 500,
         startLevel: -1,
-        pLoader: FetchLoader as any,
-        fLoader: FetchLoader as any,
+        abrEwmaDefaultEstimate: 1000000,
+        abrBandWidthFactor: 0.8,
+        abrBandWidthUpFactor: 0.5,
+        abrMaxWithRealBitrate: true,
       });
 
       hls.on(Hls.Events.ERROR, function (_event, data) {
