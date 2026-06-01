@@ -138,12 +138,14 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
             const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
             if (results.length > 0) {
-              const cfBase = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
+              // Extension extracts directly from browser IP — raw CDN URL.
+              // DNR rules inject Referer, hls.js resolves relative URIs.
               sources = results.map((s: any) => ({
                 title: s.title || 'Miruro',
-                url: s.url?.includes('/miruro/') ? s.url : `${cfBase}/miruro/stream?url=${encodeURIComponent(s.url)}`,
+                url: s.url,
                 quality: s.quality,
                 provider: 'miruro',
+                requiresSegmentProxy: false, // Extension DNR handles headers
               }));
               activeProvider = 'miruro';
               providerSuccess.miruro = true;

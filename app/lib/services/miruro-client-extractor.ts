@@ -1,9 +1,14 @@
 /**
- * Miruro Browser-Direct Extractor
+ * Miruro Extension-Direct Extractor
  *
- * API extraction routes through the CF Worker (/miruro/episodes, /miruro/sources)
- * which handles pipe encryption server-side. CDN streaming still goes through the
- * Service Worker for residential IP (Referer/Origin headers).
+ * Extraction runs entirely through the Flyx Bypass browser extension's
+ * service worker — NO CF Worker intermediary. The SW fetches from
+ * Miruro's API directly from the browser's residential IP using the
+ * Miruro Pipe Protocol (XOR+gzip encryption).
+ *
+ * Flow:
+ *   web app → postMessage('miruro') → bridge.js → SW (pipe crypto + API)
+ *   SW → bridge.js → postMessage('miruroRes') → web app
  */
 
 export interface MiruroSource {
@@ -13,19 +18,81 @@ export interface MiruroSource {
   type: 'hls';
   language: string;
   requiresSegmentProxy: boolean;
-  referer?: string;
 }
 
-interface MiruroStream {
-  url: string;
-  type: string;
-  quality: string;
-  resolution?: { width: number; height: number };
-  isActive: boolean;
-  referer?: string;
+const EXT_TIMEOUT = 30000;
+
+function extractViaExtension(
+  malId: number,
+  episode: number,
+  audioPref: 'sub' | 'dub',
+): Promise<MiruroSource[]> {
+  return new Promise(function (resolve, reject) {
+    var id = 'mir_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    var timer = setTimeout(function () {
+      cleanup();
+      reject(new Error('Extension Miruro extraction timed out'));
+    }, EXT_TIMEOUT);
+
+    function cleanup() {
+      clearTimeout(timer);
+      window.removeEventListener('message', onMsg);
+    }
+
+    function onMsg(e: MessageEvent) {
+      if (e.source !== window || !e.data || e.data.__flyx !== 'miruroRes' || e.data.id !== id) return;
+      cleanup();
+      if (e.data.ok && e.data.sources) {
+        console.log('[Miruro Ext] Extension returned ' + e.data.sources.length + ' sources');
+        resolve(e.data.sources as MiruroSource[]);
+      } else {
+        reject(new Error(e.data.error || 'Extension Miruro extraction failed'));
+      }
+    }
+
+    window.addEventListener('message', onMsg);
+    window.postMessage({
+      __flyx: 'miruro',
+      id: id,
+      malId: malId,
+      episode: episode,
+      audioPref: audioPref,
+    }, '*');
+  });
 }
 
-const PROVIDER_PRIORITY = ['kiwi', 'bee', 'ally', 'dune', 'hop'];
+/**
+ * Extract Miruro stream sources via the browser extension.
+ * Falls back to CF Worker path if extension not detected.
+ */
+export async function extractMiruroClient(
+  malId: number,
+  title: string,
+  episode?: number,
+  audioPref: 'sub' | 'dub' = 'sub',
+): Promise<MiruroSource[]> {
+  var targetEp = episode || 1;
+  console.log('[Miruro] Extracting via extension: malId=' + malId + ' ep=' + targetEp + ' pref=' + audioPref);
+
+  // Check if extension is available
+  var hasExtension = !!(
+    (window as any).__FLYX_EXTENSION__?.installed
+  );
+
+  if (hasExtension) {
+    try {
+      return await extractViaExtension(malId, targetEp, audioPref);
+    } catch (e) {
+      console.warn('[Miruro] Extension extraction failed, falling back to CF Worker:', e);
+      // Fall through to CF Worker fallback
+    }
+  }
+
+  // Fallback: CF Worker path (kept for when extension is not installed)
+  return extractViaWorker(malId, title, targetEp, audioPref);
+}
+
+// ─── CF Worker fallback (used when extension is not available) ────────────
 
 function getCfWorkerBase(): string {
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CF_STREAM_PROXY_URL) {
@@ -34,125 +101,77 @@ function getCfWorkerBase(): string {
   return 'https://media-proxy.vynx-3b3.workers.dev';
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AniList ID Lookup
-// ═══════════════════════════════════════════════════════════════════════════
-
 async function getAnilistId(malId: number): Promise<number | null> {
-  const query = `
-    query ($idMal: Int) {
-      Media(idMal: $idMal, type: ANIME) {
-        id
-      }
-    }`;
-  const res = await fetch('https://graphql.anilist.co', {
+  var query = 'query($idMal:Int){Media(idMal:$idMal,type:ANIME){id}}';
+  var res = await fetch('https://graphql.anilist.co', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { idMal: malId } }),
+    body: JSON.stringify({ query: query, variables: { idMal: malId } }),
   });
   if (!res.ok) return null;
-  const json = await res.json();
+  var json = await res.json();
   return json?.data?.Media?.id || null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Main Extractor
-// ═══════════════════════════════════════════════════════════════════════════
+interface MiruroStream {
+  url: string; type: string; quality: string;
+  resolution?: { width: number; height: number };
+  isActive: boolean; referer?: string;
+}
 
-export async function extractMiruroClient(
+var PROVIDER_PRIORITY = ['kiwi', 'bee', 'ally', 'dune', 'hop'];
+
+async function extractViaWorker(
   malId: number,
-  title: string,
-  episode?: number,
-  audioPref: 'sub' | 'dub' = 'sub',
+  _title: string,
+  targetEp: number,
+  audioPref: 'sub' | 'dub',
 ): Promise<MiruroSource[]> {
-  const targetEp = episode || 1;
-  console.log(`[Miruro] Extracting: malId=${malId} title="${title}" ep=${targetEp} pref=${audioPref}`);
+  var cfBase = getCfWorkerBase();
+  var anilistId = await getAnilistId(malId);
+  if (!anilistId) return [];
 
-  const cfBase = getCfWorkerBase();
-
-  // Step 1: MAL → AniList
-  const anilistId = await getAnilistId(malId);
-  if (!anilistId) {
-    console.warn('[Miruro] Could not resolve AniList ID');
-    return [];
-  }
-  console.log(`[Miruro] AniList ID: ${anilistId}`);
-
-  // Step 2: Get episodes via CF Worker (handles pipe encryption server-side)
-  let epData: {
-    providers: Record<string, { episodes: { sub: Array<{ id: string; number: number }>; dub: Array<{ id: string; number: number }> } }>;
-  };
+  var epData: any;
   try {
-    const epRes = await fetch(`${cfBase}/miruro/episodes?anilistId=${anilistId}`);
-    if (!epRes.ok) {
-      console.warn(`[Miruro] Episodes fetch failed: ${epRes.status}`);
-      return [];
-    }
-    epData = await epRes.json() as typeof epData;
+    var epRes = await fetch(cfBase + '/miruro/episodes?anilistId=' + anilistId);
+    if (!epRes.ok) return [];
+    epData = await epRes.json();
   } catch (e) {
-    console.warn('[Miruro] Episodes fetch error:', e);
     return [];
   }
+  if (!epData.providers) return [];
 
-  if (!epData.providers) {
-    console.warn('[Miruro] No providers in episodes response');
-    return [];
-  }
-
-  // Step 3: Try each provider in priority order
-  const sources: MiruroSource[] = [];
-
-  for (const providerId of PROVIDER_PRIORITY) {
-    const provider = epData.providers[providerId];
+  var sources: MiruroSource[] = [];
+  for (var pi = 0; pi < PROVIDER_PRIORITY.length; pi++) {
+    var providerId = PROVIDER_PRIORITY[pi];
+    var provider = epData.providers[providerId];
     if (!provider) continue;
-
-    const category = audioPref === 'dub' && provider.episodes.dub?.length > 0 ? 'dub' : 'sub';
-    const episodes = category === 'dub' ? provider.episodes.dub : provider.episodes.sub;
-
-    const ep = episodes.find(e => e.number === targetEp);
+    var cat = (audioPref === 'dub' && provider.episodes.dub?.length > 0) ? 'dub' : 'sub';
+    var eps = cat === 'dub' ? provider.episodes.dub : provider.episodes.sub;
+    var ep = eps.find((e: any) => e.number === targetEp);
     if (!ep) continue;
 
-    console.log(`[Miruro] Found ep ${targetEp} on ${providerId} (${category}): ${ep.id}`);
-
-    // Step 4: Get sources via CF Worker (handles pipe encryption server-side)
     try {
-      const srcRes = await fetch(
-        `${cfBase}/miruro/sources?episodeId=${encodeURIComponent(ep.id)}&provider=${providerId}&category=${category}`
+      var srcRes = await fetch(
+        cfBase + '/miruro/sources?episodeId=' + encodeURIComponent(ep.id) + '&provider=' + providerId + '&category=' + cat
       );
       if (!srcRes.ok) continue;
-
-      const srcData = await srcRes.json() as { streams?: MiruroStream[] };
-
+      var srcData = await srcRes.json() as { streams?: MiruroStream[] };
       if (!srcData.streams?.length) continue;
-
-      for (const stream of srcData.streams) {
-        if (!stream.url || !stream.isActive) continue;
-        // Skip embed sources (kwik.cx etc.) — they need JS execution to resolve.
-        // Only direct HLS URLs can be proxied through /miruro/stream.
-        if (stream.type === 'embed') {
-          console.log(`[Miruro] Skipping embed source from ${providerId}: ${stream.url.substring(0, 60)}`);
-          continue;
-        }
+      for (var si = 0; si < srcData.streams.length; si++) {
+        var s = srcData.streams[si];
+        if (!s.url || !s.isActive || s.type === 'embed') continue;
         sources.push({
-          quality: stream.quality || stream.resolution?.height?.toString() || 'auto',
-          title: `Miruro ${providerId} (${category})${stream.quality ? ' ' + stream.quality : ''}`,
-          url: stream.url,
+          quality: s.quality || s.resolution?.height?.toString() || 'auto',
+          title: 'Miruro ' + providerId + ' (' + cat + ')' + (s.quality ? ' ' + s.quality : ''),
+          url: s.url,
           type: 'hls',
-          language: category === 'dub' ? 'en' : 'ja',
+          language: cat === 'dub' ? 'en' : 'ja',
           requiresSegmentProxy: true,
-          referer: stream.referer || 'https://kwik.cx/',
         });
       }
-
-      if (sources.length > 0) {
-        console.log(`[Miruro] ${sources.length} sources from ${providerId}/${category}`);
-        break;
-      }
-    } catch (e) {
-      console.warn(`[Miruro] ${providerId} sources failed:`, e);
-    }
+      if (sources.length > 0) break;
+    } catch (e) {}
   }
-
-  console.log(`[Miruro] Total: ${sources.length} sources`);
   return sources;
 }

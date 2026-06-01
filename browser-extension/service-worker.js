@@ -7,7 +7,7 @@
  * - DLHD extraction (mints IP-bound token from residential IP)
  * - reCAPTCHA v3 solver for DLHD IP whitelist
  *
- * VERSION: 3.0.1
+ * VERSION: 3.1.0
  */
 import { solveRecaptchaV3, verifyToken } from './lib/recaptcha.js';
 
@@ -407,6 +407,149 @@ async function whitelistIP(channel) {
   throw new Error('all verify URLs exhausted');
 }
 
+// ── Miruro Extraction (browser-residential IP — NO CF Worker) ──────────
+//
+// Ported from cloudflare-proxy/src/miruro-proxy.ts. The extension SW runs
+// in the browser and fetches directly from Miruro's API. The pipe crypto
+// (XOR+gzip) is handled natively via Web APIs. No datacenter intermediary.
+
+const MIRURO_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/137.0.0.0 Safari/537.36';
+const MIRURO_BASE = 'https://miruro.to';
+const PIPE_KEY = '71951034f8fbcf53d89db52ceb3dc22c';
+const MIRURO_PROVIDER_PRIORITY = ['kiwi', 'bee', 'ally', 'dune', 'hop'];
+
+// Parse pipe key as hex bytes (16 bytes)
+var PIPE_KEY_BYTES = [];
+for (var i = 0; i < PIPE_KEY.length; i += 2) {
+  PIPE_KEY_BYTES.push(parseInt(PIPE_KEY.substring(i, i + 2), 16));
+}
+
+function base64urlEncode(str) {
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64urlDecode(str) {
+  var b = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (b.length % 4) b += '=';
+  return atob(b);
+}
+
+function encodePipeEnvelope(envelope) {
+  var json = JSON.stringify(envelope);
+  var encoded = encodeURIComponent(json).replace(
+    /%([0-9A-F]{2})/g,
+    function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); }
+  );
+  return base64urlEncode(encoded);
+}
+
+async function decodePipeResponse(data) {
+  // base64url decode → Uint8Array
+  var b64 = base64urlDecode(data);
+  var bytes = new Uint8Array(b64.length);
+  for (var i = 0; i < b64.length; i++) bytes[i] = b64.charCodeAt(i);
+
+  // XOR with hex key bytes
+  var xored = new Uint8Array(bytes.length);
+  for (var i = 0; i < bytes.length; i++) xored[i] = bytes[i] ^ PIPE_KEY_BYTES[i % PIPE_KEY_BYTES.length];
+
+  // gunzip decompress
+  var stream = new Blob([xored]).stream();
+  var decompressed = stream.pipeThrough(new DecompressionStream('gzip'));
+  var blob = await new Response(decompressed).blob();
+  var arr = new Uint8Array(await blob.arrayBuffer());
+
+  // decode → JSON
+  return JSON.parse(new TextDecoder().decode(arr));
+}
+
+async function miruroApiGet(path, params) {
+  var envelope = { path: path, method: 'GET', query: params, body: null, version: '0.2.0' };
+  var encrypted = encodePipeEnvelope(envelope);
+  var apiUrl = MIRURO_BASE + '/api/secure/pipe?e=' + encodeURIComponent(encrypted);
+  var res = await fetch(apiUrl, {
+    headers: { 'User-Agent': MIRURO_UA, 'Accept': '*/*', 'Origin': MIRURO_BASE, 'Referer': MIRURO_BASE + '/' }
+  });
+  if (!res.ok) throw new Error('Miruro ' + path + ' HTTP ' + res.status);
+  var text = await res.text();
+  return decodePipeResponse(text);
+}
+
+async function getAnilistIdSW(malId) {
+  var query = 'query($idMal:Int){Media(idMal:$idMal,type:ANIME){id}}';
+  var res = await fetch('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: query, variables: { idMal: malId } })
+  });
+  if (!res.ok) return null;
+  var json = await res.json();
+  return json?.data?.Media?.id || null;
+}
+
+async function miruroExtract(malId, episode, audioPref) {
+  var ep = episode || 1;
+  var pref = audioPref || 'sub';
+  console.log('[Flyx SW] Miruro extract: malId=' + malId + ' ep=' + ep + ' pref=' + pref);
+
+  incStat('miruro', 'intercepted');
+  addLog('miruro', 'intercept', 'malId=' + malId + ' ep=' + ep);
+
+  // 1. MAL → AniList
+  var anilistId = await getAnilistIdSW(malId);
+  if (!anilistId) throw new Error('Could not resolve AniList ID for MAL ' + malId);
+
+  // 2. Get episodes via encrypted pipe
+  var epData = await miruroApiGet('episodes', { anilistId: String(anilistId) });
+  if (!epData || !epData.providers) throw new Error('No providers in Miruro episodes');
+
+  // 3. Try each provider in priority order
+  var sources = [];
+  for (var pi = 0; pi < MIRURO_PROVIDER_PRIORITY.length; pi++) {
+    var providerId = MIRURO_PROVIDER_PRIORITY[pi];
+    var provider = epData.providers[providerId];
+    if (!provider) continue;
+
+    var cat = (pref === 'dub' && provider.episodes.dub && provider.episodes.dub.length > 0) ? 'dub' : 'sub';
+    var eps = cat === 'dub' ? provider.episodes.dub : provider.episodes.sub;
+    var match = null;
+    for (var ei = 0; ei < eps.length; ei++) { if (eps[ei].number === ep) { match = eps[ei]; break; } }
+    if (!match) continue;
+
+    console.log('[Flyx SW] Miruro ep ' + ep + ' on ' + providerId + '/' + cat + ': ' + match.id);
+
+    try {
+      var srcData = await miruroApiGet('sources', { episodeId: match.id, provider: providerId, category: cat });
+      var streams = srcData && srcData.streams ? srcData.streams : [];
+      for (var si = 0; si < streams.length; si++) {
+        var s = streams[si];
+        if (!s.url || !s.isActive || s.type === 'embed') continue;
+        sources.push({
+          title: 'Miruro ' + providerId + ' (' + cat + ')' + (s.quality ? ' ' + s.quality : ''),
+          url: s.url,
+          quality: s.quality || 'auto',
+          provider: 'miruro',
+          language: cat === 'dub' ? 'en' : 'ja',
+          type: 'hls'
+        });
+      }
+      if (sources.length > 0) {
+        console.log('[Flyx SW] Miruro: ' + sources.length + ' sources from ' + providerId);
+        break;
+      }
+    } catch (e) {
+      console.warn('[Flyx SW] Miruro ' + providerId + ' sources failed:', e.message);
+    }
+  }
+
+  if (sources.length === 0) throw new Error('No Miruro sources found');
+
+  incStat('miruro', 'success');
+  incStat('miruro', 'm3u8');
+  addLog('miruro', 'success', sources.length + ' sources for malId=' + malId);
+  return sources;
+}
+
 // ── Message Router ──────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
@@ -422,6 +565,23 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
       incStat('dlhd', 'error');
       addLog('dlhd', 'error', e.message);
       console.error('[Flyx SW] DLHD ch' + msg.channel + ' failed:', e.message);
+      respond({ ok: false, error: e.message });
+    });
+    return true; // async
+  }
+
+  // Miruro anime extraction (browser-residential IP — no CF Worker)
+  if (msg.type === 'extractMiruro') {
+    if (providerState.miruro === false) {
+      respond({ ok: false, error: 'Miruro provider is disabled' });
+      return false;
+    }
+    miruroExtract(msg.malId, msg.episode, msg.audioPref).then(function (sources) {
+      respond({ ok: true, sources: sources });
+    }).catch(function (e) {
+      incStat('miruro', 'error');
+      addLog('miruro', 'error', e.message);
+      console.error('[Flyx SW] Miruro malId=' + msg.malId + ' failed:', e.message);
       respond({ ok: false, error: e.message });
     });
     return true; // async

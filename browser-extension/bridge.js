@@ -41,7 +41,7 @@
 
     // Extension detection ping/pong
     if (e.data.__flyx === 'ping') {
-      window.postMessage({ __flyx: 'pong', version: '3.0.1' }, '*');
+      window.postMessage({ __flyx: 'pong', version: '3.1.0' }, '*');
       return;
     }
 
@@ -65,6 +65,28 @@
           detail: e.data.detail || ''
         });
       } catch (ex) { /* ignore — SW may be busy */ }
+      return;
+    }
+
+    // Miruro anime extraction request from inject.js → relay to SW
+    if (e.data.__flyx === 'miruro') {
+      var mid = e.data.id;
+      try {
+        chrome.runtime.sendMessage({
+          type: 'extractMiruro',
+          malId: e.data.malId,
+          episode: e.data.episode,
+          audioPref: e.data.audioPref
+        }, function (resp) {
+          var err = chrome.runtime.lastError;
+          window.postMessage({
+            __flyx: 'miruroRes', id: mid, ok: !!(resp && resp.ok),
+            sources: resp && resp.sources, error: (err && err.message) || (resp && resp.error)
+          }, '*');
+        });
+      } catch (ex) {
+        window.postMessage({ __flyx: 'miruroRes', id: mid, ok: false, error: ex.message }, '*');
+      }
       return;
     }
 

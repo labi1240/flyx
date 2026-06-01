@@ -173,11 +173,14 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Service Worker intercepts it directly from the browser's residential IP.
   if (providerName === 'animekai') return sourceUrl;
 
-  // Miruro: HLS.js uses XHR (not fetch), so the SW can't intercept segment
-  // requests. Route raw CDN URLs through the CF Worker's /miruro/stream
-  // endpoint which does M3U8 rewriting + CORS headers.
+  // Miruro: With the extension installed, DNR rules inject Referer and
+  // hls.js resolves relative URIs — raw CDN URL goes direct, no proxy.
+  // Without the extension, route through CF Worker for playlist rewriting.
   if (providerName === 'miruro') {
     if (sourceUrl.includes('/miruro/')) return sourceUrl; // Already proxied
+    if (typeof window !== 'undefined' && (window as any).__FLYX_EXTENSION__?.installed) {
+      return sourceUrl; // Extension DNR handles Referer, hls.js resolves URIs
+    }
     const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
     return `${baseUrl}/miruro/stream?url=${encodeURIComponent(sourceUrl)}`;
   }
