@@ -1,15 +1,31 @@
 /**
  * AnimeVideoPlayer — dedicated anime playback component.
  *
- * Lightweight, anime-specific. No movie/TV provider code.
- * Uses vanilla hls.js — DNR rules inject headers at the network layer
- * for both XHR and fetch, so no custom loader is needed.
+ * Detects HEVC/H.265 levels after MANIFEST_PARSED and wires up the
+ * FFmpeg.wasm-based HevcTranscodeLoader so Chrome/Edge can play Miruro's
+ * HEVC-only streams. Non-HEVC sources (AnimeKai/MegaUp, AllAnime) pass
+ * through unchanged.
+ *
+ * Architecture:
+ *   MANIFEST_PARSED → check videoCodec per level
+ *     ├─ hvc1/hev1 found → markHevcLevels() + preload FFmpeg.wasm
+ *     └─ all playable     → pass through (no transcode overhead)
+ *
+ *   Fragment loads → HevcTranscodeLoader
+ *     ├─ level in hevcLevels → FetchLoader → FFmpeg.wasm transcode → onSuccess(H.264)
+ *     └─ otherwise           → FetchLoader → onSuccess(unchanged)
  */
 
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
+import {
+  HevcTranscodeLoader,
+  markHevcLevels,
+  clearHevcLevels,
+} from './hevc-transcode-loader';
+import { preloadTranscoder, terminateTranscoder } from '@/lib/wasm/hevc-transcoder';
 import styles from './Player.module.css';
 
 interface AnimeSource {
@@ -87,7 +103,8 @@ export default function AnimeVideoPlayer({
         manifestLoadingRetryDelay: 300,
         levelLoadingTimeOut: 10000,
         levelLoadingMaxRetry: 2,
-        fragLoadingTimeOut: 20000,
+        // Raised: HEVC→H.264 WASM transcode can take 3-8s per segment
+        fragLoadingTimeOut: 30000,
         fragLoadingMaxRetry: 4,
         fragLoadingRetryDelay: 500,
         startLevel: -1,
@@ -95,6 +112,9 @@ export default function AnimeVideoPlayer({
         abrBandWidthFactor: 0.8,
         abrBandWidthUpFactor: 0.5,
         abrMaxWithRealBitrate: true,
+        // Always use HevcTranscodeLoader — passes through unchanged
+        // for non-HEVC streams (AnimeKai/AllAnime H.264 sources).
+        fLoader: HevcTranscodeLoader as any,
       });
 
       var lastSource = sourceIdx >= sources.length - 1;
@@ -119,7 +139,7 @@ export default function AnimeVideoPlayer({
                 setSourceIdx(function (prev) { return prev + 1; });
                 return;
               }
-              setError('This episode is only available in HEVC/H.265, which your browser can’t play. Try Chrome/Edge on a device with HEVC support, or Safari.');
+              setError('HEVC transcode failed — no more sources available. Try a different episode or check back later.');
               onAllSourcesFailed?.();
               return;
             }
@@ -134,27 +154,46 @@ export default function AnimeVideoPlayer({
 
       hls.on(Hls.Events.MANIFEST_PARSED, function (_evt, data) {
         if (destroyedRef.current) return;
-        // Proactively skip a source whose codec the browser can't decode
-        // (commonly HEVC/H.265, which Chrome can't play via MSE) instead of
-        // waiting for the load → transmux → bufferAddCodecError cycle.
+
+        // Scan levels for HEVC/H.265 codecs that Chrome/Edge can't play
+        // natively via MSE. When found, mark them for WASM transcoding
+        // so the HevcTranscodeLoader kicks in on each fragment load.
+        var hevcIndices: number[] = [];
         try {
           var levels = (data && (data as any).levels) || [];
-          var playable = false;
-          var sawCodec = false;
+          var hasPlayable = false;
           for (var i = 0; i < levels.length; i++) {
             var vc = (levels[i].videoCodec || '').toLowerCase();
-            if (!vc) { playable = true; break; } // no codec info → let it try
-            sawCodec = true;
+            if (!vc) { hasPlayable = true; continue; } // no codec info → assume playable
             var ac = levels[i].audioCodec || '';
             var mime = 'video/mp4;codecs="' + [vc, ac].filter(Boolean).join(',') + '"';
-            if (typeof MediaSource === 'undefined' || MediaSource.isTypeSupported(mime)) { playable = true; break; }
+            if (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(mime)) {
+              hasPlayable = true;
+            } else if (vc.startsWith('hvc') || vc.startsWith('hev')) {
+              hevcIndices.push(i);
+            }
           }
-          if (sawCodec && !playable && !lastSource) {
-            console.warn('[AnimePlayer] No playable codec in manifest (likely HEVC) — switching source ' + sourceIdx + ' → ' + (sourceIdx + 1));
+
+          if (hevcIndices.length > 0) {
+            console.log('[AnimePlayer] HEVC levels detected: ' + JSON.stringify(hevcIndices) + ' — enabling WASM transcode');
+            markHevcLevels(new Set(hevcIndices));
+            // Start loading FFmpeg.wasm in background (31MB) so it's ready
+            // by the time the first fragment needs transcoding.
+            preloadTranscoder();
+          }
+
+          // If no level is playable AND we found no HEVC to transcode,
+          // this is an unknown unplayable codec — fall back to next source.
+          if (!hasPlayable && hevcIndices.length === 0 && !lastSource) {
+            console.warn('[AnimePlayer] Unknown unplayable codec — switching source ' + sourceIdx + ' → ' + (sourceIdx + 1));
             setSourceIdx(function (prev) { return prev + 1; });
             return;
           }
-        } catch { /* let playback proceed; bufferAddCodecError is the safety net */ }
+        } catch (e) {
+          console.warn('[AnimePlayer] Codec detection failed, proceeding:', e);
+          // Let playback attempt; bufferAddCodecError handler is the safety net
+        }
+
         console.log('[AnimePlayer] Manifest ready');
         // Don't autoplay — let the user click play to avoid
         // "play() interrupted by new load request" on React remount
@@ -169,10 +208,12 @@ export default function AnimeVideoPlayer({
 
     return function cleanup() {
       destroyedRef.current = true;
+      clearHevcLevels();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      terminateTranscoder();
     };
   }, [currentSource?.url]);
 

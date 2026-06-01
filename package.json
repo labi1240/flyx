@@ -50,6 +50,9 @@
     "decoder:help": "bun run app/lib/services/rcp/decoders/__tests__/cli.ts help"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.6",
+    "@ffmpeg/ffmpeg": "^0.12.6",
+    "@ffmpeg/util": "^0.12.1",
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.1.2",
     "dotenv": "^17.2.3",
