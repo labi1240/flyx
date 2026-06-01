@@ -59,6 +59,9 @@ export function clearHevcLevels(): void {
 export class HevcTranscodeLoader implements Loader<LoaderContext> {
   private inner: FetchLoader;
   private abortController: AbortController | null = null;
+  private destroyed = false;
+  /** Only forward abort/destroy to inner if we delegated a load to it. */
+  private innerLoadDelegated = false;
 
   constructor(config: HlsConfig) {
     this.inner = new FetchLoader(config);
@@ -81,16 +84,28 @@ export class HevcTranscodeLoader implements Loader<LoaderContext> {
   // --- Lifecycle ---
 
   destroy(): void {
-    this.abort();
-    this.inner.destroy();
-  }
-
-  abort(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
-    this.inner.abort();
+    // Only forward to inner if we delegated a load — inner.destroy() fires
+    // callbacks that can cause hls.js to re-enter our destroy() in a loop.
+    if (this.innerLoadDelegated) {
+      this.inner.destroy();
+    }
+  }
+
+  abort(): void {
+    if (this.destroyed) return;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+    if (this.innerLoadDelegated) {
+      this.inner.abort();
+    }
   }
 
   getCacheAge(): number | null {
@@ -114,6 +129,7 @@ export class HevcTranscodeLoader implements Loader<LoaderContext> {
       hevcLevels.has(fragLevel);
 
     if (!shouldTranscode) {
+      this.innerLoadDelegated = true;
       this.inner.load(context, config, callbacks);
       return;
     }

@@ -33,16 +33,16 @@ interface StreamSource {
   skipOutro?: [number, number];
 }
 
-// AnimeKai (H.264/MegaUp) first — plays in every browser. Miruro's only live
-// provider (kiwi) serves HEVC/H.265, unplayable via MSE in Chrome/Edge, so
-// it's the HEVC-capable-device fallback.
+// Miruro first (HEVC→H.264 transcoded via FFmpeg.wasm for Chrome/Edge).
+// AnimeKai (H.264/MegaUp) is the fallback when Miruro is unavailable.
 // NOTE: 'allanime' is implemented (allanime-client-extractor.ts) but disabled:
 // api.allanime.day is behind Cloudflare bot management that challenges the
 // extension's background fetch (verified e2e via Playwright — TLS/JA3-level,
 // not fixable with DNR headers). Re-enable if a CF bypass lands.
-const PROVIDER_ORDER = ['animekai', 'miruro'] as const;
-// (AnimeKai pipeline updated Jun 2026: handles the new /iframe/ intermediate
-//  page and decrypts MegaUp via enc-dec.app with UA-matched keystream.)
+const PROVIDER_ORDER = ['miruro', 'animekai'] as const;
+// (Miruro HEVC streams are transcoded to H.264 in-browser via FFmpeg.wasm so
+//  Chrome/Edge can play them. AnimeKai is the H.264-native fallback when
+//  Miruro is down or the anime isn't in their catalog.)
 
 export default function AnimeWatchClient(props: { malId: number; episode: number }) {
   return (
