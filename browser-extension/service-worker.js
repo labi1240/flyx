@@ -89,6 +89,17 @@ const PROVIDERS = {
       { f: '*://*.anikai.to/*', h: {}, cors: true },
     ]
   },
+  allanime: {
+    name: 'AllAnime',
+    cat: 'anime',
+    rules: [
+      // api.allanime.day checks Referer; fetch() can't set it but DNR can.
+      // Referer only (no Origin) — mirrors the known-working ani-cli client.
+      { f: '*://api.allanime.day/*', h: { Referer: 'https://allmanga.to/' }, cors: true },
+      // AllAnime CDN hosts that serve the actual H.264 segments.
+      { f: '*://*.allanime.day/*', h: { Referer: 'https://allmanga.to/' }, cors: true },
+    ]
+  },
   hianime: {
     name: 'HiAnime',
     cat: 'anime',

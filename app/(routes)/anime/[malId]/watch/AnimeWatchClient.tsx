@@ -33,10 +33,11 @@ interface StreamSource {
   skipOutro?: [number, number];
 }
 
-// AnimeKai (H.264/MegaUp) first: it plays in every browser. Miruro's only
-// working provider (kiwi) serves HEVC/H.265, which Chrome/Edge can't decode
-// via MSE — so it's used as the fallback for HEVC-capable devices only.
-const PROVIDER_ORDER = ['animekai', 'miruro'] as const;
+// H.264 providers first (play in every browser): AllAnime has the largest
+// catalog, AnimeKai/MegaUp as backup. Miruro's only live provider (kiwi)
+// serves HEVC/H.265 — which Chrome/Edge can't decode via MSE — so it's the
+// last-resort fallback, useful only on HEVC-capable devices.
+const PROVIDER_ORDER = ['allanime', 'animekai', 'miruro'] as const;
 
 export default function AnimeWatchClient(props: { malId: number; episode: number }) {
   return (
@@ -109,7 +110,19 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       for (const prov of PROVIDER_ORDER) {
         if (cancelled) return;
         try {
-          if (prov === 'miruro') {
+          if (prov === 'allanime') {
+            const { extractAllAnimeClient } = await import('@/lib/services/allanime-client-extractor');
+            const results = await extractAllAnimeClient(malId, animeTitle, targetEp, audioPref);
+            for (const s of results) {
+              allSources.push({
+                title: s.title || 'AllAnime',
+                url: s.url,
+                quality: s.quality,
+                provider: 'allanime',
+                language: s.language || 'ja',
+              });
+            }
+          } else if (prov === 'miruro') {
             const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
             for (const s of results) {

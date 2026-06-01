@@ -46,6 +46,9 @@
     "https://*.ufreetv.com/*",
     "https://*.poocloud.in/*",
     "https://*.cdn-live.tv/*",
+    "https://api.allanime.day/*",
+    "https://*.allanime.day/*",
+    "https://allmanga.to/*",
     "https://www.google.com/recaptcha/*"
   ],
 
