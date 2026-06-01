@@ -93,9 +93,19 @@ const PROVIDERS = {
     name: 'AllAnime',
     cat: 'anime',
     rules: [
-      // api.allanime.day checks Referer; fetch() can't set it but DNR can.
-      // Referer only (no Origin) — mirrors the known-working ani-cli client.
-      { f: '*://api.allanime.day/*', h: { Referer: 'https://allmanga.to/' }, cors: true },
+      // api.allanime.day sits behind Cloudflare bot management which challenges
+      // background fetches (they lack the client-hint + Sec-Fetch fingerprint a
+      // page request has). fetch() can't set these, but DNR can — inject the
+      // full real-Chrome fingerprint so the SW relay passes CF like the SPA does.
+      { f: '*://api.allanime.day/*', h: {
+          Referer: 'https://allmanga.to/',
+          'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'Sec-Fetch-Site': 'cross-site',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Dest': 'empty',
+        }, cors: true },
       // AllAnime CDN hosts that serve the actual H.264 segments.
       { f: '*://*.allanime.day/*', h: { Referer: 'https://allmanga.to/' }, cors: true },
     ]
@@ -611,17 +621,20 @@ async function miruroExtract(malId, episode, audioPref) {
 // any required Origin/Referer request headers transparently; megaup rules
 // strip them. Requests go out from the same residential IP as the page.
 
-async function corsFetch(url, headers, timeoutMs) {
+async function corsFetch(url, headers, timeoutMs, method, body) {
   var ctrl = new AbortController();
   var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || 15000);
   try {
-    var res = await fetch(url, {
+    var init = {
+      method: method || 'GET',
       headers: headers || {},
       credentials: 'omit',
       signal: ctrl.signal
-    });
-    var body = await res.text();
-    return { status: res.status, body: body };
+    };
+    if (body != null && init.method !== 'GET' && init.method !== 'HEAD') init.body = body;
+    var res = await fetch(url, init);
+    var text = await res.text();
+    return { status: res.status, body: text };
   } finally {
     clearTimeout(timer);
   }
@@ -632,7 +645,7 @@ async function corsFetch(url, headers, timeoutMs) {
 chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
   // Generic CORS-free fetch (AnimeKai/MegaUp page extractor)
   if (msg.type === 'corsFetch') {
-    corsFetch(msg.url, msg.headers, msg.timeoutMs).then(function (r) {
+    corsFetch(msg.url, msg.headers, msg.timeoutMs, msg.method, msg.body).then(function (r) {
       respond({ ok: true, status: r.status, body: r.body });
     }).catch(function (e) {
       respond({ ok: false, error: e.message });

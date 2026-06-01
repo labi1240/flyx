@@ -33,11 +33,16 @@ interface StreamSource {
   skipOutro?: [number, number];
 }
 
-// H.264 providers first (play in every browser): AllAnime has the largest
-// catalog, AnimeKai/MegaUp as backup. Miruro's only live provider (kiwi)
-// serves HEVC/H.265 — which Chrome/Edge can't decode via MSE — so it's the
-// last-resort fallback, useful only on HEVC-capable devices.
-const PROVIDER_ORDER = ['allanime', 'animekai', 'miruro'] as const;
+// AnimeKai (H.264/MegaUp) first — plays in every browser. Miruro's only live
+// provider (kiwi) serves HEVC/H.265, unplayable via MSE in Chrome/Edge, so
+// it's the HEVC-capable-device fallback.
+// NOTE: 'allanime' is implemented (allanime-client-extractor.ts) but disabled:
+// api.allanime.day is behind Cloudflare bot management that challenges the
+// extension's background fetch (verified e2e via Playwright — TLS/JA3-level,
+// not fixable with DNR headers). Re-enable if a CF bypass lands.
+const PROVIDER_ORDER = ['animekai', 'miruro'] as const;
+// (AnimeKai pipeline updated Jun 2026: handles the new /iframe/ intermediate
+//  page and decrypts MegaUp via enc-dec.app with UA-matched keystream.)
 
 export default function AnimeWatchClient(props: { malId: number; episode: number }) {
   return (
@@ -110,19 +115,7 @@ function AnimeWatchClientInner({ malId, episode: initialEpisode }: { malId: numb
       for (const prov of PROVIDER_ORDER) {
         if (cancelled) return;
         try {
-          if (prov === 'allanime') {
-            const { extractAllAnimeClient } = await import('@/lib/services/allanime-client-extractor');
-            const results = await extractAllAnimeClient(malId, animeTitle, targetEp, audioPref);
-            for (const s of results) {
-              allSources.push({
-                title: s.title || 'AllAnime',
-                url: s.url,
-                quality: s.quality,
-                provider: 'allanime',
-                language: s.language || 'ja',
-              });
-            }
-          } else if (prov === 'miruro') {
+          if (prov === 'miruro') {
             const { extractMiruroClient } = await import('@/lib/services/miruro-client-extractor');
             const results = await extractMiruroClient(malId, animeTitle, targetEp, audioPref);
             for (const s of results) {

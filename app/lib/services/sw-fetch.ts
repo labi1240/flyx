@@ -28,13 +28,24 @@ export interface SwFetchResult {
  * HTTP round-trip. Falls back to a direct page fetch when the extension isn't
  * installed (which may CORS-fail, but preserves behaviour without the ext).
  */
+export interface SwFetchOpts {
+  method?: string;
+  body?: string;
+  timeoutMs?: number;
+}
+
 export function swFetch(
   url: string,
   headers: Record<string, string> = {},
-  timeoutMs = 15000,
+  opts: number | SwFetchOpts = 15000,
 ): Promise<SwFetchResult | null> {
+  const o: SwFetchOpts = typeof opts === 'number' ? { timeoutMs: opts } : opts;
+  const timeoutMs = o.timeoutMs ?? 15000;
+  const method = o.method || 'GET';
+  const body = o.body;
+
   if (!extensionAvailable()) {
-    return fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+    return fetch(url, { method, headers, body, signal: AbortSignal.timeout(timeoutMs) })
       .then(async (r) => ({ ok: r.ok, status: r.status, body: await r.text() }))
       .catch(() => null);
   }
@@ -54,6 +65,6 @@ export function swFetch(
       }
     }
     window.addEventListener('message', onMsg);
-    window.postMessage({ __flyx: 'corsFetch', id, url, headers, timeoutMs }, '*');
+    window.postMessage({ __flyx: 'corsFetch', id, url, headers, method, body, timeoutMs }, '*');
   });
 }

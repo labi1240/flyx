@@ -76,7 +76,9 @@
           type: 'corsFetch',
           url: e.data.url,
           headers: e.data.headers,
-          timeoutMs: e.data.timeoutMs
+          timeoutMs: e.data.timeoutMs,
+          method: e.data.method,
+          body: e.data.body
         }, function (resp) {
           var err = chrome.runtime.lastError;
           window.postMessage({

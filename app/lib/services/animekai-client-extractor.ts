@@ -38,7 +38,7 @@ export interface AnimeKaiSource {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { encryptAnimeKai, decryptAnimeKai } from '../animekai-crypto';
-import { decryptMegaUp } from '../megaup-crypto';
+import { swFetch as swFetchRaw } from './sw-fetch';
 
 function encrypt(text: string): string | null {
   try {
@@ -384,34 +384,66 @@ async function getEncryptedEmbed(lid: string): Promise<string | null> {
   }
 }
 
+// The /media/ keystream is derived from the User-Agent, so the UA used to
+// fetch /media/ MUST equal the UA passed to enc-dec.app. The SW background
+// fetch uses the browser's real UA, so we pass navigator.userAgent to keep
+// them in sync. (Direct-fetch fallback sends no custom UA either → browser UA.)
+const MEGAUP_UA =
+  (typeof navigator !== 'undefined' && navigator.userAgent) ||
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+
+const ENCDEC_API = 'https://enc-dec.app/api/dec-mega';
+
 /**
- * Native MegaUp /media/ decryption with keystream cache.
+ * Decrypt a MegaUp /media/ payload via the enc-dec.app oracle. The keystream
+ * is per-video (derived from UA + id), so `agent` must match the /media/ fetch
+ * UA. Returns the parsed { sources, tracks } object.
  */
-async function decryptMegaUpMedia(encryptedBase64: string, videoId: string): Promise<string | null> {
+async function decryptMegaUpPayload(encryptedBase64: string): Promise<any | null> {
+  const res = await swFetchRaw(
+    ENCDEC_API,
+    { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    { method: 'POST', body: JSON.stringify({ text: encryptedBase64, agent: MEGAUP_UA }), timeoutMs: 15000 },
+  );
+  if (!res || !res.ok) {
+    console.warn(`[AnimeKai] enc-dec.app returned ${res ? res.status : 'no response'}`);
+    return null;
+  }
   try {
-    return await decryptMegaUp(encryptedBase64, videoId);
-  } catch (e) {
-    console.warn('[AnimeKai] MegaUp native decrypt error:', e);
+    const data = JSON.parse(res.body) as { status?: number; result?: any };
+    if (data.status !== 200 || !data.result) {
+      console.warn('[AnimeKai] enc-dec.app decrypt failed:', res.body.slice(0, 120));
+      return null;
+    }
+    return typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+  } catch {
     return null;
   }
 }
 
 /**
- * Fetch MegaUp /media/ endpoint directly from browser (SW handles CDN headers).
- * Returns decrypted stream URL.
+ * AnimeKai now wraps the player in an intermediate /iframe/ page that embeds
+ * the real MegaUp /e/ URL. Resolve it: fetch the iframe page, pull the src.
+ */
+async function resolveIframeEmbed(iframeUrl: string): Promise<string | null> {
+  const res = await swFetchRaw(iframeUrl, PAGE_HEADERS, 12000);
+  if (!res || !res.ok) return null;
+  const m = res.body.match(/<iframe[^>]+src=["'](https?:\/\/[^"']*\/e\/[^"'?]+)/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Resolve a MegaUp /e/ embed → decrypted HLS stream URL via /media/ + enc-dec.app.
  */
 async function extractMegaUpMedia(embedUrl: string): Promise<string | null> {
   try {
     const urlMatch = embedUrl.match(/https?:\/\/([^\/]+)\/e\/([^\/\?]+)/);
     if (!urlMatch) return null;
-
     const [, host, videoId] = urlMatch;
     const mediaUrl = `https://${host}/media/${videoId}`;
 
     console.log(`[AnimeKai] Fetching MegaUp /media/: ${mediaUrl.substring(0, 80)}`);
 
-    // Fetch via SW relay (no page CORS); DNR strips Referer/Origin for megaup.
-    // Fall back to direct fetch when the extension is not installed.
     const mediaHeaders = { 'Accept': 'application/json' };
     let res: KaiResponse | null;
     if (extAvailable()) {
@@ -420,7 +452,6 @@ async function extractMegaUpMedia(embedUrl: string): Promise<string | null> {
       const r = await fetch(mediaUrl, { headers: mediaHeaders, signal: AbortSignal.timeout(15000) });
       res = makeKaiResponse(r.status, await r.text());
     }
-
     if (!res || !res.ok) {
       console.warn(`[AnimeKai] MegaUp /media/ returned ${res ? res.status : 'no response'}`);
       return null;
@@ -429,14 +460,10 @@ async function extractMegaUpMedia(embedUrl: string): Promise<string | null> {
     const data = await res.json() as { status?: number; result?: string };
     if (data.status !== 200 || !data.result) return null;
 
-    console.log(`[AnimeKai] Got encrypted MegaUp data (${data.result.length} chars), decrypting...`);
+    console.log(`[AnimeKai] Decrypting MegaUp payload (${data.result.length} chars)...`);
+    const streamData = await decryptMegaUpPayload(data.result);
+    if (!streamData) return null;
 
-    // Decrypt via native keystream (with cache)
-    const decrypted = await decryptMegaUpMedia(data.result, videoId);
-    if (!decrypted) return null;
-
-    // Parse decrypted JSON
-    const streamData = JSON.parse(decrypted);
     const streamUrl = streamData.sources?.[0]?.file
       || streamData.sources?.[0]?.url
       || streamData.file
@@ -478,37 +505,40 @@ async function getStreamFromServer(
       String.fromCharCode(parseInt(hex, 16))
     );
 
-    // Step 4: Parse decrypted data
+    // Step 4: Extract the embed URL. The decrypt occasionally corrupts a byte
+    // in the URL (e.g. the '/' before "iframe") and leaves trailing garbage,
+    // so JSON.parse is unreliable — pull the URL out token-tolerantly instead.
     let streamUrl = '';
     let skipIntro: [number, number] | undefined;
     let skipOutro: [number, number] | undefined;
 
-    try {
-      const streamData = JSON.parse(decrypted);
-      if (streamData.skip?.intro) skipIntro = streamData.skip.intro;
-      if (streamData.skip?.outro) skipOutro = streamData.skip.outro;
+    // best-effort skip times (don't fail if the tail is garbled)
+    const introM = decrypted.match(/"intro":\[(\d+),(\d+)\]/);
+    if (introM) skipIntro = [parseInt(introM[1]), parseInt(introM[2])];
+    const outroM = decrypted.match(/"outro":\[(\d+),(\d+)\]/);
+    if (outroM) skipOutro = [parseInt(outroM[1]), parseInt(outroM[2])];
 
-      streamUrl = streamData.url
-        || streamData.sources?.[0]?.url
-        || streamData.sources?.[0]?.file
-        || streamData.file
-        || '';
-    } catch {
-      if (decrypted.startsWith('http')) {
-        streamUrl = decrypted;
-      }
+    // AnimeKai /iframe/ intermediate: ".../iframe/<token>" (slash may be corrupt)
+    const iframeM = decrypted.match(/(https?:[^"]*?)iframe[\\/}2F]*([A-Za-z0-9_-]{16,})/i);
+    if (iframeM) {
+      const token = iframeM[2];
+      const iframeUrl = `${KAI_DOMAINS[0]}/iframe/${token}`;
+      console.log(`[AnimeKai] Resolving /iframe/ embed for ${serverName}`);
+      const megaup = await resolveIframeEmbed(iframeUrl);
+      if (!megaup) return null;
+      streamUrl = megaup;
+    } else {
+      // Legacy: direct embed URL inside the JSON
+      const urlM = decrypted.match(/"url":"(https?:[^"]+)"/);
+      if (urlM) streamUrl = urlM[1].replace(/\\\//g, '/');
+      else if (decrypted.startsWith('http')) streamUrl = decrypted;
     }
 
     if (!streamUrl) return null;
 
-    // Step 5: If MegaUp embed URL → extract actual HLS
-    if (streamUrl.includes('megaup') && streamUrl.includes('/e/')) {
+    // Step 5: Resolve MegaUp /e/ embed → actual HLS
+    if (streamUrl.includes('/e/') && !streamUrl.includes('.m3u8') && !streamUrl.includes('.mp4')) {
       console.log(`[AnimeKai] Detected MegaUp embed, extracting...`);
-      const hlsUrl = await extractMegaUpMedia(streamUrl);
-      if (hlsUrl) streamUrl = hlsUrl;
-      else return null; // MegaUp extraction failed
-    } else if (streamUrl.includes('/e/') && !streamUrl.includes('.m3u8') && !streamUrl.includes('.mp4')) {
-      // Generic embed URL
       const hlsUrl = await extractMegaUpMedia(streamUrl);
       if (hlsUrl) streamUrl = hlsUrl;
       else return null;
