@@ -82,6 +82,11 @@ const PROVIDERS = {
     rules: [
       // MegaUp blocks Origin+Referer — remove them; add CORS for direct fetch
       { f: '*://*.megaup.*/*', h: { Origin: '', Referer: '' }, op: 'remove', cors: true },
+      // AnimeKai API domains — no CORS headers, inject them
+      { f: '*://animekai.to/*', h: {}, cors: true },
+      { f: '*://anikai.to/*', h: {}, cors: true },
+      { f: '*://*.animekai.to/*', h: {}, cors: true },
+      { f: '*://*.anikai.to/*', h: {}, cors: true },
     ]
   },
   hianime: {
