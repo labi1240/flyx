@@ -15,9 +15,9 @@ function proxySourceUrl(sourceUrl: string, providerName: string, requiresProxy?:
   // Already proxied — don't double-wrap
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
-      sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
-      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
-      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
+      sourceUrl.includes('/videasy/') ||
+      sourceUrl.includes('/api/stream-proxy') ||
+      sourceUrl.includes('/miruro/') ||
       sourceUrl.includes('/bingebox/') || sourceUrl.includes('/stream?url=')) {
     return sourceUrl;
   }
@@ -160,8 +160,8 @@ function WatchContent() {
   const [mobileResumeTime, setMobileResumeTime] = useState(0); // Saved playback time for source/audio changes
   
   // Provider state for mobile player
-  const [currentProvider, setCurrentProvider] = useState<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai' | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai'>>([]);
+  const [currentProvider, setCurrentProvider] = useState<'videasy' | 'bingebox' | 'hianime' | 'miruro' | 'animekai' | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<'videasy' | 'bingebox' | 'hianime' | 'miruro' | 'animekai'>>([]);
   const [loadingProvider, setLoadingProvider] = useState(false);
   
   // Anime state for mobile player
@@ -409,7 +409,7 @@ function WatchContent() {
       }
       
       // Check provider availability first
-      let providerAvailability = { videasy: true, bingebox: true, hianime: true, miruro: true, primesrc: true, vidsrc: true, moviebox: true };
+      let providerAvailability = { videasy: true, bingebox: true, hianime: true, miruro: true };
       try {
         const providerRes = await fetch('/api/providers');
         const providerData = await providerRes.json();
@@ -418,9 +418,6 @@ function WatchContent() {
           bingebox: providerData.providers?.bingebox?.enabled ?? true,
           hianime: providerData.providers?.hianime?.enabled ?? true,
           miruro: providerData.providers?.miruro?.enabled ?? true,
-          primesrc: providerData.providers?.primesrc?.enabled ?? true,
-          vidsrc: providerData.providers?.vidsrc?.enabled ?? true,
-          moviebox: providerData.providers?.moviebox?.enabled ?? true,
         };
       } catch (e) {
         console.warn('[WatchPage] Failed to fetch provider availability, using defaults');
@@ -430,10 +427,10 @@ function WatchContent() {
       const userSettings = getProviderSettings();
       const userOrder = userSettings.providerOrder || [];
       const disabledProviders = new Set(userSettings.disabledProviders || []);
-      type WatchProvider = 'vidsrc' | 'primesrc' | 'videasy' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro';
+      type WatchProvider = 'videasy' | 'bingebox' | 'hianime' | 'miruro';
       const providerOrder: WatchProvider[] = [];
 
-      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'miruro', 'primesrc', 'vidsrc', 'moviebox'];
+      const allKnownProviders: WatchProvider[] = ['videasy', 'bingebox', 'miruro'];
 
       // Add providers from user's preferred order
       for (const p of userOrder) {
@@ -588,7 +585,7 @@ function WatchContent() {
   }, [fetchMobileStream]);
 
   // Handle provider change for mobile player
-  const handleProviderChange = useCallback(async (provider: 'vidsrc' | 'videasy' | 'primesrc' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai', currentTime: number = 0) => {
+  const handleProviderChange = useCallback(async (provider: 'videasy' | 'bingebox' | 'hianime' | 'miruro' | 'animekai', currentTime: number = 0) => {
     setMobileResumeTime(currentTime);
     setLoadingProvider(true);
     console.log('[WatchPage] Provider change to:', provider, 'saving time:', currentTime);

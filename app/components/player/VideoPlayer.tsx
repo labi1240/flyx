@@ -30,8 +30,6 @@ import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useCast, CastMedia } from '@/hooks/useCast';
 import { CastOverlay } from './CastButton';
 import TranscriptButton from './TranscriptButton';
-import PrimeSrcTurnstile from './PrimeSrcTurnstile';
-import { setTurnstileToken } from '@/app/lib/services/primesrc-extractor';
 // Player Core hooks — shared logic extracted for reuse by both desktop and mobile players
 // These hooks encapsulate HLS management, subtitle handling, progress tracking, and source switching.
 // The desktop player integrates these hooks for shared functionality while retaining
@@ -153,9 +151,9 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Already proxied — don't double-wrap
   if (sourceUrl.includes('/flixer/stream') || sourceUrl.includes('/animekai') ||
       sourceUrl.includes('/hianime/') || sourceUrl.includes('/hianime?') ||
-      sourceUrl.includes('/vidsrc/') || sourceUrl.includes('/videasy/') ||
-      sourceUrl.includes('/api/stream-proxy') || sourceUrl.includes('/primesrc/') ||
-      sourceUrl.includes('/miruro/') || sourceUrl.includes('/moviebox/') ||
+      sourceUrl.includes('/videasy/') ||
+      sourceUrl.includes('/api/stream-proxy') ||
+      sourceUrl.includes('/miruro/') ||
       sourceUrl.includes('/bingebox/') || sourceUrl.includes('/stream?url=')) {
     return sourceUrl;
   }
@@ -360,13 +358,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     videasy: true, // Primary — browser-direct via CF Worker, zero-auth, direct HLS, 4K
     flixer: true, // Browser-direct via CF Worker — WASM-based, 12 NATO servers
     bingebox: true, // Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)
-    primesrc: true, // CF Worker /primesrc/extract — Turnstile handled client-side
-    vidsrc: true, // 2embed API via CF Worker /vidsrc/extract
     '1movies': false, // Disabled — complex obfuscation requires headless browser
     animekai: false, // AnimeKai requires RPI for full pipeline — dead without RPI
     hianime: true, // Browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
     miruro: true, // Browser-direct via CF Worker /miruro/* (pipe-encrypted API, MAL→AniList)
-    moviebox: true, // CF Worker /moviebox/extract — session-gated h5-api.aoneroom.com
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
@@ -1060,9 +1055,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             videasy: data.providers?.videasy?.enabled ?? prev.videasy ?? true,
             flixer: data.providers?.flixer?.enabled ?? prev.flixer ?? true,
             bingebox: data.providers?.bingebox?.enabled ?? prev.bingebox ?? true,
-            primesrc: data.providers?.primesrc?.enabled ?? prev.primesrc ?? true,
-            vidsrc: data.providers?.vidsrc?.enabled ?? prev.vidsrc ?? true,
-            moviebox: data.providers?.moviebox?.enabled ?? prev.moviebox ?? true,
             hianime: data.providers?.hianime?.enabled ?? prev.hianime ?? true,
             miruro: data.providers?.miruro?.enabled ?? prev.miruro ?? true,
           }));
@@ -1084,7 +1076,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       // Anime: ONLY use anime-native providers (Miruro, AnimeKai).
       // Movie/TV providers do NOT understand anime titles/MAL IDs and return
       // wrong content or garbage. Never fall back to them for anime.
-      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
+      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox'];
       const animeOrder: string[] = ['miruro', 'animekai'];
       const defaultOrder: string[] = isAnime
         ? animeOrder
@@ -1428,7 +1420,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     let streamCleanup: (() => void) | null = null;
 
     const loadStream = () => {
-    if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream?url=') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/vidsrc') || streamUrl.includes('/videasy/') || streamUrl.includes('workers.dev')) {
+    if (streamUrl.includes('.m3u8') || streamUrl.includes('stream-proxy') || streamUrl.includes('/stream?url=') || streamUrl.includes('/stream/') || streamUrl.includes('/animekai') || streamUrl.includes('/flixer/stream') || streamUrl.includes('/hianime') || streamUrl.includes('/videasy/') || streamUrl.includes('workers.dev')) {
       if (Hls.isSupported()) {
         // Check if this is a Flixer source (needs more aggressive buffering)
         const isFlixerSource = streamUrl.includes('flixer') || streamUrl.includes('p.10015.workers.dev') || streamUrl.includes('afc7d47f');
@@ -1748,10 +1740,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   }
                   if (provider !== 'videasy' && providerAvailability.videasy) fallbackProviders.push('videasy');
                   if (provider !== 'flixer' && providerAvailability.flixer) fallbackProviders.push('flixer');
-                  if (provider !== 'primesrc' && providerAvailability.primesrc) fallbackProviders.push('primesrc');
-                  if (provider !== 'vidsrc' && providerAvailability.vidsrc) fallbackProviders.push('vidsrc');
                   if (provider !== '1movies' && providerAvailability['1movies']) fallbackProviders.push('1movies');
-                  if (provider !== 'moviebox' && providerAvailability.moviebox) fallbackProviders.push('moviebox');
                   if (provider !== 'bingebox' && providerAvailability.bingebox) fallbackProviders.push('bingebox');
 
                   for (const fallbackProvider of fallbackProviders) {
@@ -3672,14 +3661,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       onClick={handleContainerClick}
       data-tv-skip-navigation="true"
     >
-      {/* PrimeSrc Turnstile solver — invisible, solves challenge in background */}
-      <PrimeSrcTurnstile
-        onToken={(token) => {
-          setTurnstileToken(token);
-          console.log('[VideoPlayer] PrimeSrc Turnstile token set');
-        }}
-        onError={(err) => console.warn('[VideoPlayer] Turnstile error:', err)}
-      />
 
       {/* Back button - controlled by showControls */}
       {onBack && (showControls || !isPlaying) && (
@@ -5099,9 +5080,6 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                         videasy: 'Videasy',
                         flixer: 'Flixer',
                         bingebox: 'BingeBox',
-                        primesrc: 'PrimeSrc',
-                        vidsrc: 'VidSrc',
-                        moviebox: 'MovieBox',
                       };
                       return (
                         <button
@@ -5325,7 +5303,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                   ) : (
                     <div style={{ padding: '1rem', textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
                       {loadingProviders[menuProvider] ? 'Loading sources...' : 
-                       sourcesCache[menuProvider]?.length === 0 ? `No sources from ${menuProvider === 'animekai' ? 'AnimeKai' : menuProvider === 'vidsrc' ? 'VidSrc' : menuProvider === '1movies' ? '1movies' : menuProvider === 'flixer' ? 'Flixer' : menuProvider}` :
+                       sourcesCache[menuProvider]?.length === 0 ? `No sources from ${menuProvider === 'animekai' ? 'AnimeKai' : menuProvider === '1movies' ? '1movies' : menuProvider === 'flixer' ? 'Flixer' : menuProvider}` :
                        'Click to load sources'}
                     </div>
                   )}

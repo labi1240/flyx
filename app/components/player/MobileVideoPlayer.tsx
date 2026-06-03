@@ -12,7 +12,7 @@ import { getSavedVolume, getSavedMuteState, saveVolumeSettings } from '@/lib/uti
 import styles from './MobileVideoPlayer.module.css';
 
 type AudioPreference = 'sub' | 'dub';
-type Provider = 'vidsrc' | 'videasy' | 'primesrc' | 'moviebox' | 'bingebox' | 'hianime' | 'miruro' | 'animekai';
+type Provider = 'videasy' | 'bingebox' | 'hianime' | 'miruro' | 'animekai';
 
 interface SubtitleTrack {
   id: string;
@@ -68,10 +68,7 @@ const triggerHaptic = (type: 'light' | 'medium' | 'heavy' = 'light') => {
 };
 
 const PROVIDER_NAMES: Record<Provider, string> = {
-  primesrc: 'PrimeSrc',
   videasy: 'Videasy',
-  vidsrc: 'VidSrc',
-  moviebox: 'MovieBox',
   bingebox: 'BingeBox',
   hianime: 'HiAnime',
   miruro: 'Miruro',

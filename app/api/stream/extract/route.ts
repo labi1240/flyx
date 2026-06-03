@@ -16,7 +16,7 @@ import type { ExtractionRequest } from '@/app/lib/providers/types';
 import { isAnimeContent } from '@/app/lib/services/animekai-extractor';
 import { AllProvidersFailedError } from '@/app/lib/stream-errors';
 import { performanceMonitor } from '@/app/lib/utils/performance-monitor';
-import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, getVidSrcStreamProxyUrl, get1moviesStreamProxyUrl, getPrimeSrcStreamProxyUrl, getBingeBoxStreamProxyUrl, getMiruroStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
+import { getStreamProxyUrl, getAnimeKaiProxyUrl, getFlixerStreamProxyUrl, get1moviesStreamProxyUrl, getBingeBoxStreamProxyUrl, getMiruroStreamProxyUrl, isMegaUpCdnUrl, is1moviesCdnUrl, isAnimeKaiSource } from '@/app/lib/proxy-config';
 
 // Lazy-load registry to prevent module-load crashes on CF Pages runtime.
 // If any provider import fails (e.g., Node.js APIs), the whole module would crash
@@ -116,8 +116,6 @@ function maybeProxyUrl(source: any, provider: string): string {
       source.url.includes('/flixer/stream') ||
       source.url.includes('/animekai') ||
       source.url.includes('/hianime/') ||
-      source.url.includes('/vidsrc/') ||
-      source.url.includes('/primesrc/') ||
       source.url.includes('/miruro/stream') ||
       source.url.includes('/stream?url=') ||
       source.url.includes('media-proxy.vynx-3b3.workers.dev')) {
@@ -132,13 +130,11 @@ function maybeProxyUrl(source: any, provider: string): string {
     const isMegaUpCdn = isMegaUpCdnUrl(source.url);
     const is1moviesCdn = is1moviesCdnUrl(source.url);
     const is1movies = provider === '1movies';
-    const isPrimeSrc = provider === 'primesrc';
     const isBingeBox = provider === 'bingebox';
     const isMiruro = provider === 'miruro';
     const isFlixer = provider === 'flixer';
     const isUflix = provider === 'uflix';
     const isMultiEmbed = provider === 'multi-embed' || provider === 'multiembed' || provider === 'hexa';
-    const isVidSrc = provider === 'vidsrc';
 
     // BingeBox: HLS streams proxied through /bingebox/stream on CF Worker
     if (isBingeBox) {
@@ -151,11 +147,6 @@ function maybeProxyUrl(source: any, provider: string): string {
       return getMiruroStreamProxyUrl(source.url);
     }
 
-    // PrimeSrc: streams proxied through /primesrc/stream on CF Worker (no RPI needed)
-    if (isPrimeSrc) {
-      return getPrimeSrcStreamProxyUrl(source.url);
-    }
-
     // Route through provider-specific proxy for CDNs that block datacenter IPs
     if (isFlixer) {
       return getFlixerStreamProxyUrl(source.url);
@@ -166,9 +157,6 @@ function maybeProxyUrl(source: any, provider: string): string {
     if (isUflix) {
       // Uflix returns embed URLs — no proxying needed
       return source.url;
-    }
-    if (isVidSrc) {
-      return getVidSrcStreamProxyUrl(source.url, source.referer);
     }
     if (is1moviesCdn || is1movies) {
       return get1moviesStreamProxyUrl(source.url);
@@ -280,8 +268,8 @@ function getValidProviderNames(): string[] {
     new Set([
       ...registry.getAllEnabled().map((p: any) => p.name),
       // Include disabled providers too — they can be explicitly requested
-      'flixer', 'animekai', 'hianime', 'vidsrc', 'primesrc',
-      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'moviebox', 'bingebox', 'ufreetv', 'globetv',
+      'flixer', 'animekai', 'hianime',
+      'dlhd', 'viprow', 'ppv', 'cdn-live', 'iptv', 'ntv', 'miruro', 'bingebox', 'ufreetv', 'globetv',
     ])
   );
   return ['auto', ...registeredNames, ...Object.keys(PROVIDER_ALIASES)];
@@ -425,7 +413,7 @@ export async function GET(request: NextRequest) {
 
     // GUARD: Reject TMDB-dependent providers when tmdbId=0 (MAL-direct anime)
     // These providers (flixer, vidlink, vidsrc, etc.) need a real TMDB ID to work
-    const tmdbDependentProviders = ['flixer', 'vidsrc', '1movies', 'primesrc', 'moviebox', 'bingebox'];
+    const tmdbDependentProviders = ['flixer', '1movies', 'bingebox'];
     if (tmdbId === '0' && tmdbDependentProviders.includes(providerParam)) {
       return NextResponse.json(
         { error: `${providerParam} requires a real TMDB ID (tmdbId=0 is MAL-direct anime)`, success: false },
@@ -736,14 +724,6 @@ async function directExtract(
         }
         throw new Error(result.error || 'Uflix returned no sources');
       }
-      case 'vidsrc': {
-        const { extractVidSrcStreams } = await import('@/app/lib/services/vidsrc-extractor');
-        const result = await extractVidSrcStreams(request.tmdbId, request.mediaType, request.season, request.episode);
-        if (result.success && result.sources.length > 0) {
-          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? true })), provider: 'vidsrc' };
-        }
-        throw new Error(result.error || 'VidSrc returned no sources');
-      }
       case 'animekai': {
         const { extractAnimeKaiStreams } = await import('@/app/lib/services/animekai-extractor');
         const result = await extractAnimeKaiStreams(request.tmdbId, request.mediaType, request.season, request.episode, request.malId, request.malTitle);
@@ -774,14 +754,6 @@ async function directExtract(
         }
         throw new Error(result.error || 'Miruro returned no sources');
       }
-      case 'moviebox': {
-        const { extractMovieBoxStreams } = await import('@/app/lib/services/moviebox-extractor');
-        const result = await extractMovieBoxStreams(request.tmdbId, request.mediaType, request.season, request.episode, request.title || request.malTitle);
-        if (result.success && result.sources.length > 0) {
-          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? false })), provider: 'moviebox' };
-        }
-        throw new Error(result.error || 'MovieBox returned no sources');
-      }
       case 'bingebox': {
         const { extractBingeBoxStreams } = await import('@/app/lib/services/bingebox-extractor');
         const result = await extractBingeBoxStreams(
@@ -804,14 +776,6 @@ async function directExtract(
           return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? true })), provider: 'multi-embed' };
         }
         throw new Error(result.error || 'MultiEmbed returned no sources');
-      }
-      case 'primesrc': {
-        const { extractPrimeSrcStreams } = await import('@/app/lib/services/primesrc-extractor');
-        const result = await extractPrimeSrcStreams(request.tmdbId, request.mediaType, request.season, request.episode);
-        if (result.success && result.sources.length > 0) {
-          return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? true })), provider: 'primesrc' };
-        }
-        throw new Error(result.error || 'PrimeSrc returned no sources');
       }
       case 'videasy': {
         if (!request.title) throw new Error('Videasy requires title');
@@ -852,7 +816,7 @@ async function directExtractWithFallback(
   // anime titles and return wrong content. Never fall back to them for anime.
   const providerOrder = isAnime
     ? ['animekai', 'miruro']
-    : ['videasy', 'flixer', 'bingebox', 'primesrc', 'vidsrc', 'moviebox'];
+    : ['videasy', 'flixer', 'bingebox'];
 
   console.log(`[EXTRACT] Direct fallback order: ${providerOrder.join(', ')}`);
 
@@ -939,7 +903,6 @@ function inferProviderFromSourceName(sourceName: string): string | undefined {
   if (sourceName.includes('Flixer') || sourceName.includes('Hexa')) return 'flixer';
   if (sourceName.includes('Videasy') || sourceName.includes('videasy')) return 'videasy';
   if (sourceName.includes('Miruro') || sourceName.includes('miruro')) return 'miruro';
-  if (sourceName.includes('MovieBox') || sourceName.includes('moviebox')) return 'moviebox';
   if (sourceName.includes('BingeBox') || sourceName.includes('bingebox')) return 'bingebox';
   if (sourceName.includes('GlobeTV') || sourceName.includes('globetv')) return 'globetv';
   if (sourceName.includes('MultiEmbed')) return 'multi-embed';

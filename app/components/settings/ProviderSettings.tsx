@@ -48,24 +48,6 @@ const PROVIDERS: ProviderInfo[] = [
     isAnimeOnly: true,
   },
   {
-    id: 'primesrc',
-    name: 'PrimeSrc',
-    description: 'CF Worker proxy — xprime.su (needs Turnstile token)',
-    icon: '⚡',
-  },
-  {
-    id: 'vidsrc',
-    name: 'VidSrc',
-    description: 'RPI-dependent — currently unavailable',
-    icon: '🎬',
-  },
-  {
-    id: 'moviebox',
-    name: 'MovieBox',
-    description: 'Movies/TV/Anime — currently unavailable',
-    icon: '🎞️',
-  },
-  {
     id: 'ntv',
     name: 'NTV',
     description: 'Live TV — 2052 channels, 7 match servers',

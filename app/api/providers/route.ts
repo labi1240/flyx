@@ -27,18 +27,6 @@ export async function GET() {
         primary: false,
         description: 'Browser-direct via CF Worker — 15 direct HLS sources (api.dlproxy.com)',
       },
-      primesrc: {
-        enabled: false,
-        name: 'PrimeSrc',
-        primary: false,
-        description: 'Needs Turnstile token + embed CDNs block CF IPs',
-      },
-      vidsrc: {
-        enabled: false,
-        name: 'VidSrc',
-        primary: false,
-        description: 'RPI-dependent — dead without RPI',
-      },
       hianime: {
         enabled: true,
         name: 'HiAnime',
@@ -52,12 +40,6 @@ export async function GET() {
         primary: false,
         animeOnly: true,
         description: 'Browser-direct via CF Worker — pipe-encrypted API, 6 providers, sub+dub',
-      },
-      moviebox: {
-        enabled: false,
-        name: 'MovieBox',
-        primary: false,
-        description: 'Empty streams from h5-api.aoneroom.com — dead',
       },
       ntv: {
         enabled: true,
