@@ -96,23 +96,51 @@ async function movieboxApi(
     if (cookies) headers['Cookie'] = cookies;
   }
 
-  const res = await fetch(url.toString(), {
-    method,
-    headers,
-  });
+  // Fetch with retry for 429 / 5xx errors
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    const res = await fetch(url.toString(), {
+      method,
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
 
-  if (!res.ok) {
-    throw new Error(`MovieBox API ${path} returned ${res.status}`);
+    if (res.status !== 429 && res.status < 500) {
+      // Success or non-retryable error
+      if (!res.ok) {
+        throw new Error(`MovieBox API ${path} returned ${res.status}`);
+      }
+
+      const json: Record<string, any> = await res.json();
+
+      // MovieBox envelope: {code: 0, message: "ok", data: {...}}
+      if (json.code !== undefined && json.code !== 0) {
+        throw new Error(`MovieBox API error: ${json.message || 'Unknown error'} (code: ${json.code})`);
+      }
+
+      return json.data || json;
+    }
+
+    // Retryable error (429 or 5xx)
+    if (attempt < 2) {
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+      logger.warn(`MovieBox API ${path}: ${res.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/2)`);
+      await new Promise(r => setTimeout(r, delay));
+      // Refresh session on retry
+      sessionCookies = null;
+      sessionExpiry = 0;
+      if (path.includes('/subject/play')) {
+        const cookies = await ensureSession(logger);
+        if (cookies) headers['Cookie'] = cookies;
+      }
+      lastError = new Error(`MovieBox API ${path} returned ${res.status}`);
+    } else {
+      lastError = new Error(`MovieBox API ${path} returned ${res.status}`);
+    }
   }
 
-  const json: Record<string, any> = await res.json();
-
-  // MovieBox envelope: {code: 0, message: "ok", data: {...}}
-  if (json.code !== undefined && json.code !== 0) {
-    throw new Error(`MovieBox API error: ${json.message || 'Unknown error'} (code: ${json.code})`);
-  }
-
-  return json.data || json;
+  throw lastError || new Error(`MovieBox API ${path} failed`);
+}
 }
 
 // ============================================================================

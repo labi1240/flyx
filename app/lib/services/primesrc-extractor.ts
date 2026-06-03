@@ -45,7 +45,63 @@ const TOKEN_TTL = 250_000; // 250s (tokens expire at ~300s)
 export function setTurnstileToken(token: string): void {
   _turnstileToken = token;
   _turnstileTokenTime = Date.now();
-  console.log('[PrimeSrc] Turnstile token cached');
+  console.log('[PrimeSrc] Turnstile token cached (from browser/CapSolver)');
+}
+
+// CapSolver API key — same as VidSrc uses
+const CAPSOLVER_API_KEY = process.env.CAPSOLVER_API_KEY;
+
+async function solvePrimeSrcTurnstile(): Promise<string | null> {
+  if (!CAPSOLVER_API_KEY) {
+    console.log('[PrimeSrc] No CAPSOLVER_API_KEY configured — cannot solve Turnstile server-side');
+    return null;
+  }
+
+  const SITEKEY = '0x4AAAAAACox-LngVREu55Y4';
+  const PAGE_URL = 'https://primesrc.me';
+
+  console.log('[PrimeSrc] Solving Turnstile via CapSolver...');
+  try {
+    // Create task
+    const createRes = await fetch('https://api.capsolver.com/createTask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: CAPSOLVER_API_KEY,
+        task: { type: 'AntiTurnstileTaskProxyLess', websiteURL: PAGE_URL, websiteKey: SITEKEY },
+      }),
+    });
+    const createData = await createRes.json() as { taskId?: string; errorId?: number; errorDescription?: string };
+    if (!createData.taskId) {
+      console.error('[PrimeSrc] CapSolver task creation failed:', createData.errorDescription);
+      return null;
+    }
+    console.log('[PrimeSrc] CapSolver task created:', createData.taskId);
+
+    // Poll for result (max 45s — Turnstile tokens last 300s)
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const resultRes = await fetch('https://api.capsolver.com/getTaskResult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientKey: CAPSOLVER_API_KEY, taskId: createData.taskId }),
+      });
+      const resultData = await resultRes.json() as { status?: string; solution?: { token?: string } };
+      if (resultData.status === 'ready' && resultData.solution?.token) {
+        console.log('[PrimeSrc] ✓ Turnstile solved via CapSolver');
+        return resultData.solution.token;
+      }
+      if (resultData.status === 'failed') {
+        console.error('[PrimeSrc] CapSolver task failed');
+        return null;
+      }
+    }
+    console.error('[PrimeSrc] CapSolver timeout');
+    return null;
+  } catch (e) {
+    console.error('[PrimeSrc] CapSolver error:', e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 export function getTurnstileToken(): string | null {
@@ -114,61 +170,69 @@ export async function extractPrimeSrcStreams(
   }
 
   const subtitlePromise = fetchSubtitles(tmdbId, type, season, episode);
-  const token = getTurnstileToken();
+  let token = getTurnstileToken();
 
   try {
-    // Build extract URL — include Turnstile token if available
     const baseUrl = getPrimeSrcProxyBaseUrl();
-    const params = new URLSearchParams({ tmdbId, type });
-    if (type === 'tv' && season && episode) {
-      params.set('season', season.toString());
-      params.set('episode', episode.toString());
-    }
-    if (token) {
-      params.set('token', token);
-    }
-    const extractUrl = `${baseUrl}/primesrc/extract?${params}`;
 
-    console.log(`[PrimeSrc] Calling CF Worker (token: ${token ? 'yes' : 'no'})`);
-    const res = await fetch(extractUrl, { signal: AbortSignal.timeout(45000) });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`CF Worker returned ${res.status}: ${errText.substring(0, 100)}`);
-    }
-
-    const data = await res.json() as {
-      success: boolean;
-      sources: Array<{
-        server: string;
-        quality: string;
-        url?: string;
-        proxied_url?: string;
-        type?: string;
-        referer?: string;
-        file_name?: string;
-        file_size?: string;
+    // Helper: call CF Worker extract
+    const doExtract = async (turnstileToken?: string) => {
+      const params = new URLSearchParams({ tmdbId, type });
+      if (type === 'tv' && season && episode) {
+        params.set('season', season.toString());
+        params.set('episode', episode.toString());
+      }
+      if (turnstileToken) params.set('token', turnstileToken);
+      const extractUrl = `${baseUrl}/primesrc/extract?${params}`;
+      console.log(`[PrimeSrc] Calling CF Worker (token: ${turnstileToken ? 'yes' : 'no'})`);
+      const res = await fetch(extractUrl, { signal: AbortSignal.timeout(60000) });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`CF Worker returned ${res.status}: ${errText.substring(0, 100)}`);
+      }
+      return res.json() as {
+        success: boolean;
+        sources: Array<{
+          server: string; quality: string; url?: string; proxied_url?: string;
+          type?: string; referer?: string; file_name?: string; file_size?: string; error?: string;
+        }>;
+        hasTurnstileToken?: boolean;
         error?: string;
-      }>;
-      hasTurnstileToken?: boolean;
-      error?: string;
+      };
     };
 
-    const sources: StreamSource[] = [];
+    const buildSources = (data: Awaited<ReturnType<typeof doExtract>>): StreamSource[] => {
+      const result: StreamSource[] = [];
+      for (const src of data.sources || []) {
+        if (src.url && src.proxied_url) {
+          result.push({
+            quality: src.quality || 'auto',
+            title: `PrimeSrc ${src.server}`,
+            url: src.url,
+            type: (src.type as 'hls' | 'mp4') || 'hls',
+            referer: src.referer || 'https://primesrc.me/',
+            requiresSegmentProxy: src.type === 'hls',
+            status: 'working',
+            language: 'en',
+            server: src.server,
+          });
+        }
+      }
+      return result;
+    };
 
-    for (const src of data.sources || []) {
-      if (src.url && src.proxied_url) {
-        sources.push({
-          quality: src.quality || 'auto',
-          title: `PrimeSrc ${src.server}`,
-          url: src.url,
-          type: (src.type as 'hls' | 'mp4') || 'hls',
-          referer: src.referer || 'https://primesrc.me/',
-          requiresSegmentProxy: src.type === 'hls',
-          status: 'working',
-          language: 'en',
-          server: src.server,
-        });
+    let data = await doExtract(token || undefined);
+    let sources = buildSources(data);
+
+    // No playable sources and no browser token → try CapSolver server-side
+    if (sources.length === 0 && !token) {
+      const capsolverToken = await solvePrimeSrcTurnstile();
+      if (capsolverToken) {
+        console.log('[PrimeSrc] CapSolver token obtained, retrying with token...');
+        token = capsolverToken;
+        setTurnstileToken(capsolverToken); // cache for reuse
+        data = await doExtract(capsolverToken);
+        sources = buildSources(data);
       }
     }
 

@@ -26,14 +26,14 @@ function jsonResponse(data: object, status: number): Response {
   });
 }
 
-async function fetchWithHeaders(url: string, referer?: string): Promise<Response> {
+async function fetchWithHeaders(url: string, referer?: string, timeoutMs: number = 12000): Promise<Response> {
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': 'application/json, text/html, */*',
     'Accept-Language': 'en-US,en;q=0.9',
   };
   if (referer) headers['Referer'] = referer;
-  return fetch(url, { headers });
+  return fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 async function extractFromApi(
