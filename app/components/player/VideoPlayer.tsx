@@ -1856,31 +1856,34 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 return;
               }
 
-              // bufferAppendError: could be corrupt segment or codec mismatch.
-              // Try standard recovery first, but track attempts to detect loops.
-              if (data.details === 'bufferAppendError') {
-                codecRecoveryAttemptsRef.current++;
-                if (codecRecoveryAttemptsRef.current >= MAX_CODEC_RECOVERY_ATTEMPTS) {
-                  console.error('[HLS] Codec recovery failed after', codecRecoveryAttemptsRef.current, 'attempts — switching source');
-                  codecRecoveryAttemptsRef.current = 0;
-                  if (hlsRef.current) {
-                    hlsRef.current.stopLoad();
-                    hlsRef.current.detachMedia();
-                  }
-                  prepareAndFallback();
-                  tryNextSource().then(found => {
-                    if (!found) {
-                      setIsLoading(false);
-                      setError('Video playback failed. Try a different source.');
-                      setHighlightServerButton(true);
-                    }
-                  });
-                  return;
+              // Fatal media error (bufferAppendError, fragParsingError, etc.):
+              // hls.recoverMediaError() works for transient glitches, but for
+              // some streams it can NEVER succeed (HEVC in Chrome, corrupt or
+              // incompatible segments) and will loop FOREVER if uncapped —
+              // fragParsingError is the classic offender. Cap recovery attempts
+              // across ALL fatal media errors, then fail over to the next source.
+              // (codecRecoveryAttemptsRef resets to 0 on the next successful
+              // fragment load, so transient errors mid-playback still recover.)
+              codecRecoveryAttemptsRef.current++;
+              if (codecRecoveryAttemptsRef.current >= MAX_CODEC_RECOVERY_ATTEMPTS) {
+                console.error('[HLS] Media recovery failed after', codecRecoveryAttemptsRef.current, 'attempts (', data.details, ') — switching source');
+                codecRecoveryAttemptsRef.current = 0;
+                if (hlsRef.current) {
+                  hlsRef.current.stopLoad();
+                  hlsRef.current.detachMedia();
                 }
+                prepareAndFallback();
+                tryNextSource().then(found => {
+                  if (!found) {
+                    setIsLoading(false);
+                    setError('Video playback failed. Try a different source.');
+                    setHighlightServerButton(true);
+                  }
+                });
+                return;
               }
 
-              // Other media errors — try standard codec swap recovery
-              console.error('[HLS] Fatal media error, attempting recovery:', data.details);
+              console.error(`[HLS] Fatal media error, attempting recovery: ${data.details} (attempt ${codecRecoveryAttemptsRef.current}/${MAX_CODEC_RECOVERY_ATTEMPTS})`);
               hls.recoverMediaError();
             } else {
               // Unknown fatal error type
