@@ -22,7 +22,16 @@ class FetchLoader implements Loader<LoaderContext> {
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
   private retryId: ReturnType<typeof setTimeout> | null = null;
   private aborted = false;
-  stats!: LoaderStats;
+  // Initialize at construction — hls.js's ABR/destroy paths read
+  // `loader.stats.loading` OUTSIDE the load() cycle, so `stats` must exist
+  // before load() is ever called (default XHR loader inits it in its ctor).
+  // load() resets these values per request; this just guarantees the shape.
+  stats: LoaderStats = {
+    aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0,
+    loading: { start: 0, first: 0, end: 0 },
+    parsing: { start: 0, end: 0 },
+    buffering: { start: 0, first: 0, end: 0 },
+  } as LoaderStats;
   context!: LoaderContext;
 
   destroy(): void {

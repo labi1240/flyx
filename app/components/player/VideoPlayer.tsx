@@ -2004,8 +2004,19 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
       streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');
 
-    if (isFlixerCdn && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(loadStream);
+    // NOTE: app/layout.tsx unregisters ALL service workers on every page load
+    // (residential-ip-sw.js was retired in favour of the browser extension +
+    // server-side header injection on media-proxy). With no controlling SW,
+    // `navigator.serviceWorker.ready` NEVER resolves — so gating loadStream on
+    // it silently hangs playback for every stream (all now flow through
+    // *.workers.dev). Only wait on the SW when the page is actually controlled
+    // by one; otherwise load immediately.
+    if (isFlixerCdn && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      // Race the SW against a timeout so a slow/dead SW can't hang playback.
+      Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]).then(loadStream);
     } else {
       loadStream();
     }
