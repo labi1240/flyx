@@ -190,7 +190,7 @@ export async function extractPrimeSrcStreams(
         const errText = await res.text().catch(() => '');
         throw new Error(`CF Worker returned ${res.status}: ${errText.substring(0, 100)}`);
       }
-      return res.json() as {
+      const json: {
         success: boolean;
         sources: Array<{
           server: string; quality: string; url?: string; proxied_url?: string;
@@ -198,7 +198,8 @@ export async function extractPrimeSrcStreams(
         }>;
         hasTurnstileToken?: boolean;
         error?: string;
-      };
+      } = await res.json();
+      return json;
     };
 
     const buildSources = (data: Awaited<ReturnType<typeof doExtract>>): StreamSource[] => {
