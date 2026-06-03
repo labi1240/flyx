@@ -23,7 +23,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class VidSrcProvider implements Provider {
   readonly name = 'vidsrc';
-  readonly priority = 40;
+  readonly priority = 45; // Upstream API dead (v1.2embed.stream)
   readonly enabled = VIDSRC_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {

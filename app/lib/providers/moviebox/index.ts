@@ -20,7 +20,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv', 'anime'];
 
 export class MovieBoxProvider implements Provider {
   readonly name = 'moviebox';
-  readonly priority = 12;
+  readonly priority = 13; // Rate-limited upstream (h5-api.aoneroom.com 429)
   readonly enabled = true;
 
   supportsContent(_mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {

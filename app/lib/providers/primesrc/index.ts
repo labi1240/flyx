@@ -24,7 +24,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class PrimeSrcProvider implements Provider {
   readonly name = 'primesrc';
-  readonly priority = 5; // Primary provider — no RPI needed, pure CF Worker
+  readonly priority = 10; // Needs Turnstile token (CapSolver fallback when configured)
   readonly enabled = PRIMESRC_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {

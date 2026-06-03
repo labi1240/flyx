@@ -24,7 +24,7 @@ const SUPPORTED_CONTENT: ContentCategory[] = ['movie', 'tv'];
 
 export class FlixerProvider implements Provider {
   readonly name = 'flixer';
-  readonly priority = 100; // Deprioritized — Videasy is now primary
+  readonly priority = 6; // Works reliably — right after Videasy (1), before broken providers
   readonly enabled = FLIXER_ENABLED;
 
   supportsContent(mediaType: MediaType, _metadata?: { isAnime?: boolean; isLive?: boolean }): boolean {
