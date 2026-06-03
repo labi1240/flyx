@@ -643,7 +643,7 @@ async function extractWithFallback(
   request: ExtractionRequest,
   mediaType: 'movie' | 'tv',
   isAnime: boolean,
-): Promise<{ sources: any[]; provider: string }> {
+): Promise<{ sources: any[]; provider: string; hexData?: string; needsClientDecrypt?: boolean }> {
   const metadata = { isAnime };
   const providers = registry.getForContent(mediaType, metadata);
 
@@ -674,7 +674,14 @@ async function extractWithFallback(
       console.log(`[EXTRACT] Trying ${provider.name} (priority ${provider.priority})...`);
       const result = await provider.extract(request);
 
-      console.log(`[EXTRACT] ${provider.name} result: success=${result.success}, sources=${result.sources.length}, error=${result.error || 'none'}`);
+      console.log(`[EXTRACT] ${provider.name} result: success=${result.success}, sources=${result.sources.length}, error=${result.error || 'none'}, needsClientDecrypt=${(result as any).needsClientDecrypt || false}`);
+
+      // Deferred decryption: server returned hex, client (browser) must decrypt.
+      // Don't fall through — return immediately so the browser can handle it.
+      if ((result as any).needsClientDecrypt && (result as any).hexData) {
+        console.log(`[EXTRACT] ✓ ${provider.name}: deferred to client (${(result as any).hexData.length} hex bytes)`);
+        return { sources: [], provider: provider.name, hexData: (result as any).hexData, needsClientDecrypt: true };
+      }
 
       if (result.success && result.sources.length > 0) {
         const workingSources = result.sources.filter((s: any) => !s.status || s.status === 'working');
@@ -709,7 +716,7 @@ async function extractWithFallback(
 async function directExtract(
   providerName: string,
   request: ExtractionRequest,
-): Promise<{ sources: any[]; provider: string }> {
+): Promise<{ sources: any[]; provider: string; hexData?: string; needsClientDecrypt?: boolean }> {
   console.log(`[EXTRACT] Direct extract: ${providerName}`);
   try {
     switch (providerName) {
@@ -810,6 +817,11 @@ async function directExtract(
         if (!request.title) throw new Error('Videasy requires title');
         const { extractVideasyStreams } = await import('@/app/lib/services/videasy-extractor');
         const result = await extractVideasyStreams(request.tmdbId, request.mediaType, request.title, request.season, request.episode);
+        // Deferred decryption: server can't run WASM (CF Pages restriction),
+        // return hexData for the client (browser) to decrypt
+        if (result.needsClientDecrypt && result.hexData) {
+          return { sources: [], provider: 'videasy', hexData: result.hexData, needsClientDecrypt: true };
+        }
         if (result.success && result.sources.length > 0) {
           return { sources: result.sources.map(s => ({ ...s, requiresSegmentProxy: s.requiresSegmentProxy ?? false })), provider: 'videasy' };
         }
@@ -833,7 +845,7 @@ async function directExtractWithFallback(
   request: ExtractionRequest,
   _mediaType: 'movie' | 'tv',
   isAnime: boolean,
-): Promise<{ sources: any[]; provider: string }> {
+): Promise<{ sources: any[]; provider: string; hexData?: string; needsClientDecrypt?: boolean }> {
   // Priority order for anime vs movie/tv
   // Only Flixer is active for movies/TV until new sources are added
   // Anime: ONLY native anime providers. Movie/TV providers don't understand
@@ -849,6 +861,11 @@ async function directExtractWithFallback(
   for (const name of providerOrder) {
     try {
       const result = await directExtract(name, request);
+      // Deferred decryption: return immediately so the browser can handle it
+      if (result.hexData && result.needsClientDecrypt) {
+        console.log(`[EXTRACT] ✓ Direct ${name}: deferred to client (${result.hexData.length} hex bytes)`);
+        return result;
+      }
       if (result.sources.length > 0) {
         console.log(`[EXTRACT] ✓ Direct ${name}: ${result.sources.length} sources`);
         return result;
