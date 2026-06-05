@@ -29,6 +29,10 @@ This project includes authorized security testing of streaming infrastructure as
 - GlobeTV: globetv.app
 - uFreeTV: ufreetv.com
 
+### Priority Live Sports Targets (ad-supported)
+- StreamNinja: streamninja.xyz
+- StreamNinja API: ninja-data.getsugatensho.workers.dev, ninja-data.kuroigetsuga.workers.dev, ninja-data.getsugachirashi.workers.dev
+
 ### Authorized Activities
 - Penetration testing of CloudPanel instances is authorized
 - API security assessment of auth endpoints is authorized

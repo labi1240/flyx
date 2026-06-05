@@ -19,5 +19,8 @@
     "typescript": "^5.3.3",
     "vitest": "^2.0.0",
     "wrangler": "^3.91.0"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.1.0"
   }
 }

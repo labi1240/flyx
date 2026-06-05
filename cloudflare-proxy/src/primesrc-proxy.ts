@@ -564,7 +564,7 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
       const servers = await fetchServerList(tmdbId, type, season, episode).catch(() => [] as PrimeSrcServer[]);
 
       if (servers.length === 0) {
-        return jsonResponse({ success: false, sources: [], error: 'No servers found' }, 404);
+        return jsonResponse({ success: false, sources: [], error: 'No servers found' }, 200);
       }
 
       // Step 2: If we have a Turnstile token, resolve ALL servers in parallel
@@ -627,14 +627,68 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
           }
         }
       } else {
-        // No Turnstile token — return server list as metadata only
-        for (const s of servers) {
-          sources.push({
-            server: s.name,
-            quality: s.quality || 'auto',
-            file_name: s.file_name || undefined,
-            file_size: s.file_size || undefined,
-          });
+        // No Turnstile token — try direct embed URLs for known hosts.
+        // Many PrimeSrc server keys are the exact embed ID on the host's domain.
+        // We can skip /api/v1/l entirely for these and extract streams directly.
+        //
+        // Known direct-key hosts (verified working):
+        //   Filemoon, Dood, Streamwish, Filelions, Mixdrop, Vidmoly,
+        //   Luluvdoo, Streamplay, Vidara, VidsST, Savefiles, Vinovo
+        // Known non-direct hosts (need /api/v1/l):
+        //   Streamtape, Voe
+        const DIRECT_HOSTS: Record<string, string> = {
+          filemoon: 'https://filemoon.sx/e/{key}',
+          dood: 'https://dood.wf/e/{key}',
+          streamwish: 'https://streamwish.com/e/{key}',
+          filelions: 'https://filelions.sx/e/{key}',
+          mixdrop: 'https://mixdrop.ag/e/{key}',
+          vidmoly: 'https://vidmoly.to/e/{key}',
+          luluvdoo: 'https://luluvdoo.com/e/{key}',
+          streamplay: 'https://streamplay.cc/e/{key}',
+          vidara: 'https://vidara.online/e/{key}',
+          vidsst: 'https://vidsst.com/e/{key}',
+          savefiles: 'https://savefiles.com/e/{key}',
+          vinovo: 'https://vinovo.si/e/{key}',
+        };
+
+        // Try direct extraction for hosts we know (max 8 concurrent)
+        const directResults = await Promise.allSettled(
+          servers.map(async (s) => {
+            const name = s.name.toLowerCase();
+            // Streamtape/Voe need /api/v1/l — skip
+            if (name.includes('streamtape') || name.includes('voe')) {
+              return { server: s.name, quality: s.quality || 'auto', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
+            }
+            // Check direct host mapping
+            for (const [hostPattern, urlTemplate] of Object.entries(DIRECT_HOSTS)) {
+              if (name.includes(hostPattern)) {
+                try {
+                  const embedUrl = urlTemplate.replace('{key}', s.key);
+                  const stream = await extractFromEmbed(embedUrl, s.name);
+                  if (stream) {
+                    return {
+                      server: s.name, quality: s.quality || stream.quality || 'auto',
+                      url: stream.url,
+                      proxied_url: stream.type === 'hls'
+                        ? `/primesrc/stream?url=${encodeURIComponent(stream.url)}`
+                        : stream.url,
+                      type: stream.type, referer: stream.referer,
+                      file_name: s.file_name || undefined, file_size: s.file_size || undefined,
+                    };
+                  }
+                  return { server: s.name, quality: s.quality || 'auto', error: 'No stream found', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
+                } catch {
+                  return { server: s.name, quality: s.quality || 'auto', error: 'Direct extraction failed', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
+                }
+              }
+            }
+            // Unknown host — return metadata only
+            return { server: s.name, quality: s.quality || 'auto', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
+          })
+        );
+
+        for (const r of directResults) {
+          if (r.status === 'fulfilled') sources.push(r.value);
         }
       }
 
@@ -647,7 +701,7 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
         hasTurnstileToken: !!turnstileToken,
         duration_ms: Date.now() - start,
         timestamp: new Date().toISOString(),
-      }, playable.length > 0 ? 200 : 404);
+      }, 200); // Always 200 — caller inspects success/sources, not status code
     } catch (e) {
       return jsonResponse({
         success: false,

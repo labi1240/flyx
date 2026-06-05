@@ -130,7 +130,28 @@
       "WebSearch(Flussonic CVE 2024)",
       "WebSearch(Erlang EPMD exploit authentication bypass)",
       "Bash(git checkout *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep -o '\"stream_id\":\"0042500401\".{0,3000}' \"C:\\\\Users\\\\Nicks\\\\.claude\\\\projects\\\\C--Users-Nicks-Desktop-Flyx-main\\\\2f8a8e7c-d4d4-48c8-8916-a3bf6f5862ba\\\\tool-results\\\\btt3a2sko.txt\")",
+      "Bash(grep -oP 'stream_id\":\"0042500401.{0,5000}' \"C:\\\\Users\\\\Nicks\\\\.claude\\\\projects\\\\C--Users-Nicks-Desktop-Flyx-main\\\\2f8a8e7c-d4d4-48c8-8916-a3bf6f5862ba\\\\tool-results\\\\btt3a2sko.txt\")",
+      "Bash(echo -n 'Testing __TRACKED_VAR__: ')",
+      "Bash(kill %1)",
+      "Bash(xxd /tmp/turnstile-challenge.bin)",
+      "Bash(gunzip)",
+      "Bash(npm ls *)",
+      "Bash(mkdir -p crack)",
+      "Bash(cp enc_bytes.bin dec_bytes.bin ref_keystream.bin ref_nonce.bin decoded_bytecode.bin real_vm_bytecode2.bin real_vm_bytecode_final.bin real_vm_final.bin inner_bytecode.bin cipher_data.json request_plaintext.json vm_trace.json bytecode_dump.json crack/)",
+      "Bash(cp djbvvb_section.bin crack/)",
+      "Bash(rm -f real_vm_bytecode_final.bin real_vm_bytecode2.bin)",
+      "Bash(cp ../scripts/test_all_windows.cjs .)",
+      "Bash(cp ../scripts/get_fresh_pair.cjs .)",
+      "Bash(sed -i 's/\\\\/\\\\/ \\\\/\\\\/ Execute - with safe fallback proxy/\\\\/\\\\/ Execute/' scripts/turnstile-solve.mjs)",
+      "Bash(sed -i '284,290d' scripts/turnstile-solve.mjs)",
+      "Bash(sed -i 's/runInContext\\(solver, ctxProxy/runInContext\\(solver, context/' scripts/turnstile-solve.mjs)",
+      "Bash(pkill -f \"turnstile-encrypt-service\")",
+      "Bash(pkill -f \"node.*9876\")",
+      "Bash(kill %1 %2)",
+      "Bash(git ls-files *)",
+      "Bash(git add *)"
     ]
   }
 }

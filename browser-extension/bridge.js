@@ -7,7 +7,7 @@
  *   inject.js  --window.postMessage-->  bridge.js  --chrome.runtime-->  SW
  *   inject.js  <--window.postMessage--  bridge.js  <--sendResponse---   SW
  *
- * VERSION: 3.0.1
+ * VERSION: 3.2.0
  */
 (function () {
   'use strict';
@@ -41,7 +41,7 @@
 
     // Extension detection ping/pong
     if (e.data.__flyx === 'ping') {
-      window.postMessage({ __flyx: 'pong', version: '3.1.0' }, '*');
+      window.postMessage({ __flyx: 'pong', version: '3.2.0' }, '*');
       return;
     }
 
@@ -118,30 +118,45 @@
     }
 
     // DLHD extraction request from inject.js → relay to SW
-    if (e.data.__flyx !== 'req') return;
-    var id = e.data.id;
-    var channel = e.data.channel;
-
-    try {
-      chrome.runtime.sendMessage({ type: 'extractDLHD', channel: channel }, function (resp) {
-        var err = chrome.runtime.lastError;
-        if (err || !resp) {
+    if (e.data.__flyx === 'req') {
+      var id = e.data.id;
+      var channel = e.data.channel;
+      try {
+        chrome.runtime.sendMessage({ type: 'extractDLHD', channel: channel }, function (resp) {
+          var err = chrome.runtime.lastError;
           window.postMessage({
-            __flyx: 'res', id: id, ok: false,
-            error: (err && err.message) || 'no response from SW'
+            __flyx: 'res', id: id, ok: !!(resp && resp.ok),
+            playlist: resp && resp.playlist, error: (err && err.message) || (resp && resp.error) || 'no response'
           }, '*');
-          return;
-        }
-        window.postMessage({
-          __flyx: 'res', id: id, ok: !!resp.ok,
-          playlist: resp.playlist, error: resp.error
-        }, '*');
-      });
-    } catch (ex) {
-      window.postMessage({
-        __flyx: 'res', id: id, ok: false,
-        error: 'bridge error: ' + ex.message
-      }, '*');
+        });
+      } catch (ex) {
+        window.postMessage({ __flyx: 'res', id: id, ok: false, error: 'bridge: ' + ex.message }, '*');
+      }
+      return;
+    }
+
+    // Videasy extraction request from Flyx app → relay to SW
+    if (e.data.__flyx === 'videasyExtract') {
+      var vid = e.data.id;
+      try {
+        chrome.runtime.sendMessage({
+          type: 'extractVideasy',
+          tmdbId: e.data.tmdbId,
+          mediaType: e.data.mediaType || 'movie',
+          title: e.data.title || '',
+          season: e.data.season,
+          episode: e.data.episode
+        }, function (resp) {
+          var err = chrome.runtime.lastError;
+          window.postMessage({
+            __flyx: 'videasyExtractRes', id: vid, ok: !!(resp && resp.ok),
+            hexData: resp && resp.hexData, error: (err && err.message) || (resp && resp.error)
+          }, '*');
+        });
+      } catch (ex) {
+        window.postMessage({ __flyx: 'videasyExtractRes', id: vid, ok: false, error: 'bridge: ' + ex.message }, '*');
+      }
+      return;
     }
   });
 

@@ -1,13 +1,14 @@
 /**
- * Flyx Bypass v3 — Extension Service Worker
+ * Flyx Bypass v3.3 — Extension Service Worker
  *
  * - Dynamic DNR rule management per provider (toggleable from popup)
  * - Per-provider stats persisted to chrome.storage.local
  * - Activity log ring buffer (last 100 events)
  * - DLHD extraction (mints IP-bound token from residential IP)
+ * - StreamNinja live sports extraction (browser-side j() decrypt)
  * - reCAPTCHA v3 solver for DLHD IP whitelist
  *
- * VERSION: 3.1.0
+ * VERSION: 3.3.0
  */
 import { solveRecaptchaV3, verifyToken } from './lib/recaptcha.js';
 
@@ -115,6 +116,22 @@ const PROVIDERS = {
     cat: 'anime',
     rules: [
       { f: '*://aniwatchtv.to/*', h: { Referer: 'https://aniwatchtv.to/' } },
+    ]
+  },
+  streamninja: {
+    name: 'StreamNinja Live Sports',
+    cat: 'live',
+    rules: [
+      { f: '*://ninja-data.*.workers.dev/*', h: {
+          Origin: 'https://streamninja.xyz',
+          Referer: 'https://streamninja.xyz/',
+          'Content-Type': 'application/json',
+          'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+        }, cors: true },
+      { f: '*://streamninja.xyz/*', h: {}, cors: true },
+      { f: '*://sportsembed.su.*.sbs/*', h: { Referer: 'https://streamninja.xyz/' }, cors: true },
     ]
   },
   ntv: {
@@ -640,6 +657,150 @@ async function corsFetch(url, headers, timeoutMs, method, body) {
   }
 }
 
+// ── Videasy Extraction (June 2026) ──────────────────────────────────────
+//
+// Videasy now requires Cloudflare Turnstile → session auth. We solve this
+// by opening player.videasy.net in a REAL background tab (not iframe/embed).
+// The invisible Turnstile solves automatically in a real browser. inject.js
+// intercepts the hex from the page's API calls and relays it back here.
+
+var videasyPending = {}; // reqId → { resolve, reject, timer }
+var videasySessionCache = null; // { token, expires }
+
+async function videasyExtract(tmdbId, type, title, season, episode) {
+  var reqId = 'vs_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  console.log('[Flyx SW] Videasy extract: ' + type + ' ' + tmdbId + ' (' + reqId + ')');
+
+  incStat('videasy', 'intercepted');
+  addLog('videasy', 'intercept', type + '/' + tmdbId);
+
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      delete videasyPending[reqId];
+      // Try to close the tab if we still have its ID
+      reject(new Error('Videasy extraction timed out (20s)'));
+    }, 20000);
+
+    videasyPending[reqId] = { resolve: resolve, reject: reject, timer: timer, tmdbId: tmdbId };
+
+    // Build the player page URL and open in background tab
+    var playerUrl;
+    if (type === 'tv') {
+      playerUrl = 'https://player.videasy.net/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1);
+    } else {
+      playerUrl = 'https://player.videasy.net/movie/' + tmdbId;
+    }
+
+    console.log('[Flyx SW] Opening background tab: ' + playerUrl);
+    chrome.tabs.create({ url: playerUrl, active: false }, function(tab) {
+      if (chrome.runtime.lastError) {
+        clearTimeout(timer);
+        delete videasyPending[reqId];
+        reject(new Error('Tab creation failed: ' + chrome.runtime.lastError.message));
+        return;
+      }
+      // Store tab ID so we can close it once we get data
+      if (videasyPending[reqId]) {
+        videasyPending[reqId].tabId = tab.id;
+      }
+    });
+  });
+}
+
+function resolveVideasyHex(hexData, pageInfo) {
+  // Find the pending request that matches this response
+  var keys = Object.keys(videasyPending);
+  for (var i = 0; i < keys.length; i++) {
+    var req = videasyPending[keys[i]];
+    // Match by tmdbId, or just take the oldest pending request
+    if (req.tmdbId === (pageInfo && pageInfo.tmdbId) || keys.length === 1) {
+      clearTimeout(req.timer);
+      delete videasyPending[keys[i]];
+
+      // Close the background tab
+      if (req.tabId) {
+        chrome.tabs.remove(req.tabId).catch(function(){});
+      }
+
+      req.resolve(hexData);
+      return;
+    }
+  }
+  // Fallback: resolve the first pending request
+  if (keys.length > 0) {
+    var firstKey = keys[0];
+    var firstReq = videasyPending[firstKey];
+    clearTimeout(firstReq.timer);
+    delete videasyPending[firstKey];
+    if (firstReq.tabId) {
+      chrome.tabs.remove(firstReq.tabId).catch(function(){});
+    }
+    firstReq.resolve(hexData);
+  }
+}
+
+function cacheVideasySession(sessionData) {
+  videasySessionCache = {
+    token: sessionData.token || sessionData.session || JSON.stringify(sessionData),
+    expires: Date.now() + (sessionData.expiresIn || 3600) * 1000,
+  };
+  console.log('[Flyx SW] Videasy session cached, expires in ' + (sessionData.expiresIn || 3600) + 's');
+}
+
+// ── StreamNinja Extraction ───────────────────────────────────────────────
+
+const SN_WORKERS = [
+  'https://ninja-data.getsugatensho.workers.dev',
+  'https://ninja-data.kuroigetsuga.workers.dev',
+  'https://ninja-data.getsugachirashi.workers.dev',
+];
+
+let snJFunction = null;
+let snBundlePromise = null;
+
+async function snLoadBundle() {
+  if (snJFunction) return;
+  if (snBundlePromise) return snBundlePromise;
+
+  snBundlePromise = (async () => {
+    // Fetch cached bundle from our Worker (avoids hitting streamninja.xyz)
+    var resp = await fetch('https://media-proxy.vynx-3b3.workers.dev/streamninja/bundle');
+    var source = await resp.text();
+    source = source.replace(
+      /export\{hQ0VQk as j,jJfxvqG as m\};/,
+      'self.__j=hQ0VQk;self.__m=jJfxvqG;'
+    );
+    // Service workers support eval() in MV3
+    eval(source);
+    if (typeof self.__j !== 'function') throw new Error('SN bundle init failed');
+    snJFunction = self.__j;
+    console.log('[Flyx SW] StreamNinja bundle loaded');
+  })();
+
+  return snBundlePromise;
+}
+
+async function snExtract(provider, streamId) {
+  await snLoadBundle();
+
+  var path = streamId
+    ? provider + '?id=' + encodeURIComponent(streamId)
+    : provider;
+
+  var results = await Promise.allSettled(
+    SN_WORKERS.map(function (w) {
+      return snJFunction(w + '/' + path, provider, provider.toUpperCase());
+    })
+  );
+
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].status === 'fulfilled' && results[i].value) {
+      return results[i].value;
+    }
+  }
+  return [];
+}
+
 // ── Message Router ──────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
@@ -738,6 +899,112 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
     return true;
   }
 
+  // ── Videasy handlers ─────────────────────────────────────────────────
+
+  // Session captured from inject.js on player.videasy.net
+  if (msg.type === 'videasySession') {
+    console.log('[Flyx SW] Videasy session captured — forwarding to pool');
+    // Parse Set-Cookie to extract cookie name + value
+    var cookieName = 'session';
+    var cookieValue = '';
+    var setCookie = msg.setCookie || '';
+    if (setCookie) {
+      var cm = setCookie.match(/^([^=]+)=([^;]+)/);
+      if (cm) { cookieName = cm[1]; cookieValue = cm[2]; }
+    }
+
+    // Also try JSON body
+    if (!cookieValue && msg.body) {
+      try {
+        var bd = JSON.parse(msg.body);
+        cookieValue = bd.token || bd.session || bd.access_token || '';
+        if (bd.cookieName) cookieName = bd.cookieName;
+      } catch(e) {
+        cookieValue = msg.body;
+      }
+    }
+
+    if (cookieValue) {
+      cacheVideasySession({ token: cookieValue, cookieName: cookieName, expiresIn: 3600 });
+      // POST to CF Worker pool for non-extension users
+      var poolUrl = 'https://media-proxy.vynx-3b3.workers.dev/stream/videasy/pool';
+      fetch(poolUrl.replace(/\/stream\//, '/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cookieValue, cookieName: cookieName }),
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        console.log('[Flyx SW] Session contributed to pool. Pool size: ' + (d && d.poolSize));
+      }).catch(function(e) {
+        console.warn('[Flyx SW] Pool contribution failed:', e.message);
+      });
+    }
+    return false;
+  }
+
+  // Hex captured from inject.js on player.videasy.net
+  if (msg.type === 'videasyHex') {
+    console.log('[Flyx SW] Videasy hex received: ' + (msg.hexData ? msg.hexData.length : 0) + ' chars');
+    incStat('videasy', 'success');
+    addLog('videasy', 'success', (msg.pageInfo ? msg.pageInfo.tmdbId : '?') + ' hex');
+    resolveVideasyHex(msg.hexData, msg.pageInfo);
+    return false;
+  }
+
+  // Tab ready signal from inject.js
+  if (msg.type === 'videasyReady') {
+    console.log('[Flyx SW] Videasy tab ready: ' + (msg.pageInfo ? msg.pageInfo.type + '/' + msg.pageInfo.tmdbId : '?'));
+    return false;
+  }
+
+  // Videasy extraction request from Flyx (via bridge.js)
+  if (msg.type === 'extractVideasy') {
+    if (providerState.videasy === false) {
+      respond({ ok: false, error: 'Videasy provider is disabled' });
+      return false;
+    }
+    videasyExtract(msg.tmdbId, msg.mediaType || 'movie', msg.title, msg.season, msg.episode).then(function(hex) {
+      respond({ ok: true, hexData: hex });
+    }).catch(function(e) {
+      incStat('videasy', 'error');
+      addLog('videasy', 'error', e.message);
+      console.error('[Flyx SW] Videasy extract failed:', e.message);
+      respond({ ok: false, error: e.message });
+    });
+    return true; // async
+  }
+
+  // ── StreamNinja extraction ────────────────────────────────────────────
+
+  if (msg.type === 'extractStreamNinja') {
+    if (providerState.streamninja === false) {
+      respond({ ok: false, error: 'StreamNinja provider is disabled' });
+      return false;
+    }
+    incStat('streamninja', 'requests');
+    addLog('streamninja', 'request', (msg.streamId ? msg.provider + '/' + msg.streamId : msg.provider));
+    snExtract(msg.provider, msg.streamId).then(function (data) {
+      incStat('streamninja', 'success');
+      addLog('streamninja', 'success', (msg.streamId ? msg.provider + '/' + msg.streamId : msg.provider) + ' OK');
+      respond({ ok: true, data: data });
+    }).catch(function (e) {
+      incStat('streamninja', 'error');
+      addLog('streamninja', 'error', e.message);
+      console.error('[Flyx SW] StreamNinja ' + msg.provider + ' failed:', e.message);
+      respond({ ok: false, error: e.message });
+    });
+    return true; // async
+  }
+
+  if (msg.type === 'listStreamNinja') {
+    snExtract(msg.provider).then(function (data) {
+      var events = Array.isArray(data) ? data : (data && data.channels ? data.channels : []);
+      respond({ ok: true, events: events });
+    }).catch(function (e) {
+      respond({ ok: false, error: e.message });
+    });
+    return true;
+  }
+
   return false;
 });
 
@@ -770,7 +1037,7 @@ async function init() {
   // Install DNR rules for enabled providers (single atomic update)
   await installAllEnabledRules();
 
-  console.log('[Flyx Bypass v3] SW ready — ' +
+  console.log('[Flyx Bypass v3.3] SW ready — ' +
     Object.keys(providerState).filter(function (k) { return providerState[k]; }).length +
     '/' + Object.keys(PROVIDERS).length + ' providers enabled, ' +
     activityLog.length + ' log entries');

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Flyx Bypass",
-  "version": "3.1.0",
-  "description": "Bypasses IP-bound DLHD tokens for tv.vynx.cc by minting the signed stream in your browser (residential IP). Manages per-provider CDN header injection with real-time stats and activity logging.",
+  "version": "3.3.0",
+  "description": "Bypasses IP-bound DLHD tokens + extracts StreamNinja live sports streams. Manages per-provider CDN header injection with real-time stats and activity logging.",
   "author": "Vynx-Velvet",
   "homepage_url": "https://tv.vynx.cc",
 
@@ -49,7 +49,11 @@
     "https://api.allanime.day/*",
     "https://*.allanime.day/*",
     "https://allmanga.to/*",
-    "https://www.google.com/recaptcha/*"
+    "https://www.google.com/recaptcha/*",
+    "https://streamninja.xyz/*",
+    "https://*.streamninja.xyz/*",
+    "https://ninja-data.*.workers.dev/*",
+    "https://sportsembed.su.*.sbs/*"
   ],
 
   "background": {
@@ -62,7 +66,8 @@
       "matches": [
         "https://*.vynx.cc/*",
         "http://localhost:3000/*",
-        "http://localhost:3001/*"
+        "http://localhost:3001/*",
+        "https://player.videasy.net/*"
       ],
       "js": ["inject.js"],
       "run_at": "document_start",

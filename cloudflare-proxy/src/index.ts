@@ -43,6 +43,7 @@ import { handleMovieBoxRequest } from './moviebox-proxy';
 import { handleBingeBoxRequest } from './bingebox-proxy';
 import { handleUFreeTVRequest } from './ufreetv-proxy';
 import { handleGlobeTVRequest } from './globetv-proxy';
+import { handleStreamNinjaRequest } from './streamninja-proxy';
 import { runHealthChecks } from './hexa-monitor';
 import { createLogger, type LogLevel } from './logger';
 import { incrementMetric } from './metrics';
@@ -81,6 +82,16 @@ export function buildRouteTable(): RouteEntry[] {
       prefix: '/health',
       exact: true,
       handler: async () => buildHealthResponse(),
+    },
+
+    // StreamNinja — MUST be before /stream (prefix collision)
+    {
+      prefix: '/streamninja',
+      handler: async (request, env, _ctx, logger) => {
+        incrementMetric('streamninjaRequests');
+        logger.info('Routing to StreamNinja proxy', { path: new URL(request.url).pathname });
+        return await handleStreamNinjaRequest(request, env);
+      },
     },
 
     // Stream proxy (with protection mode routing)
@@ -336,7 +347,6 @@ export function buildRouteTable(): RouteEntry[] {
         return await handleGlobeTVRequest(request, env);
       },
     },
-
     // IPTV — handles both /iptv/* and legacy /tv/iptv/*
     {
       prefix: '/tv/iptv',
@@ -394,6 +404,128 @@ export function buildRouteTable(): RouteEntry[] {
         incrementMetric('decodeRequests');
         logger.info('Routing to decoder sandbox');
         return await decoderSandbox.fetch(request, env);
+      },
+    },
+
+    // Turnstile encryptor — uses pure TS + eval test
+    {
+      prefix: '/turnstile/pure',
+      handler: async (request, _env, _ctx, logger) => {
+        const { encryptFlowBody, buildTelemetry, generateFlowToken } = await import('./turnstile-encryptor');
+        const SK = '0x4AAAAAADerxS_C3ByUbYxH';
+
+        try {
+          // Encrypt telemetry
+          const tm = buildTelemetry({ sitekey: SK });
+          const body = await encryptFlowBody(tm);
+          const ft = generateFlowToken();
+
+          return new Response(JSON.stringify({
+            success: true,
+            bodyLen: body.length,
+            bodyLen: body.length,
+            bodyStart: body.substring(0, 50),
+            bodyMid: body.substring(Math.floor(body.length/2), Math.floor(body.length/2)+50),
+            bodyEnd: body.substring(body.length - 50),
+            allSame: body[0] === body[body.length-1],
+            flowToken: ft.substring(0, 60),
+            hasDollar: body.includes('$'),
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message, stack: e.stack }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
+      },
+    },
+
+    // Turnstile encryptor — accepts solver JS, returns encrypted body
+    {
+      prefix: '/turnstile/encrypt',
+      handler: async (request, _env, _ctx, logger) => {
+        try {
+          if (request.method !== 'POST') {
+            return new Response(JSON.stringify({ error: 'POST required' }), {
+              status: 405, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            });
+          }
+
+          const body: any = await request.json();
+          const solverJs: string = body.solverJs || '';
+          const telemetry: any = body.telemetry || {};
+
+          if (!solverJs) {
+            return new Response(JSON.stringify({ error: 'solverJs required' }), {
+              status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            });
+          }
+
+          // Find encryptor by &63 pattern
+          const fp = /([A-Za-z0-9]+)=function\([^)]*\)\{/g;
+          let m, encName: string | null = null;
+          while ((m = fp.exec(solverJs)) !== null) {
+            let d = 0, e = m.index + m[0].length;
+            for (let i = e; i < Math.min(solverJs.length, e + 5000); i++) {
+              if (solverJs[i] === '{') d++; else if (solverJs[i] === '}') { if (d === 0) { e = i + 1; break; } d--; }
+            }
+            if (solverJs.substring(m.index, e).includes('&63') && e - m.index > 2000) {
+              encName = m[1];
+              break;
+            }
+          }
+
+          if (!encName) {
+            return new Response(JSON.stringify({ error: 'Encryptor not found in solver JS' }), {
+              status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            });
+          }
+
+          // Execute solver JS to get the encryptor
+          let encryptedBody: string | null = null;
+          let evalError: string | null = null;
+
+          try {
+            // Find switch statement - execute everything before it
+            const switchIdx = solverJs.indexOf('switch(');
+            if (switchIdx > 0) {
+              const codeBeforeSwitch = solverJs.substring(12, switchIdx);
+              const execCode = `try { ${codeBeforeSwitch}; globalThis.__ENC = ${encName}; } catch(e) { globalThis.__ERR = e.message; }`;
+
+              const gEval = (globalThis as any).eval;
+              if (typeof gEval === 'function') {
+                gEval(execCode);
+                const enc = (globalThis as any).__ENC;
+                if (typeof enc === 'function') {
+                  encryptedBody = enc(telemetry);
+                }
+              } else {
+                evalError = 'eval not available';
+              }
+            }
+          } catch (e: any) {
+            evalError = e.message;
+          }
+
+          return new Response(JSON.stringify({
+            success: !!encryptedBody,
+            encName,
+            encryptedBody: encryptedBody?.substring(0, 500),
+            bodyLen: encryptedBody?.length || 0,
+            evalError,
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        } catch (e: any) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
       },
     },
 

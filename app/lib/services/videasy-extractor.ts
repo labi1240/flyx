@@ -95,7 +95,20 @@ export async function extractVideasyStreams(
 
     const data = await res.json() as {
       success: boolean; hexData?: string; error?: string; endpoint?: string;
+      directUrl?: string; apiHeaders?: Record<string, string>;
     };
+
+    // New flow: Worker returns directUrl + apiHeaders for browser-side fetch
+    if (!data.hexData && data.directUrl) {
+      console.log('[Videasy] Worker returned directUrl — deferring to client browser');
+      return {
+        success: true, sources: [],
+        hexData: '', // signal to client that it needs to fetch
+        needsClientDecrypt: true,
+        // Pass these through for the client to use
+        ...(data as any),
+      } as any;
+    }
 
     if (!data.success || !data.hexData) {
       return { success: false, sources: [], error: data.error || 'No hex data from proxy' };

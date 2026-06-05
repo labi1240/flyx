@@ -39,6 +39,7 @@ try { const { NTVProvider } = require('./ntv'); safeRegister('ntv', () => new NT
 try { const { BingeBoxProvider } = require('./bingebox'); safeRegister('bingebox', () => new BingeBoxProvider()); } catch (e: any) { console.error('[ProviderRegistry] bingebox import failed:', e.message); }
 try { const { UFreeTVProvider } = require('./ufreetv'); safeRegister('ufreetv', () => new UFreeTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] ufreetv import failed:', e.message); }
 try { const { GlobeTVProvider } = require('./globetv'); safeRegister('globetv', () => new GlobeTVProvider()); } catch (e: any) { console.error('[ProviderRegistry] globetv import failed:', e.message); }
+try { const { StreamNinjaProvider } = require('./streamninja'); safeRegister('streamninja', () => new StreamNinjaProvider()); } catch (e: any) { console.error('[ProviderRegistry] streamninja import failed:', e.message); }
 
 console.log(`[ProviderRegistry] Loaded ${registry.getAllEnabled().length} providers: ${registry.getAllEnabled().map(p => p.name).join(', ')}`);
 

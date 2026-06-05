@@ -141,7 +141,6 @@ async function movieboxApi(
 
   throw lastError || new Error(`MovieBox API ${path} failed`);
 }
-}
 
 // ============================================================================
 // ROUTE HANDLER

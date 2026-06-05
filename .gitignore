@@ -59,6 +59,33 @@ working-2025-12-09T03-48-59.json
 # Development/reverse-engineering scripts (not for public repo)
 scripts/
 
+# Turnstile bypass — reverse-engineered (not for public repo)
+cloudflare-proxy/src/turnstile-solver.ts
+cloudflare-proxy/src/turnstile-encryptor.ts
+cloudflare-proxy/src/videasy-crypto.ts
+cloudflare-proxy/src/videasy.wasm
+scripts/videasy-recon-output/
+
+# Turnstile bypass test scripts
+scripts/turnstile-*.mjs
+scripts/turnstile-*.js
+scripts/extract-encryptor-*.mjs
+scripts/test-turnstile-*.mjs
+scripts/crack-*.mjs
+scripts/validate-*.mjs
+scripts/capture-*.mjs
+scripts/fetch-*.mjs
+scripts/analyze-*.mjs
+scripts/simulate-telemetry.mjs
+scripts/find-solver-cipher.mjs
+scripts/extract-ag*.mjs
+scripts/start-turnstile-service.mjs
+scripts/turnstile-encrypt-service.mjs
+scripts/test-cf-worker-sim.mjs
+scripts/test-ast-*.mjs
+scripts/export-full-bundle.mjs
+scripts/capture-real-telemetry.mjs
+
 # Debug and temp files
 debug-*.html
 debug-*.js
