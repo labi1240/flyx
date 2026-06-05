@@ -4,21 +4,22 @@
  * CORS proxy for api.videasy.net. Fetches the raw hex-encrypted API response
  * and returns it to the caller. WASM + AES decryption happens client-side.
  *
- * JUNE 2026 UPDATE: /cdn/sources-with-title does NOT require Turnstile auth
- * for movies. Direct API access works with just User-Agent + Origin headers.
- * The session pool provides rate-limiting resilience and TV show support.
+ * Extraction priority:
+ *   1. Authenticated session → API call (~2-5s)
+ *   2. Session pool (contributed sessions, ~1-3s if pool has sessions)
+ *   3. Direct API call (no auth, works for movies on /cdn/sources-with-title)
+ *   4. Return directUrl for browser fetch (last resort, ~5-10s)
  *
  * Routes:
  *   GET  /videasy/extract?tmdbId=X&type=movie|tv&title=Y&...
  *   POST /videasy/pool     — contribute a session to the pool
- *   GET  /videasy/health   — pool status
+ *   GET  /videasy/health   — pool + solver status
  */
 
 import { createLogger } from './logger';
 import { CORS_HEADERS } from './cors';
+import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize, TARGETS } from './turnstile-solver';
 
-const SITEKEY = '0x4AAAAAADerxS_C3ByUbYxH';
-const FLOW_KEY = '1063281564:1780678920:jV9-R0nqhNy_f5n-hLfjEl_TG9uROOX-W_QEHBnL7x4';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
 
 const VIDEOASY_API = 'https://api.videasy.net';
@@ -101,12 +102,13 @@ function buildApiParams(params: VideasyExtractParams): URLSearchParams {
 }
 
 /**
- * Fetch from Videasy API with an optional session cookie.
+ * Fetch from Videasy API with an optional session cookie or cf_clearance.
  * Tries all endpoints in priority order.
  */
 async function fetchVideasyApi(
   params: VideasyExtractParams,
   session: PooledSession | null,
+  cfClearance?: string | null,
 ): Promise<{ hexData: string; endpoint: string }> {
   const apiParams = buildApiParams(params);
   const errors: string[] = [];
@@ -116,6 +118,8 @@ async function fetchVideasyApi(
       const headers: Record<string, string> = { ...API_HEADERS };
       if (session) {
         headers['Cookie'] = `${session.cookieName}=${session.token}`;
+      } else if (cfClearance) {
+        headers['Cookie'] = `cf_clearance=${cfClearance}`;
       }
 
       const url = `${VIDEOASY_API}${endpoint}?${apiParams.toString()}`;
@@ -160,6 +164,47 @@ async function fetchVideasyApi(
   throw new Error(
     `All ${API_ENDPOINTS.length} Videasy endpoints failed: ${errors.join('; ')}`,
   );
+}
+
+/**
+ * Try fetching hex from Videasy API with Turnstile cf_clearance.
+ * Uses the pure-HTTP Turnstile solver to get a clearance cookie,
+ * then calls the API with it. Falls back to null if solving fails.
+ */
+async function fetchWithTurnstile(
+  params: VideasyExtractParams,
+): Promise<{ hexData: string; endpoint: string } | null> {
+  // Get cf_clearance from solver (cached if still valid)
+  const cfClearance = await getCfClearance('videasy');
+  if (!cfClearance) {
+    console.log('[Videasy] No cf_clearance available from solver');
+    return null;
+  }
+
+  try {
+    const result = await fetchVideasyApi(params, null, cfClearance);
+    console.log(`[Videasy] ✅ Turnstile-solved fetch OK (${result.endpoint}, ${result.hexData.length} hex bytes)`);
+    return result;
+  } catch (err) {
+    if (err instanceof SessionInvalidError) {
+      // cf_clearance was rejected — invalidate and retry once
+      console.log('[Videasy] cf_clearance rejected, invalidating and retrying...');
+      invalidateCfClearance('videasy');
+
+      const freshClearance = await getCfClearance('videasy', true);
+      if (freshClearance) {
+        try {
+          const result = await fetchVideasyApi(params, null, freshClearance);
+          console.log(`[Videasy] ✅ Retry with fresh cf_clearance OK (${result.endpoint})`);
+          return result;
+        } catch (e2) {
+          console.log('[Videasy] Retry with fresh cf_clearance also failed');
+        }
+      }
+    }
+    console.log(`[Videasy] Turnstile fetch failed: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 class SessionInvalidError extends Error {
@@ -212,6 +257,8 @@ export async function handleVideasyRequest(
       status: 'ok',
       endpoints: API_ENDPOINTS.length,
       poolSize: sessionPool.length,
+      turnstileSessions: getSessionCacheSize(),
+      hasTurnstileSession: hasCachedSession('videasy'),
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -405,7 +452,30 @@ export async function handleVideasyRequest(
 
     if (Date.now() - poolLastCleanup > 300_000) cleanPool();
 
+    // ── PRIMARY PATH: Turnstile HTTP solver (pure Worker, no browser) ──
+    // Solves the Turnstile challenge via HTTP, gets cf_clearance, calls API directly.
+    console.log('[Videasy] Trying Turnstile HTTP solver first...');
+    const turnstileResult = await fetchWithTurnstile(extractParams);
+    if (turnstileResult) {
+      logger.info('Videasy extract OK (Turnstile HTTP solver)', {
+        endpoint: turnstileResult.endpoint,
+        hexLen: turnstileResult.hexData.length,
+      });
+      return new Response(JSON.stringify({
+        success: true,
+        hexData: turnstileResult.hexData,
+        provider: 'videasy',
+        endpoint: turnstileResult.endpoint,
+        sessionSource: 'turnstile-http',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      });
+    }
+
+    // ── FALLBACK 1: Session pool (extension-contributed sessions) ──
     // Try up to 3 pooled sessions
+    console.log('[Videasy] Turnstile solver failed, trying session pool...');
     const maxAttempts = Math.min(sessionPool.length, 3);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const session = getFromPool();
@@ -442,8 +512,8 @@ export async function handleVideasyRequest(
       }
     }
 
-    // Worker tries to fetch hex directly — may work if CF relaxes IP blocks.
-    // Falls back to returning direct URL for client to fetch from browser IP.
+    // ── FALLBACK 2: Direct fetch from Worker (no session, no Turnstile) ──
+    // Some endpoints don't require auth at all. Try raw API access.
     const apiParams = buildApiParams(extractParams);
     // TV shows use /mb-flix, movies use /cdn
     const apiPath = type === 'tv' ? '/mb-flix/sources-with-title' : '/cdn/sources-with-title';

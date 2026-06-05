@@ -62,6 +62,7 @@ scripts/
 # Turnstile bypass — reverse-engineered (not for public repo)
 cloudflare-proxy/src/turnstile-solver.ts
 cloudflare-proxy/src/turnstile-encryptor.ts
+cloudflare-proxy/src/turnstile-vm.ts
 cloudflare-proxy/src/videasy-crypto.ts
 cloudflare-proxy/src/videasy.wasm
 scripts/videasy-recon-output/
@@ -69,9 +70,12 @@ scripts/videasy-recon-output/
 # Turnstile bypass test scripts
 scripts/turnstile-*.mjs
 scripts/turnstile-*.js
+scripts/turnstile-*.cjs
 scripts/extract-encryptor-*.mjs
 scripts/test-turnstile-*.mjs
 scripts/crack-*.mjs
+scripts/crack-*.cjs
+scripts/trace-vm-*.mjs
 scripts/validate-*.mjs
 scripts/capture-*.mjs
 scripts/fetch-*.mjs

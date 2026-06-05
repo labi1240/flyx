@@ -17,6 +17,7 @@
  */
 
 import { createLogger, type LogLevel } from './logger';
+import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize } from './turnstile-solver';
 
 export interface Env {
   LOG_LEVEL?: string;
@@ -86,26 +87,76 @@ async function fetchServerList(
 }
 
 // ============================================================================
-// LINK RESOLUTION (requires Turnstile token from browser)
+// LINK RESOLUTION (authenticated session or browser token)
 // ============================================================================
-async function resolveLink(key: string, turnstileToken: string): Promise<string> {
-  const url = `${PRIMESRC_BASE}/api/v1/l?key=${encodeURIComponent(key)}&token=${encodeURIComponent(turnstileToken)}`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': UA,
-      'Accept': 'application/json',
-      'Referer': `${PRIMESRC_BASE}/`,
-      'Origin': PRIMESRC_BASE,
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`/api/v1/l returned ${res.status}: ${text.substring(0, 200)}`);
+
+/**
+ * Resolve a PrimeSrc server key to an embed link via /api/v1/l.
+ *
+ * PRIMARY PATH: Uses cf_clearance cookie from HTTP Turnstile solver.
+ * FALLBACK: Uses browser-provided Turnstile widget token.
+ */
+async function resolveLink(key: string, turnstileToken?: string): Promise<string> {
+  let url: string;
+  const headers: Record<string, string> = {
+    'User-Agent': UA,
+    'Accept': 'application/json',
+    'Referer': `${PRIMESRC_BASE}/`,
+    'Origin': PRIMESRC_BASE,
+  };
+
+  // Try cf_clearance from HTTP solver first
+  const cfClearance = await getCfClearance('primesrc');
+  if (cfClearance) {
+    url = `${PRIMESRC_BASE}/api/v1/l?key=${encodeURIComponent(key)}`;
+    headers['Cookie'] = `cf_clearance=${cfClearance}`;
+
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const data = await res.json() as { link?: string };
+        if (data.link) {
+          console.log(`[PrimeSrc] ✅ Resolved ${key} via cf_clearance (HTTP solver)`);
+          return data.link;
+        }
+      }
+      if (res.status === 403) {
+        // cf_clearance rejected — invalidate and don't retry with it
+        console.log('[PrimeSrc] cf_clearance rejected by /api/v1/l, invalidating');
+        invalidateCfClearance('primesrc');
+      }
+    } catch (e) {
+      console.log(`[PrimeSrc] cf_clearance attempt failed: ${(e as Error).message}`);
+    }
   }
-  const data = await res.json() as { link?: string };
-  if (!data.link) throw new Error('No link in /api/v1/l response');
-  return data.link;
+
+  // Fallback: use browser-provided Turnstile token
+  if (turnstileToken) {
+    url = `${PRIMESRC_BASE}/api/v1/l?key=${encodeURIComponent(key)}&token=${encodeURIComponent(turnstileToken)}`;
+    delete headers['Cookie']; // Don't send cookie with token
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`/api/v1/l returned ${res.status}: ${text.substring(0, 200)}`);
+    }
+    const data = await res.json() as { link?: string };
+    if (!data.link) throw new Error('No link in /api/v1/l response');
+    return data.link;
+  }
+
+  throw new Error('No Turnstile token or cf_clearance available for /api/v1/l');
+}
+
+/**
+ * Try to resolve a link using the HTTP Turnstile solver only.
+ * Returns null if cf_clearance + direct /api/v1/l doesn't work.
+ */
+async function resolveLinkWithTurnstile(key: string): Promise<string | null> {
+  try {
+    return await resolveLink(key, undefined);
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -443,6 +494,8 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
         status: testRes.ok && testData.servers?.length > 0 ? 'ok' : 'degraded',
         serverCount: testData.servers?.length || 0,
         apiReachable: testRes.ok,
+        turnstileSessions: getSessionCacheSize(),
+        hasTurnstileSession: hasCachedSession('primesrc'),
         timestamp: new Date().toISOString(),
       });
     } catch (e) {
@@ -484,24 +537,26 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
     }
   }
 
-  // ── Resolve link (browser passes Turnstile token) ─────────────
+  // ── Resolve link (HTTP solver or browser token) ─────────────
   if (path === '/primesrc/resolve') {
     const key = url.searchParams.get('key');
-    const turnstileToken = url.searchParams.get('token');
+    const turnstileToken = url.searchParams.get('token') || undefined;
     const serverName = url.searchParams.get('server') || 'unknown';
 
-    if (!key || !turnstileToken) {
-      return jsonResponse({ error: 'Missing key or token' }, 400);
+    if (!key) {
+      return jsonResponse({ error: 'Missing key' }, 400);
     }
 
     try {
       const start = Date.now();
       const embedLink = await resolveLink(key, turnstileToken);
-      console.log(`[PrimeSrc] Resolved ${serverName} (${key}): ${embedLink.substring(0, 80)}`);
+      const source = turnstileToken ? 'browser-token' : 'turnstile-http';
+      console.log(`[PrimeSrc] Resolved ${serverName} (${key}) via ${source}: ${embedLink.substring(0, 80)}`);
       return jsonResponse({
         success: true,
         link: embedLink,
         server: serverName,
+        source,
         duration_ms: Date.now() - start,
       });
     } catch (e) {
@@ -627,14 +682,13 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
           }
         }
       } else {
-        // No Turnstile token — try direct embed URLs for known hosts.
-        // Many PrimeSrc server keys are the exact embed ID on the host's domain.
-        // We can skip /api/v1/l entirely for these and extract streams directly.
+        // No browser Turnstile token — try HTTP solver cf_clearance for hosts
+        // that need /api/v1/l, and direct extraction for known hosts.
         //
-        // Known direct-key hosts (verified working):
+        // Known direct-key hosts (verified working WITHOUT /api/v1/l):
         //   Filemoon, Dood, Streamwish, Filelions, Mixdrop, Vidmoly,
         //   Luluvdoo, Streamplay, Vidara, VidsST, Savefiles, Vinovo
-        // Known non-direct hosts (need /api/v1/l):
+        // Hosts that need /api/v1/l (try cf_clearance from HTTP solver):
         //   Streamtape, Voe
         const DIRECT_HOSTS: Record<string, string> = {
           filemoon: 'https://filemoon.sx/e/{key}',
@@ -655,8 +709,29 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
         const directResults = await Promise.allSettled(
           servers.map(async (s) => {
             const name = s.name.toLowerCase();
-            // Streamtape/Voe need /api/v1/l — skip
+
+            // Try HTTP Turnstile solver for hosts that need /api/v1/l
             if (name.includes('streamtape') || name.includes('voe')) {
+              try {
+                const embedLink = await resolveLinkWithTurnstile(s.key);
+                if (embedLink) {
+                  const stream = await extractFromEmbed(embedLink, s.name);
+                  if (stream) {
+                    return {
+                      server: s.name, quality: s.quality || stream.quality || 'auto',
+                      url: stream.url,
+                      proxied_url: stream.type === 'hls'
+                        ? `/primesrc/stream?url=${encodeURIComponent(stream.url)}`
+                        : stream.url,
+                      type: stream.type, referer: stream.referer,
+                      file_name: s.file_name || undefined, file_size: s.file_size || undefined,
+                    };
+                  }
+                  return { server: s.name, quality: s.quality || 'auto', error: 'No stream in embed page', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
+                }
+              } catch {
+                // HTTP solver failed — will return metadata only
+              }
               return { server: s.name, quality: s.quality || 'auto', file_name: s.file_name || undefined, file_size: s.file_size || undefined };
             }
             // Check direct host mapping
@@ -699,6 +774,8 @@ export async function handlePrimeSrcRequest(request: Request, _env: Env): Promis
         serverCount: servers.length,
         playableSources: playable.length,
         hasTurnstileToken: !!turnstileToken,
+        hasTurnstileHttpSolver: hasCachedSession('primesrc'),
+        turnstileSessions: getSessionCacheSize(),
         duration_ms: Date.now() - start,
         timestamp: new Date().toISOString(),
       }, 200); // Always 200 — caller inspects success/sources, not status code
