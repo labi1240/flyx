@@ -18,7 +18,7 @@
 
 import { createLogger } from './logger';
 import { CORS_HEADERS } from './cors';
-import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize, TARGETS } from './turnstile-solver';
+import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize, getSolverStats, TARGETS } from './turnstile-solver';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
 
@@ -250,15 +250,19 @@ export async function handleVideasyRequest(
     }
   }
 
-  // Health check
+  // Health check + Turnstile stats
   if (path === '/videasy/health') {
     if (Date.now() - poolLastCleanup > 300_000) cleanPool();
+    const solverStats = getSolverStats();
     return new Response(JSON.stringify({
       status: 'ok',
       endpoints: API_ENDPOINTS.length,
       poolSize: sessionPool.length,
-      turnstileSessions: getSessionCacheSize(),
-      hasTurnstileSession: hasCachedSession('videasy'),
+      turnstile: {
+        sessions: getSessionCacheSize(),
+        hasCachedSession: hasCachedSession('videasy'),
+        stats: solverStats,
+      },
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
