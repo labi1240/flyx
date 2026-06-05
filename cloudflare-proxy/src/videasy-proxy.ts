@@ -445,7 +445,9 @@ export async function handleVideasyRequest(
     // Worker tries to fetch hex directly — may work if CF relaxes IP blocks.
     // Falls back to returning direct URL for client to fetch from browser IP.
     const apiParams = buildApiParams(extractParams);
-    const apiUrl = `${VIDEOASY_API}/cdn/sources-with-title?${apiParams.toString()}`;
+    // TV shows use /mb-flix, movies use /cdn
+    const apiPath = type === 'tv' ? '/mb-flix/sources-with-title' : '/cdn/sources-with-title';
+    const apiUrl = `${VIDEOASY_API}${apiPath}?${apiParams.toString()}`;
 
     // Try direct fetch from Worker
     try {
