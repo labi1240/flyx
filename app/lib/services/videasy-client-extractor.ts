@@ -212,21 +212,16 @@ export async function extractVideasyClient(
   const extensionInstalled = !!(window as any).__FLYX_EXTENSION__?.installed;
 
   let hexData: string;
+  // Worker FIRST (fast ~2s), extension as fallback (slow ~25s)
   try {
-    if (extensionInstalled) {
-      console.log('[Videasy] Extension detected — using browser-based extraction');
-      hexData = await extractViaExtension(tmdbId, type, title, season, episode);
-    } else {
-      console.log('[Videasy] No extension — using CF Worker fallback');
-      hexData = await extractViaWorker(tmdbId, type, title, season, episode, year);
-    }
+    console.log('[Videasy] Trying CF Worker first...');
+    hexData = await extractViaWorker(tmdbId, type, title, season, episode, year);
   } catch (e) {
-    console.warn('[Videasy] Extraction failed:', e instanceof Error ? e.message : e);
-    // If extension path failed, try CF Worker as fallback
+    console.warn('[Videasy] Worker failed:', e instanceof Error ? e.message : e);
     if (extensionInstalled) {
-      console.log('[Videasy] Extension path failed, trying CF Worker fallback...');
+      console.log('[Videasy] Trying extension fallback...');
       try {
-        hexData = await extractViaWorker(tmdbId, type, title, season, episode, year);
+        hexData = await extractViaExtension(tmdbId, type, title, season, episode);
       } catch (e2) {
         console.error('[Videasy] Both paths failed');
         return [];
