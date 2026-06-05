@@ -142,3 +142,30 @@ results-*.json
 working-*.json
 rpi-proxy/server.js
 rpi-proxy/dlhd-auth-v*.js
+
+# Playwright browser profile
+.pw-hdr-profile/
+
+# StreamNinja crack/reverse-engineering
+crack/
+services/streamninja-decrypt.mjs
+bytecode_dump.json
+cipher_analysis.json
+cipher_data.json
+vm_trace.json
+streamninja_pair.json
+xxtea_pair.json
+xxtea_small_pair.json
+dec_bytes.bin
+decoded_bytecode.bin
+enc_bytes.bin
+inner_bytecode.bin
+interpreter_func.js
+j_func.txt
+real_vm_bytecode.bin
+real_vm_bytecode2.bin
+real_vm_bytecode3.bin
+real_vm_bytecode_final.bin
+real_vm_final.bin
+ref_keystream.bin
+ref_nonce.bin

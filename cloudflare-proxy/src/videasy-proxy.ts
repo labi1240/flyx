@@ -275,6 +275,38 @@ export async function handleVideasyRequest(
     }
   }
 
+  // Proxy fetch for Videasy API (adds CORS so browser doesn't need preflight)
+  if (path === '/videasy/fetch' && request.method === 'POST') {
+    try {
+      const body = await request.json() as { url?: string; headers?: Record<string, string> };
+      if (!body.url) {
+        return new Response(JSON.stringify({ error: 'url required' }), {
+          status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        });
+      }
+      // Only use simple headers (no x-app-id) to avoid CORS preflight issues upstream
+      const simpleHeaders: Record<string, string> = {};
+      if (body.headers) {
+        for (const k of ['User-Agent', 'Origin', 'Referer', 'Accept', 'Accept-Language']) {
+          if (body.headers[k]) simpleHeaders[k] = body.headers[k];
+        }
+      }
+      const resp = await fetch(body.url, { headers: simpleHeaders, signal: AbortSignal.timeout(15000) });
+      const text = await resp.text();
+      return new Response(text, {
+        status: resp.status,
+        headers: {
+          'Content-Type': resp.headers.get('content-type') || 'text/plain',
+          ...CORS_HEADERS,
+        },
+      });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 502, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      });
+    }
+  }
+
   // Decrypt hex data → return m3u8 URLs
   if (path === '/videasy/decrypt' && request.method === 'POST') {
     try {

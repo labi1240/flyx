@@ -151,7 +151,11 @@
       "Bash(pkill -f \"node.*9876\")",
       "Bash(kill %1 %2)",
       "Bash(git ls-files *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git reset *)",
+      "Bash(git commit -m 'Videasy bypass: pure Worker-side m3u8 extraction via browser IP fetch + WASM decrypt *)",
+      "Bash(git commit -m 'Fix: use simple headers to avoid CORS preflight on Videasy direct fetch *)"
     ]
   }
 }

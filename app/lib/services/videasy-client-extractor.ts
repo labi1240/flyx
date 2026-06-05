@@ -118,16 +118,24 @@ async function extractViaWorker(
     return data.hexData;
   }
 
-  // Path 2: Worker returned directUrl — fetch hex from Videasy using browser's IP
+  // Path 2: Worker returned directUrl — fetch from browser using simple headers only
+  // (NO x-app-id — it triggers CORS preflight which Videasy's API rejects)
   if (data.directUrl && data.apiHeaders) {
-    console.log('[Videasy] Fetching hex from Videasy directly (browser IP)...');
+    console.log('[Videasy] Fetching hex from browser (simple headers, no CORS preflight)...');
+    // Only use simple headers to avoid CORS preflight
+    const simpleHeaders: Record<string, string> = {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+    if (data.apiHeaders['User-Agent']) simpleHeaders['User-Agent'] = data.apiHeaders['User-Agent'];
+
     const hexRes = await fetch(data.directUrl, {
-      headers: data.apiHeaders,
+      headers: simpleHeaders,
       signal: AbortSignal.timeout(15000),
+      mode: 'cors', // Browser will send Origin automatically
     });
 
     if (!hexRes.ok) {
-      throw new Error(`Videasy direct fetch failed: HTTP ${hexRes.status}`);
+      throw new Error(`Videasy direct fetch: HTTP ${hexRes.status}`);
     }
 
     const hexData = await hexRes.text();
