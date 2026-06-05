@@ -442,76 +442,50 @@ export async function handleVideasyRequest(
       }
     }
 
-    // Call local encrypt service to get proper Turnstile bodies, then solve + call API
-    try {
-      // Step 1: Get encrypted body from local service (runs in Node.js sandbox with real encryptor)
-      const localService = 'http://localhost:9878';
-      const encResp = await fetch(`${localService}/encrypt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telemetry: {
-            nLmLH8: null, kvBbg6: [[500, 300, Date.now(), 0]],
-            BBaR5: Math.floor(Date.now() / 1000), ZKsB8: Date.now(),
-            VHaB4: { DgPao4: SITEKEY, XIHgh8: 'mlf2t', rmMM1: '', Sldu8: 'invisible', WRey9: 1, jATFz8: Math.floor(Math.random() * 1e6) },
-            hFYjC3: Math.floor(Date.now() / 1000),
-          }
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (encResp.ok) {
-        const { encryptedBody } = await encResp.json() as any;
-        if (encryptedBody) {
-          // Step 2: Send flow request through api.videasy.net
-          const cRay = crypto.randomUUID?.()?.replace(/-/g, '').substring(0, 16) ||
-            'a07' + Math.random().toString(16).substring(2, 15);
-          const ft = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
-            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') +
-            '-' + Math.floor(Date.now() / 1000) + '-1.2.1.1-' +
-            btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(22))))
-            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-          const fp = `https://api.videasy.net/cdn-cgi/challenge-platform/h/g/flow/ov1/${FLOW_KEY}/${cRay}/${ft}`;
-          const flowResp = await fetch(fp, {
-            method: 'POST',
-            headers: { 'User-Agent': UA, 'Content-Type': 'text/plain;charset=UTF-8', 'Accept': '*/*' },
-            body: encryptedBody,
-            signal: AbortSignal.timeout(5000),
-          });
-
-          // Check for cf_clearance cookie
-          const setCookie = flowResp.headers.get('set-cookie') || '';
-          const cfMatch = setCookie.match(/cf_clearance=([^;]+)/);
-          if (cfMatch) {
-            // Retry API with cookie
-            const apiParams = buildApiParams(extractParams);
-            const apiUrl = `${VIDEOASY_API}/cdn/sources-with-title?${apiParams.toString()}`;
-            const apiResp = await fetch(apiUrl, {
-              headers: { ...API_HEADERS, 'Cookie': `cf_clearance=${cfMatch[1]}` },
-              signal: AbortSignal.timeout(ENDPOINT_TIMEOUT_MS),
-            });
-            if (apiResp.ok) {
-              const text = await apiResp.text();
-              if (/^[0-9a-fA-F]+$/.test(text.trim())) {
-                return new Response(JSON.stringify({
-                  success: true, hexData: text, provider: 'videasy', source: 'turnstile-solved',
-                }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      logger.warn('Local encrypt service not available', (e as Error).message);
-    }
-
-    // Fallback: return direct URL for client browser to call
+    // Worker tries to fetch hex directly — may work if CF relaxes IP blocks.
+    // Falls back to returning direct URL for client to fetch from browser IP.
     const apiParams = buildApiParams(extractParams);
     const apiUrl = `${VIDEOASY_API}/cdn/sources-with-title?${apiParams.toString()}`;
+
+    // Try direct fetch from Worker
+    try {
+      const directResp = await fetch(apiUrl, {
+        headers: API_HEADERS,
+        signal: AbortSignal.timeout(ENDPOINT_TIMEOUT_MS),
+      });
+      if (directResp.ok) {
+        const text = await directResp.text();
+        if (/^[0-9a-fA-F]+$/.test(text.trim())) {
+          // Worker got hex directly — decrypt and return m3u8
+          try {
+            const { decryptVideasyPayload, getWasm } = await import('./videasy-crypto');
+            await getWasm({ wasmUrls: ['https://tv.vynx.cc/videasy.bin'] });
+            const tmdbIdFloat = parseFloat(tmdbId);
+            const decrypted = await decryptVideasyPayload(text, tmdbIdFloat);
+            const sources = Array.isArray(decrypted) ? decrypted : (decrypted?.sources || []);
+            const m3u8Url = sources[0]?.url || sources[0]?.stream || null;
+
+            return new Response(JSON.stringify({
+              success: true, hexData: text, m3u8Url,
+              provider: 'videasy', source: 'worker-direct',
+              sources: sources.slice(0, 5).map((s: any) => ({ quality: s.quality || s.label, url: s.url || s.stream })),
+            }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+          } catch { /* decrypt failed, return hex */ }
+        }
+        return new Response(JSON.stringify({ success: true, hexData: text, provider: 'videasy', source: 'worker-direct' }), {
+          status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        });
+      }
+    } catch { /* Worker can't reach API — fall through */ }
+
+    // Worker blocked — return URL for browser to fetch (simple headers only for CORS)
     return new Response(JSON.stringify({
-      success: true, provider: 'videasy', source: 'direct-browser',
-      directUrl: apiUrl, apiHeaders: API_HEADERS,
+      success: true, provider: 'videasy', source: 'browser-fetch',
+      directUrl: apiUrl,
+      apiHeaders: {
+        'User-Agent': API_HEADERS['User-Agent'],
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
     }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 
