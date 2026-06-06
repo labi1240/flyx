@@ -5,10 +5,13 @@
  * and returns it to the caller. WASM + AES decryption happens client-side.
  *
  * Extraction priority:
- *   1. Authenticated session → API call (~2-5s)
- *   2. Session pool (contributed sessions, ~1-3s if pool has sessions)
- *   3. Direct API call (no auth, works for movies on /cdn/sources-with-title)
- *   4. Return directUrl for browser fetch (last resort, ~5-10s)
+ *   1. Session pool (extension-contributed cf_clearance, ~1-3s)
+ *   2. Direct API call (no auth, works for movies on /cdn/sources-with-title)
+ *   3. Return directUrl for browser fetch (last resort, ~5-10s)
+ *
+ * NOTE: CF Workers cannot reach challenges.cloudflare.com (403 from own infra).
+ * The Turnstile HTTP solver works from non-Cloudflare IPs but not from Workers.
+ * Session pool is the primary auth path for the Worker.
  *
  * Routes:
  *   GET  /videasy/extract?tmdbId=X&type=movie|tv&title=Y&...
@@ -456,30 +459,10 @@ export async function handleVideasyRequest(
 
     if (Date.now() - poolLastCleanup > 300_000) cleanPool();
 
-    // ── PRIMARY PATH: Turnstile HTTP solver (pure Worker, no browser) ──
-    // Solves the Turnstile challenge via HTTP, gets cf_clearance, calls API directly.
-    console.log('[Videasy] Trying Turnstile HTTP solver first...');
-    const turnstileResult = await fetchWithTurnstile(extractParams);
-    if (turnstileResult) {
-      logger.info('Videasy extract OK (Turnstile HTTP solver)', {
-        endpoint: turnstileResult.endpoint,
-        hexLen: turnstileResult.hexData.length,
-      });
-      return new Response(JSON.stringify({
-        success: true,
-        hexData: turnstileResult.hexData,
-        provider: 'videasy',
-        endpoint: turnstileResult.endpoint,
-        sessionSource: 'turnstile-http',
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-      });
-    }
-
-    // ── FALLBACK 1: Session pool (extension-contributed sessions) ──
-    // Try up to 3 pooled sessions
-    console.log('[Videasy] Turnstile solver failed, trying session pool...');
+    // ── PRIMARY PATH: Session pool (extension-contributed cf_clearance) ──
+    // Extension users solve Turnstile in real browsers → contribute tokens → pool.
+    // CF Workers cannot reach challenges.cloudflare.com directly (403 from own infra).
+    console.log('[Videasy] Trying session pool...');
     const maxAttempts = Math.min(sessionPool.length, 3);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const session = getFromPool();
@@ -516,7 +499,7 @@ export async function handleVideasyRequest(
       }
     }
 
-    // ── FALLBACK 2: Direct fetch from Worker (no session, no Turnstile) ──
+    // ── FALLBACK 1: Direct fetch from Worker (no session, no Turnstile) ──
     // Some endpoints don't require auth at all. Try raw API access.
     const apiParams = buildApiParams(extractParams);
     // TV shows use /mb-flix, movies use /cdn
