@@ -79,6 +79,13 @@ PROTECTION_MODE = "none"
 # wrangler secret put RPI_PROXY_URL       # Your RPi proxy URL (e.g., https://xxx.trycloudflare.com)
 # wrangler secret put RPI_PROXY_KEY       # Your RPi proxy API key
 #
+# TURNSTILE SOLVER (OVH VPS — solves Cloudflare Turnstile challenges via pure HTTP)
+# Deploy turnstile-solver-service/server.js on the OVH VPS (15.204.204.58)
+# Cloudflare Workers cannot reach challenges.cloudflare.com directly
+# The OVH VPS solver handles all Turnstile challenge solving
+# wrangler secret put TURNSTILE_SOLVER_URL   # http://15.204.204.58:3030
+# wrangler secret put TURNSTILE_SOLVER_TOKEN # flyx-turnstile-2026
+
 # HETZNER VPS PROXY (for PPV.to streams - poocloud.in)
 # Deploy hetzner-proxy/server.js on your Hetzner VPS
 # Hetzner IPs are not blocked by poocloud.in (unlike Cloudflare/AWS)

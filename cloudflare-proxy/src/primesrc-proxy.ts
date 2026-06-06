@@ -17,7 +17,7 @@
  */
 
 import { createLogger, type LogLevel } from './logger';
-import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize } from './turnstile-solver';
+import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCacheSize } from './turnstile-client';
 
 export interface Env {
   LOG_LEVEL?: string;

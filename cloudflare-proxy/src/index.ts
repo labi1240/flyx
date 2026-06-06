@@ -45,6 +45,7 @@ import { handleUFreeTVRequest } from './ufreetv-proxy';
 import { handleGlobeTVRequest } from './globetv-proxy';
 import { handleStreamNinjaRequest } from './streamninja-proxy';
 import { runHealthChecks } from './hexa-monitor';
+import { configureVpsSolver } from './turnstile-client';
 import { createLogger, type LogLevel } from './logger';
 import { incrementMetric } from './metrics';
 import { corsPreflightResponse } from './cors';
@@ -486,6 +487,9 @@ export default {
     const path = url.pathname;
     const logLevel = (env.LOG_LEVEL || 'debug') as LogLevel;
     const logger = createLogger(request, logLevel);
+
+    // Configure VPS Turnstile solver (lazy init — only on first request)
+    configureVpsSolver(env.TURNSTILE_SOLVER_URL, env.TURNSTILE_SOLVER_TOKEN);
 
     incrementMetric('requests');
 

@@ -8,6 +8,8 @@ export interface Env {
   TMDB_API_KEY?: string;
   HETZNER_PROXY_URL?: string;
   HETZNER_PROXY_KEY?: string;
+  TURNSTILE_SOLVER_URL?: string;
+  TURNSTILE_SOLVER_TOKEN?: string;
   ALLOWED_ORIGINS?: string;
   SIGNING_SECRET?: string;
   NONCE_KV?: KVNamespace;
