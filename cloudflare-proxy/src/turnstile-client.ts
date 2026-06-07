@@ -171,7 +171,7 @@ export async function getCfClearance(
     const url = `${vpsUrl}/solve?${params.toString()}`;
     const resp = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!resp.ok) {
