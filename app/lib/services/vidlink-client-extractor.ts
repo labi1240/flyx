@@ -35,19 +35,8 @@ let wasmBridge: any = null;
 
 async function loadWasmBridge(): Promise<any> {
   if (wasmBridge) return wasmBridge;
-
-  // Dynamic fetch of the bridge script (works on both Worker and browser)
-  const resp = await fetch(`${VIDLINK_BASE}/_next/static/chunks/pages/_app-*.js`.replace('*', ''), {
-    headers: { 'User-Agent': UA },
-  });
-
-  // Actually, vidlink.pro serves the bridge differently. Let's inline a minimal version.
-  // The key thing is: the Go WASM runtime (wasm_exec.js pattern) with fs stubs.
-  // We construct it programmatically.
-
-  const goRuntime = buildGoRuntime();
-  wasmBridge = goRuntime;
-  return goRuntime;
+  wasmBridge = buildGoRuntime();
+  return wasmBridge;
 }
 
 /**
