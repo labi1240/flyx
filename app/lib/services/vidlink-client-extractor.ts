@@ -91,7 +91,7 @@ function buildGoRuntime(): any {
       this.exited = false;
       this.importObject = {
         gojs: {
-          'runtime.wasmExit': (code: number) => { this.exited = true; },
+          'runtime.wasmExit': (_code: number) => { this.exited = true; },
           'runtime.wasmWrite': (fd: number, p: number, n: number) => {
             if (fd === 1 || fd === 2) {
               const mem = this._inst.exports.mem as WebAssembly.Memory;
