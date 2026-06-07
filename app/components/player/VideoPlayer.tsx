@@ -682,7 +682,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
 
     try {
-      // Videasy → VidLink: browser-direct extraction via WASM token generation
+      // Videasy → VidLink: browser-direct WASM extraction
       if (providerName === 'videasy') {
         console.log(`[VideoPlayer] VidLink: browser-direct extraction`);
         const { extractVidLinkClient } = await import('@/app/lib/services/vidlink-client-extractor');
@@ -694,9 +694,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         );
         if (sources.length > 0) {
           setSourcesCache(prev => ({ ...prev, videasy: sources }));
-          if (providerName === provider) {
-            setAvailableSources(sources);
-          }
+          if (providerName === provider) setAvailableSources(sources);
           return sources;
         }
         throw new Error('No VidLink sources available');
