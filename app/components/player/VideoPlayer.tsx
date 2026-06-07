@@ -1998,7 +1998,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
     // The SW (residential-ip-sw.js) strips Referer and adds CORS headers.
     // Skip Videasy CDN — it has CORS headers and doesn't need SW
-    const isVideasyCdn = streamUrl.includes('cfw57.workers.dev') || provider === 'videasy';
+    const isVideasyCdn = streamUrl.includes('cfw57.workers.dev');
     const isFlixerCdn = !isVideasyCdn && (
       streamUrl.includes('.workers.dev') ||
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||

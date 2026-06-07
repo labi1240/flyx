@@ -196,7 +196,8 @@
       "PowerShell(curl.exe -s \"http://15.204.204.58:3030/solve?target=videasy&token=flyx-turnstile-2026\" --connect-timeout 35 --max-time 40 2>&1)",
       "PowerShell(curl.exe -s \"http://15.204.204.58:3030/health?token=flyx-turnstile-2026\" 2>&1 | python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(l\\) for l in d.get\\('recentLogs',[]\\)]\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('success:', d['success']\\); print\\('hexData len:', len\\(d.get\\('hexData',''\\)\\)\\); print\\('source:', d.get\\('sessionSource','unknown'\\)\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(gh run *)"
     ]
   }
 }
