@@ -235,8 +235,8 @@ function buildGoRuntime(): any {
       try {
         const run = instance.exports.run as (argc: number, argv: number) => void;
         run(0, 0);
-      } catch (_e) {
-        // Go program exits by calling runtime.wasmExit
+      } catch {
+        // Go program exits by calling runtime.wasmExit (intentional empty catch)
       }
     }
   };
