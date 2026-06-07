@@ -234,10 +234,8 @@ function buildGoRuntime(): any {
       // Go WASM main — runs in background
       try {
         const run = instance.exports.run as (argc: number, argv: number) => void;
-        const mem = instance.exports.mem as WebAssembly.Memory;
-        // Set up environment
         run(0, 0);
-      } catch (e) {
+      } catch (_e) {
         // Go program exits by calling runtime.wasmExit
       }
     }
