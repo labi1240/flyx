@@ -5,15 +5,15 @@
  *
  * PRIMARY PATH (extension installed):
  *   1. Send extraction request to extension via postMessage
- *   2. Extension SW opens player.videasy.net in a real background tab
+ *   2. Extension SW opens player.videasy.to in a real background tab
  *   3. Invisible Turnstile solves automatically (real browser)
- *   4. Page authenticates → fetches hex from api.videasy.net
+ *   4. Page authenticates → fetches hex from api.videasy.to
  *   5. inject.js intercepts hex → relays to SW → relays back to us
  *   6. We run WASM+AES decrypt on the hex
  *
  * FALLBACK PATH (no extension):
  *   1. Fetch hex from CF Worker /videasy/extract
- *   2. CF Worker calls api.videasy.net directly (may fail without session)
+ *   2. CF Worker calls api.videasy.to directly (may fail without session)
  *   3. WASM+AES decrypt
  *
  * The WASM + AES decryption pipeline is shared via videasy-crypto.ts.
@@ -182,7 +182,7 @@ async function decryptAndMap(hexData: string, tmdbId: string): Promise<VideasySo
       title: s.title || `Videasy ${s.quality || 'auto'}`,
       url: getVideasyStreamProxyUrl(s.url),
       type: (s.type || 'hls') as 'hls' | 'mp4',
-      referer: s.referer || 'https://player.videasy.net/',
+      referer: s.referer || 'https://player.videasy.to/',
       requiresSegmentProxy: false,
       status: 'working' as const,
       language: s.language || s.lang || 'en',

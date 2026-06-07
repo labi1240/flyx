@@ -11,7 +11,7 @@
  * AD-FREE CATEGORY:
  *   - DOG    → vidsrc.xyz/embed/       (redirects to vsembed.ru)
  *   - CAT    → vidfast.pro/            (embed.su mirror)
- *   - RABBIT → player.videasy.net/     (videasy/binge player)
+ *   - RABBIT → player.videasy.to/     (videasy/binge player)
  *   - DOVE   → player.autoembed.cc/embed/ (autoembed)
  *   - GEESE  → vidsrc.cc/v2/embed/     (vidsrc v2)
  * 
@@ -78,10 +78,10 @@ const HEXA_SERVERS: HexaServer[] = [
   {
     id: 'binge',
     title: 'RABBIT',
-    baseUrl: 'https://player.videasy.net/',
+    baseUrl: 'https://player.videasy.to/',
     category: 'ad-free',
-    buildMovieUrl: (id) => `https://player.videasy.net/movie/${id}`,
-    buildTvUrl: (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
+    buildMovieUrl: (id) => `https://player.videasy.to/movie/${id}`,
+    buildTvUrl: (id, s, e) => `https://player.videasy.to/tv/${id}/${s}/${e}`,
   },
   {
     id: 'nl',

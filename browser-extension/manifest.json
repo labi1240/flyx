@@ -27,7 +27,7 @@
     "https://*.hexa.su/*",
     "https://flixer.su/*",
     "https://*.flixer.su/*",
-    "https://player.videasy.net/*",
+    "https://player.videasy.to/*",
     "https://*.megaup.*/*",
     "https://*.hub26link.*/*",
     "https://*.app28base.*/*",
@@ -67,7 +67,7 @@
         "https://*.vynx.cc/*",
         "http://localhost:3000/*",
         "http://localhost:3001/*",
-        "https://player.videasy.net/*"
+        "https://player.videasy.to/*"
       ],
       "js": ["inject.js"],
       "run_at": "document_start",

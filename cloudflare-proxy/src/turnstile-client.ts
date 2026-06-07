@@ -39,8 +39,8 @@ export const TARGETS: Record<string, TurnstileTarget> = {
   videasy: {
     name: 'Videasy',
     sitekey: '0x4AAAAAADerxS_C3ByUbYxH',
-    origin: 'https://player.videasy.net',
-    referer: 'https://player.videasy.net/',
+    origin: 'https://player.videasy.to',
+    referer: 'https://player.videasy.to/',
     mode: 'mlf2t',
   },
   primesrc: {

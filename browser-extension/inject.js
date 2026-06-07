@@ -8,10 +8,10 @@
  * DLHD extraction is delegated to the SW (via bridge.js).
  *
  * VIDEASY (June 2026): Videasy now requires Cloudflare Turnstile → session
- * auth. The extension opens player.videasy.net in a real background tab
+ * auth. The extension opens player.videasy.to in a real background tab
  * (NOT an iframe/embed). Invisible Turnstile solves automatically in a real
  * browser. We intercept the session cookie from POST /auth/session and
- * forward it to the CF Worker so it can call api.videasy.net on our behalf.
+ * forward it to the CF Worker so it can call api.videasy.to on our behalf.
  *
  * VERSION: 3.2.0
  */
@@ -22,7 +22,7 @@
   var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Videasy Session Capture (runs on player.videasy.net)
+  // Videasy Session Capture (runs on player.videasy.to)
   // ═══════════════════════════════════════════════════════════════════════════
 
   var IS_VIDEASY = false;

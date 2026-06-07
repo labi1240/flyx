@@ -25,12 +25,12 @@ import { getCfClearance, invalidateCfClearance, hasCachedSession, getSessionCach
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
 
-const VIDEOASY_API = 'https://api.videasy.net';
+const VIDEOASY_API = 'https://api.videasy.to';
 const SESSION_MAX_AGE_MS = 45 * 60 * 1000; // 45 min — evict before natural expiry
 
 const API_HEADERS: Record<string, string> = {
-  'Origin': 'https://player.videasy.net',
-  'Referer': 'https://player.videasy.net/',
+  'Origin': 'https://player.videasy.to',
+  'Referer': 'https://player.videasy.to/',
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
   'x-app-id': 'videasy',
 };
@@ -38,7 +38,17 @@ const API_HEADERS: Record<string, string> = {
 const API_ENDPOINTS = [
   '/cdn/sources-with-title',
   '/mb-flix/sources-with-title',
+  '/1movies/sources-with-title',
+  '/moviebox/sources-with-title',
+  '/myflixerzupcloud/sources-with-title',
+  '/m4uhd/sources-with-title',
+  '/vidsrc/sources-with-title',
+  '/flixer/sources-with-title',
 ];
+
+// /downloader2 uses a different parameter format (tmdbId, type, title, season, episode)
+// — must be handled separately, not through fetchVideasyApi()
+const DOWNLOADER2_PATH = '/downloader2/sources-with-title';
 
 const ENDPOINT_TIMEOUT_MS = 15_000;
 
@@ -499,6 +509,29 @@ export async function handleVideasyRequest(
       }
     }
 
+    // ── SECONDARY PATH: VPS Turnstile solver (cf_clearance from OVH VPS) ──
+    // The VPS solves Cloudflare Turnstile challenges from a non-Cloudflare IP.
+    // We get the cf_clearance cookie and use it to call api.videasy.net.
+    console.log('[Videasy] Trying VPS Turnstile solver...');
+    try {
+      const turnstileResult = await fetchWithTurnstile(extractParams);
+      if (turnstileResult) {
+        logger.info('Videasy extract OK (turnstile)', { endpoint: turnstileResult.endpoint, hexLen: turnstileResult.hexData.length });
+        return new Response(JSON.stringify({
+          success: true,
+          hexData: turnstileResult.hexData,
+          provider: 'videasy',
+          endpoint: turnstileResult.endpoint,
+          sessionSource: 'turnstile',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        });
+      }
+    } catch (tsErr) {
+      logger.error('Videasy turnstile error', tsErr as Error);
+    }
+
     // ── FALLBACK 1: Direct fetch from Worker (no session, no Turnstile) ──
     // Some endpoints don't require auth at all. Try raw API access.
     const apiParams = buildApiParams(extractParams);
@@ -536,6 +569,44 @@ export async function handleVideasyRequest(
         });
       }
     } catch { /* Worker can't reach API — fall through */ }
+
+    // ── FALLBACK 2: /downloader2 endpoint (simpler params, no auth) ──
+    // Uses: tmdbId, type, title, season, episode (different from standard params)
+    try {
+      const dl2Params = new URLSearchParams({
+        tmdbId: extractParams.tmdbId,
+        type: extractParams.type,
+        title: extractParams.title,
+        season: extractParams.season || '0',
+        episode: extractParams.episode || '0',
+      });
+      const dl2Url = `${VIDEOASY_API}${DOWNLOADER2_PATH}?${dl2Params.toString()}`;
+      const dl2Resp = await fetch(dl2Url, {
+        headers: API_HEADERS,
+        signal: AbortSignal.timeout(ENDPOINT_TIMEOUT_MS),
+      });
+      if (dl2Resp.ok) {
+        const text = await dl2Resp.text();
+        if (/^[0-9a-fA-F]+$/.test(text.trim())) {
+          try {
+            const { decryptVideasyPayload, getWasm } = await import('./videasy-crypto');
+            await getWasm({ wasmUrls: ['https://tv.vynx.cc/videasy.bin'] });
+            const tmdbIdFloat = parseFloat(extractParams.tmdbId);
+            const decrypted = await decryptVideasyPayload(text, tmdbIdFloat);
+            const sources = Array.isArray(decrypted) ? decrypted : (decrypted?.sources || []);
+            const m3u8Url = sources[0]?.url || sources[0]?.stream || null;
+            return new Response(JSON.stringify({
+              success: true, hexData: text, m3u8Url,
+              provider: 'videasy', source: 'downloader2',
+              sources: sources.slice(0, 5).map((s: any) => ({ quality: s.quality || s.label, url: s.url || s.stream })),
+            }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+          } catch { /* decrypt failed, return hex */ }
+        }
+        return new Response(JSON.stringify({ success: true, hexData: text, provider: 'videasy', source: 'downloader2' }), {
+          status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        });
+      }
+    } catch { /* downloader2 also unavailable */ }
 
     // Worker blocked — return URL for browser to fetch (simple headers only for CORS)
     return new Response(JSON.stringify({

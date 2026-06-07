@@ -40,7 +40,7 @@ const PROVIDERS = {
     name: 'Videasy',
     cat: 'movies',
     rules: [
-      { f: '*://player.videasy.net/*', h: { Referer: 'https://player.videasy.net/' } },
+      { f: '*://player.videasy.to/*', h: { Referer: 'https://player.videasy.to/' } },
     ]
   },
   vidsrc: {
@@ -660,7 +660,7 @@ async function corsFetch(url, headers, timeoutMs, method, body) {
 // ── Videasy Extraction (June 2026) ──────────────────────────────────────
 //
 // Videasy now requires Cloudflare Turnstile → session auth. We solve this
-// by opening player.videasy.net in a REAL background tab (not iframe/embed).
+// by opening player.videasy.to in a REAL background tab (not iframe/embed).
 // The invisible Turnstile solves automatically in a real browser. inject.js
 // intercepts the hex from the page's API calls and relays it back here.
 
@@ -686,9 +686,9 @@ async function videasyExtract(tmdbId, type, title, season, episode) {
     // Build the player page URL and open in background tab
     var playerUrl;
     if (type === 'tv') {
-      playerUrl = 'https://player.videasy.net/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1);
+      playerUrl = 'https://player.videasy.to/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1);
     } else {
-      playerUrl = 'https://player.videasy.net/movie/' + tmdbId;
+      playerUrl = 'https://player.videasy.to/movie/' + tmdbId;
     }
 
     console.log('[Flyx SW] Opening background tab: ' + playerUrl);
@@ -901,7 +901,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
 
   // ── Videasy handlers ─────────────────────────────────────────────────
 
-  // Session captured from inject.js on player.videasy.net
+  // Session captured from inject.js on player.videasy.to
   if (msg.type === 'videasySession') {
     console.log('[Flyx SW] Videasy session captured — forwarding to pool');
     // Parse Set-Cookie to extract cookie name + value
@@ -941,7 +941,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
     return false;
   }
 
-  // Hex captured from inject.js on player.videasy.net
+  // Hex captured from inject.js on player.videasy.to
   if (msg.type === 'videasyHex') {
     console.log('[Flyx SW] Videasy hex received: ' + (msg.hexData ? msg.hexData.length : 0) + ' chars');
     incStat('videasy', 'success');

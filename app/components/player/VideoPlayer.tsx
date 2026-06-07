@@ -186,14 +186,19 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   // Providers that ALWAYS need proxying regardless of the requiresSegmentProxy flag
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
 
-  // Safety net: unproxied workers.dev / known CDN URLs → route through CF Worker
-  const needsProxy = requiresProxy ||
+  // Safety net: unproxied workers.dev / known CDN URLs → route through CF Worker.
+  // EXCEPT Videasy — its CDN (bxo.cfw57.workers.dev) has CORS headers and blocks
+  // CF Worker IPs (Cloudflare infra can't proxy other workers.dev domains).
+  const isVideasyCdn = sourceUrl.includes('cfw57.workers.dev') || providerName === 'videasy';
+  const needsProxy = !isVideasyCdn && (
+    requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
     sourceUrl.includes('frostcomet') ||
     sourceUrl.includes('thunderleaf') ||
     sourceUrl.includes('skyember') ||
     sourceUrl.includes('nightbreeze') ||
-    sourceUrl.includes('wind.');
+    sourceUrl.includes('wind.')
+  );
   if (needsProxy) {
     const baseUrl = (process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL || 'https://media-proxy.vynx-3b3.workers.dev/stream').replace(/\/stream\/?$/, '');
     console.log('[applyStreamProxy] Wrapping unproxied CDN URL:', sourceUrl.substring(0, 80));
@@ -1992,9 +1997,13 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     // Wait for Service Worker before loading Flixer CDN URLs.
     // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
     // The SW (residential-ip-sw.js) strips Referer and adds CORS headers.
-    const isFlixerCdn = streamUrl.includes('.workers.dev') ||
+    // Skip Videasy CDN — it has CORS headers and doesn't need SW
+    const isVideasyCdn = streamUrl.includes('cfw57.workers.dev') || provider === 'videasy';
+    const isFlixerCdn = !isVideasyCdn && (
+      streamUrl.includes('.workers.dev') ||
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
-      streamUrl.includes('skyember') || streamUrl.includes('nightbreeze');
+      streamUrl.includes('skyember') || streamUrl.includes('nightbreeze')
+    );
 
     // NOTE: app/layout.tsx unregisters ALL service workers on every page load
     // (residential-ip-sw.js was retired in favour of the browser extension +

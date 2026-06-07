@@ -613,17 +613,17 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
 // ─── Videasy Proxy ─────────────────────────────────────────────
 
 /**
- * Get Videasy stream proxy URL — routes through CF Worker /stream.
- * Videasy CDN (yoru.midwesteagle.com) requires Referer: https://player.videasy.net/
- * on every segment request. The browser cannot set this header, so all HLS traffic
- * goes through the CF Worker which adds the required Referer/Origin.
+ * Get Videasy stream URL.
+ *
+ * June 2026: Videasy CDN is on Cloudflare Workers (bxo.cfw57.workers.dev).
+ * CF Workers CANNOT proxy other workers.dev domains (403 from Cloudflare infra).
+ * The CDN has CORS headers (access-control-allow-origin: *) so the browser
+ * can load streams directly without a proxy.
  */
 export function getVideasyStreamProxyUrl(url: string): string {
-  const baseUrl = getFlixerProxyBaseUrl();
-  // Decode any existing percent-encoding before re-encoding to avoid
-  // double-encoding (Videasy tokens contain %3D for base64 = padding)
-  const decoded = fullyDecodeUrl(url);
-  return `${baseUrl}/stream?url=${encodeURIComponent(decoded)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.net/')}`;
+  // Return direct URL — CDN has CORS headers, browser loads it directly.
+  // Do NOT proxy through our CF Worker (Cloudflare blocks Worker→Worker requests).
+  return url;
 }
 
 // ─── BingeBox Proxy ─────────────────────────────────────────────
