@@ -682,17 +682,35 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
 
     try {
-      // Videasy: browser-direct extraction via CF Worker (primary provider)
+      // Videasy: browser-direct extraction via CF Worker + VidLink fallback
       if (providerName === 'videasy') {
         console.log(`[VideoPlayer] Videasy: browser-direct extraction`);
         const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
-        const sources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
-        if (sources.length > 0) {
-          setSourcesCache(prev => ({ ...prev, videasy: sources }));
+        const videasySources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
+
+        // Also try VidLink as an additional source backend
+        let vidlinkSources: any[] = [];
+        try {
+          console.log('[VideoPlayer] Videasy: also trying VidLink...');
+          const { extractVidLinkClient } = await import('@/app/lib/services/vidlink-client-extractor');
+          vidlinkSources = await extractVidLinkClient(
+            tmdbId,
+            mediaType as 'movie' | 'tv',
+            season,
+            episode,
+          );
+          console.log(`[VideoPlayer] VidLink returned ${vidlinkSources.length} sources`);
+        } catch (e) {
+          console.log('[VideoPlayer] VidLink extraction skipped:', (e as Error).message);
+        }
+
+        const allSources = [...videasySources, ...vidlinkSources];
+        if (allSources.length > 0) {
+          setSourcesCache(prev => ({ ...prev, videasy: allSources }));
           if (providerName === provider) {
-            setAvailableSources(sources);
+            setAvailableSources(allSources);
           }
-          return sources;
+          return allSources;
         }
         throw new Error('No Videasy sources available');
       }

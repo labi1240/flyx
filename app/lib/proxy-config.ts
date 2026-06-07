@@ -613,17 +613,15 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
 // ─── Videasy Proxy ─────────────────────────────────────────────
 
 /**
- * Get Videasy stream URL.
+ * Get Videasy/VidLink stream URL.
  *
- * June 2026: Videasy CDN is on Cloudflare Workers (bxo.cfw57.workers.dev).
- * CF Workers CANNOT proxy other workers.dev domains (403 from Cloudflare infra).
- * The CDN has CORS headers (access-control-allow-origin: *) so the browser
- * can load streams directly without a proxy.
+ * June 2026: streams come from workers.dev CDN (Videasy) or external CDNs (VidLink).
+ * CF Workers cannot proxy other workers.dev domains (403 from Cloudflare infra).
+ * Browser direct access is required — CDN may or may not allow it depending on
+ * User-Agent and origin. VidLink sources use different CDNs that may work.
  */
 export function getVideasyStreamProxyUrl(url: string): string {
-  // Return direct URL — CDN has CORS headers, browser loads it directly.
-  // Do NOT proxy through our CF Worker (Cloudflare blocks Worker→Worker requests).
-  return url;
+  return url; // Direct — browser must load the CDN directly
 }
 
 // ─── BingeBox Proxy ─────────────────────────────────────────────
