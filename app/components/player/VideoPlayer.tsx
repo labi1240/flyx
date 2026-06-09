@@ -187,9 +187,11 @@ function applyStreamProxy(sourceUrl: string, providerName: string, requiresProxy
   if (providerName === 'hianime') return getHiAnimeStreamProxyUrl(sourceUrl);
 
   // Safety net: unproxied workers.dev / known CDN URLs → route through CF Worker.
-  // EXCEPT Videasy — its CDN (bxo.cfw57.workers.dev) has CORS headers and blocks
-  // CF Worker IPs (Cloudflare infra can't proxy other workers.dev domains).
-  const isVideasyCdn = sourceUrl.includes('cfw57.workers.dev') || providerName === 'videasy';
+  // EXCEPT Videasy — its CDN (mooncarpet.site, Cloudflare-proxied) blocks CF Worker
+  // IPs at the infra level. flixer-cdn-sw.js intercepts and adds Referer + CORS.
+  const isVideasyCdn = sourceUrl.includes('cfw57.workers.dev') ||
+    sourceUrl.includes('mooncarpet.site') ||
+    providerName === 'videasy';
   const needsProxy = !isVideasyCdn && (
     requiresProxy ||
     sourceUrl.includes('.workers.dev') ||
@@ -1997,30 +1999,46 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     }
     }; // end loadStream
 
-    // Wait for Service Worker before loading Flixer CDN URLs.
-    // Flixer CDN blocks all proxy IPs — only the browser's residential IP works.
-    // The SW (residential-ip-sw.js) strips Referer and adds CORS headers.
-    // Skip Videasy CDN — it has CORS headers and doesn't need SW
-    const isVideasyCdn = streamUrl.includes('cfw57.workers.dev');
+    // Wait for Service Worker before loading CDN URLs that need it.
+    // Cloudflare-proxied CDNs (workers.dev, mooncarpet.site, etc.) block CF
+    // Worker IPs at the infrastructure level. The flixer-cdn-sw.js intercepts
+    // these requests, adds the required Referer, and injects CORS headers.
+    const isVideasyCdn = streamUrl.includes('mooncarpet.site') ||
+      streamUrl.includes('cfw57.workers.dev');
     const isFlixerCdn = !isVideasyCdn && (
       streamUrl.includes('.workers.dev') ||
       streamUrl.includes('frostcomet') || streamUrl.includes('thunderleaf') ||
       streamUrl.includes('skyember') || streamUrl.includes('nightbreeze')
     );
+    const needsCdnSw = isFlixerCdn || isVideasyCdn;
 
-    // NOTE: app/layout.tsx unregisters ALL service workers on every page load
-    // (residential-ip-sw.js was retired in favour of the browser extension +
-    // server-side header injection on media-proxy). With no controlling SW,
-    // `navigator.serviceWorker.ready` NEVER resolves — so gating loadStream on
-    // it silently hangs playback for every stream (all now flow through
-    // *.workers.dev). Only wait on the SW when the page is actually controlled
-    // by one; otherwise load immediately.
-    if (isFlixerCdn && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      // Race the SW against a timeout so a slow/dead SW can't hang playback.
-      Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((resolve) => setTimeout(resolve, 1500)),
-      ]).then(loadStream);
+    // NOTE: app/layout.tsx unregisters ALL service workers on every page load.
+    // We must re-register flixer-cdn-sw.js before loading CDN streams.
+    // Never gate on navigator.serviceWorker.ready when no SW is registered —
+    // it will NEVER resolve and hangs playback.
+    async function ensureCdnSwThenLoad() {
+      if (!('serviceWorker' in navigator)) { loadStream(); return; }
+
+      try {
+        // Register the SW if not already controlling this page
+        if (!navigator.serviceWorker.controller) {
+          console.log('[VideoPlayer] Registering flixer-cdn-sw.js...');
+          await navigator.serviceWorker.register('/flixer-cdn-sw.js', { scope: '/' });
+          // Wait for activation (skipWaiting + clients.claim in the SW speeds this up)
+          await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((resolve) => setTimeout(resolve, 2000)),
+          ]);
+          console.log('[VideoPlayer] SW ready, controller:', !!navigator.serviceWorker.controller);
+        }
+      } catch (err) {
+        console.warn('[VideoPlayer] SW registration failed:', err);
+      }
+      loadStream();
+    }
+
+    if (needsCdnSw && 'serviceWorker' in navigator) {
+      ensureCdnSwThenLoad();
     } else {
       loadStream();
     }

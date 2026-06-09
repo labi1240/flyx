@@ -613,21 +613,21 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
 // ─── Videasy Proxy ─────────────────────────────────────────────
 
 /**
- * Get Videasy stream proxy URL.
+ * Get Videasy stream URL.
  *
- * Videasy sources come from CDNs (mooncarpet.site, etc.) that:
- *   1. Require Referer: https://player.videasy.to/ (return 403 without it)
- *   2. Have NO CORS headers (browser blocks cross-origin fetches)
+ * Videasy CDN domains (mooncarpet.site, etc.) are Cloudflare-proxied and block
+ * CF Worker IPs at the infrastructure level (same as workers.dev restriction).
+ * CF Workers cannot reach them even with Referer headers.
  *
- * Routing through the CF Worker /stream proxy adds the required Referer,
- * rewrites HLS segment URLs, and adds CORS headers for browser playback.
+ * Strategy: Return raw CDN URL so the browser's residential IP handles the
+ * request directly. The flixer-cdn-sw.js Service Worker intercepts these
+ * requests and injects Referer + CORS headers for playback.
+ *
+ * When the CF Worker successfully fetches hex (pool/turnstile), it returns
+ * pre-proxied sources through /stream/ directly — those bypass this function.
  */
 export function getVideasyStreamProxyUrl(url: string): string {
-  const cfProxyUrl = process.env.NEXT_PUBLIC_CF_STREAM_PROXY_URL ||
-                     process.env.CF_STREAM_PROXY_URL ||
-                     'https://media-proxy.vynx-3b3.workers.dev/stream';
-  const baseUrl = cfProxyUrl.replace(/\/stream\/?$/, '');
-  return `${baseUrl}/stream/?url=${encodeURIComponent(url)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.to/')}`;
+  return url; // Raw CDN URL — flixer-cdn-sw.js intercepts and adds Referer + CORS
 }
 
 // ─── BingeBox Proxy ─────────────────────────────────────────────
