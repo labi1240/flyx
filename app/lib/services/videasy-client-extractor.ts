@@ -110,8 +110,17 @@ async function extractViaWorker(
     hexData?: string;
     directUrl?: string;
     apiHeaders?: Record<string, string>;
+    sources?: Array<{ quality: string; url: string; type: string; title?: string }>;
     error?: string;
   };
+
+  // Path 0: Worker returned pre-proxied sources (new flow — Worker decrypts + proxies)
+  if (data.sources && data.sources.length > 0) {
+    console.log('[Videasy] Worker returned pre-proxied sources — using directly');
+    // Return a special marker so extractVideasyClient can use sources directly
+    (data as any).__proxiedSources = data.sources;
+    return data as any;
+  }
 
   // Path 1: Worker returned hex directly (session pool)
   if (data.hexData) {
@@ -211,17 +220,18 @@ export async function extractVideasyClient(
 
   const extensionInstalled = !!(window as any).__FLYX_EXTENSION__?.installed;
 
-  let hexData: string;
   // Worker FIRST (fast ~2s), extension as fallback (slow ~25s)
+  let workerResult: any;
   try {
     console.log('[Videasy] Trying CF Worker first...');
-    hexData = await extractViaWorker(tmdbId, type, title, season, episode, year);
+    workerResult = await extractViaWorker(tmdbId, type, title, season, episode, year);
   } catch (e) {
     console.warn('[Videasy] Worker failed:', e instanceof Error ? e.message : e);
     if (extensionInstalled) {
       console.log('[Videasy] Trying extension fallback...');
       try {
-        hexData = await extractViaExtension(tmdbId, type, title, season, episode);
+        const hexData = await extractViaExtension(tmdbId, type, title, season, episode);
+        return decryptAndMap(hexData, tmdbId);
       } catch (e2) {
         console.error('[Videasy] Both paths failed');
         return [];
@@ -231,5 +241,50 @@ export async function extractVideasyClient(
     }
   }
 
-  return decryptAndMap(hexData, tmdbId);
+  // New flow: Worker returned pre-proxied sources — use directly
+  if (workerResult && workerResult.__proxiedSources) {
+    const sources: VideasySource[] = workerResult.__proxiedSources.map((s: any) => ({
+      quality: s.quality || 'auto',
+      title: s.title || `Videasy ${s.quality || 'auto'}`,
+      url: s.url, // Already proxied through Worker's /stream/
+      type: (s.type || 'hls') as 'hls' | 'mp4',
+      referer: 'https://player.videasy.to/',
+      requiresSegmentProxy: false, // Already proxied
+      status: 'working' as const,
+      language: s.language || 'en',
+      server: 'videasy',
+    }));
+    console.log(`[Videasy] Using ${sources.length} pre-proxied sources from Worker`);
+    return sources;
+  }
+
+  // Legacy flow: Worker returned hex data — decrypt locally
+  const hexData = typeof workerResult === 'string' ? workerResult : workerResult?.hexData;
+  if (hexData) {
+    return decryptAndMap(hexData, tmdbId);
+  }
+
+  // Worker returned directUrl — browser must fetch hex
+  if (workerResult?.directUrl && workerResult?.apiHeaders) {
+    console.log('[Videasy] Worker returned directUrl — fetching hex from browser...');
+    try {
+      const simpleHeaders: Record<string, string> = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      };
+      if (workerResult.apiHeaders['User-Agent']) simpleHeaders['User-Agent'] = workerResult.apiHeaders['User-Agent'];
+      const hexRes = await fetch(workerResult.directUrl, {
+        headers: simpleHeaders, signal: AbortSignal.timeout(15000), mode: 'cors',
+      });
+      if (!hexRes.ok) throw new Error(`HTTP ${hexRes.status}`);
+      const directHex = await hexRes.text();
+      if (!/^[0-9a-fA-F]+$/.test(directHex.trim())) throw new Error('Non-hex response');
+      return decryptAndMap(directHex, tmdbId);
+    } catch (e) {
+      console.warn('[Videasy] Browser fetch failed:', e instanceof Error ? e.message : e);
+      return [];
+    }
+  }
+
+  console.warn('[Videasy] No usable result from Worker');
+  return [];
 }

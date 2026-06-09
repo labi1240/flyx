@@ -118,6 +118,7 @@ function maybeProxyUrl(source: any, provider: string): string {
       source.url.includes('/hianime/') ||
       source.url.includes('/miruro/stream') ||
       source.url.includes('/stream?url=') ||
+      source.url.includes('/stream/?url=') ||
       source.url.includes('media-proxy.vynx-3b3.workers.dev')) {
     return source.url;
   }

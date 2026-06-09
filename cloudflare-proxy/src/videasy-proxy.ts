@@ -229,6 +229,40 @@ class SessionInvalidError extends Error {
 
 // ── Route Handler ────────────────────────────────────────────────────────
 
+/**
+ * Decrypt hex data and return proxied stream URLs.
+ * The CDN URLs are IP-bound to the Worker (since the Worker fetched the hex),
+ * so they must be proxied through the Worker's own /stream/ endpoint.
+ */
+async function decryptAndProxySources(
+  hexData: string,
+  tmdbId: string,
+  workerOrigin: string,
+): Promise<{ m3u8Url: string | null; proxiedSources: Array<{ quality: string; url: string; type: string }> }> {
+  const result = { m3u8Url: null as string | null, proxiedSources: [] as Array<{ quality: string; url: string; type: string }> };
+  try {
+    const { decryptVideasyPayload, getWasm } = await import('./videasy-crypto');
+    await getWasm({ wasmUrls: ['https://tv.vynx.cc/videasy.bin'] });
+    const decrypted = await decryptVideasyPayload(hexData, parseFloat(tmdbId));
+    const rawSources = Array.isArray(decrypted) ? decrypted : (decrypted?.sources || []);
+
+    for (const s of rawSources.slice(0, 8)) {
+      const rawUrl = s.url || s.stream || s.file;
+      if (!rawUrl) continue;
+      const proxiedUrl = `${workerOrigin}/stream/?url=${encodeURIComponent(rawUrl)}&source=videasy&referer=${encodeURIComponent('https://player.videasy.to/')}`;
+      result.proxiedSources.push({
+        quality: s.quality || s.label || 'auto',
+        url: proxiedUrl,
+        type: s.type || 'hls',
+      });
+    }
+    result.m3u8Url = result.proxiedSources[0]?.url || null;
+  } catch (err) {
+    console.log('[Videasy] decryptAndProxySources failed:', err instanceof Error ? err.message : err);
+  }
+  return result;
+}
+
 export async function handleVideasyRequest(
   request: Request,
   _env: unknown,
@@ -484,12 +518,15 @@ export async function handleVideasyRequest(
         session.addedAt = Date.now();
         addToPool(session);
         logger.info('Videasy extract OK (pooled session)', { endpoint, hexLen: hexData.length, poolSize: sessionPool.length });
+        // Decrypt and return proxied sources (CDN URLs are Worker-IP-bound)
+        const { proxiedSources } = await decryptAndProxySources(hexData, tmdbId, new URL(request.url).origin);
         return new Response(JSON.stringify({
           success: true,
           hexData,
           provider: 'videasy',
           endpoint,
           sessionSource: 'pool',
+          sources: proxiedSources.length > 0 ? proxiedSources : undefined,
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -517,12 +554,14 @@ export async function handleVideasyRequest(
       const turnstileResult = await fetchWithTurnstile(extractParams);
       if (turnstileResult) {
         logger.info('Videasy extract OK (turnstile)', { endpoint: turnstileResult.endpoint, hexLen: turnstileResult.hexData.length });
+        const { proxiedSources } = await decryptAndProxySources(turnstileResult.hexData, tmdbId, new URL(request.url).origin);
         return new Response(JSON.stringify({
           success: true,
           hexData: turnstileResult.hexData,
           provider: 'videasy',
           endpoint: turnstileResult.endpoint,
           sessionSource: 'turnstile',
+          sources: proxiedSources.length > 0 ? proxiedSources : undefined,
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -548,19 +587,14 @@ export async function handleVideasyRequest(
       if (directResp.ok) {
         const text = await directResp.text();
         if (/^[0-9a-fA-F]+$/.test(text.trim())) {
-          // Worker got hex directly — decrypt and return m3u8
+          // Worker got hex directly — decrypt and return proxied m3u8 sources
           try {
-            const { decryptVideasyPayload, getWasm } = await import('./videasy-crypto');
-            await getWasm({ wasmUrls: ['https://tv.vynx.cc/videasy.bin'] });
-            const tmdbIdFloat = parseFloat(tmdbId);
-            const decrypted = await decryptVideasyPayload(text, tmdbIdFloat);
-            const sources = Array.isArray(decrypted) ? decrypted : (decrypted?.sources || []);
-            const m3u8Url = sources[0]?.url || sources[0]?.stream || null;
-
+            const workerOrigin = new URL(request.url).origin;
+            const { proxiedSources } = await decryptAndProxySources(text, tmdbId, workerOrigin);
             return new Response(JSON.stringify({
-              success: true, hexData: text, m3u8Url,
+              success: true, hexData: text,
               provider: 'videasy', source: 'worker-direct',
-              sources: sources.slice(0, 5).map((s: any) => ({ quality: s.quality || s.label, url: s.url || s.stream })),
+              sources: proxiedSources.length > 0 ? proxiedSources : undefined,
             }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
           } catch { /* decrypt failed, return hex */ }
         }
@@ -589,16 +623,12 @@ export async function handleVideasyRequest(
         const text = await dl2Resp.text();
         if (/^[0-9a-fA-F]+$/.test(text.trim())) {
           try {
-            const { decryptVideasyPayload, getWasm } = await import('./videasy-crypto');
-            await getWasm({ wasmUrls: ['https://tv.vynx.cc/videasy.bin'] });
-            const tmdbIdFloat = parseFloat(extractParams.tmdbId);
-            const decrypted = await decryptVideasyPayload(text, tmdbIdFloat);
-            const sources = Array.isArray(decrypted) ? decrypted : (decrypted?.sources || []);
-            const m3u8Url = sources[0]?.url || sources[0]?.stream || null;
+            const workerOrigin = new URL(request.url).origin;
+            const { proxiedSources } = await decryptAndProxySources(text, tmdbId, workerOrigin);
             return new Response(JSON.stringify({
-              success: true, hexData: text, m3u8Url,
+              success: true, hexData: text,
               provider: 'videasy', source: 'downloader2',
-              sources: sources.slice(0, 5).map((s: any) => ({ quality: s.quality || s.label, url: s.url || s.stream })),
+              sources: proxiedSources.length > 0 ? proxiedSources : undefined,
             }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
           } catch { /* decrypt failed, return hex */ }
         }

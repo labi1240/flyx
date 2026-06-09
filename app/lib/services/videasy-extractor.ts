@@ -96,7 +96,29 @@ export async function extractVideasyStreams(
     const data = await res.json() as {
       success: boolean; hexData?: string; error?: string; endpoint?: string;
       directUrl?: string; apiHeaders?: Record<string, string>;
+      sources?: Array<{ quality: string; url: string; type: string; title?: string }>;
+      subtitles?: Array<{ label: string; url: string; language: string }>;
     };
+
+    // New: Worker decrypted hex and returned pre-proxied sources
+    if (data.sources && data.sources.length > 0) {
+      console.log(`[Videasy] Worker returned ${data.sources.length} pre-proxied sources`);
+      return {
+        success: true,
+        sources: data.sources.map((s: any) => ({
+          url: s.url,
+          quality: s.quality || 'auto',
+          type: s.type || 'hls',
+          title: s.title || `Videasy ${s.quality || 'auto'}`,
+          referer: 'https://player.videasy.to/',
+          requiresSegmentProxy: false, // Already proxied through Worker's /stream/
+          status: 'working' as const,
+          language: s.language || 'en',
+          server: 'videasy',
+        })),
+        subtitles: data.subtitles || [],
+      };
+    }
 
     // New flow: Worker returns directUrl + apiHeaders for browser-side fetch
     if (!data.hexData && data.directUrl) {
