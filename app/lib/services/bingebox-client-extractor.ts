@@ -13,7 +13,7 @@ const CF_WORKER_BASE = typeof window !== 'undefined'
 const SOURCE_PRIORITY = [
   'neon', 'yoru', 'killjoy', 'harbor', 'chamber', 'omen',
   'gekko', 'raze', 'breach', 'sage', 'aldebaran', 'oneroom',
-  'phoenix', 'fade',
+  'phoenix', 'fade', 'febbox',
 ];
 
 export interface BingeBoxSource {
