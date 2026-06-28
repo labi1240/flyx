@@ -419,6 +419,14 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   // Only after many consecutive failures do we switch to the next source.
   const consecutiveSegmentErrorsRef = useRef<number>(0);
   const MAX_CONSECUTIVE_SEGMENT_ERRORS = 8;
+  // Re-extraction recovery for token-based providers (e.g. videasy): the
+  // shegu.org stream tokens are short-lived and expire mid-playback. When a
+  // confirmed-working stream starts failing we re-extract a fresh token and
+  // resume from the saved position instead of switching provider. The count is
+  // budget-limited per tight window (loop guard) but refreshes after a long gap.
+  const reExtractCountRef = useRef<number>(0);
+  const lastReExtractAtRef = useRef<number>(0);
+  const MAX_REEXTRACTS = 5;
   // Track MEDIA_ERROR recovery attempts to detect infinite codec-recovery loops
   // (e.g. HEVC in Chrome — hls.recoverMediaError() can never succeed)
   const codecRecoveryAttemptsRef = useRef<number>(0);
@@ -1372,6 +1380,8 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     playbackStartedRef.current = false;
     consecutiveSegmentErrorsRef.current = 0;
     codecRecoveryAttemptsRef.current = 0;
+    reExtractCountRef.current = 0;
+    lastReExtractAtRef.current = 0;
     
     // Clear any previous playback start timeout
     if (playbackStartTimeoutRef.current) {
@@ -1789,6 +1799,53 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
               return false;
             };
 
+            // Token-based providers (videasy): a CONFIRMED-WORKING stream that
+            // starts failing almost always means the short-lived token expired.
+            // Re-extract the SAME provider for a fresh token and resume from the
+            // saved position, instead of switching away. Returns true on success.
+            const reExtractSameProvider = async (): Promise<boolean> => {
+              if (provider !== 'videasy') return false;
+              const now = Date.now();
+              // A long gap since the last recovery means it genuinely worked for
+              // a while (legit periodic expiry) — refresh the budget. Rapid
+              // repeats (a loop) keep climbing and hit the cap.
+              if (now - lastReExtractAtRef.current > 60000) reExtractCountRef.current = 0;
+              if (reExtractCountRef.current >= MAX_REEXTRACTS) {
+                console.warn(`[VideoPlayer] ${provider} re-extract budget exhausted — falling back`);
+                return false;
+              }
+              reExtractCountRef.current++;
+              lastReExtractAtRef.current = now;
+              console.log(`[VideoPlayer] ${provider} token likely expired — re-extracting (${reExtractCountRef.current}/${MAX_REEXTRACTS})...`);
+
+              setIsLoading(true);
+              setError(null);
+              if (video.currentTime > 0 && pendingSeekTimeRef.current === null) {
+                pendingSeekTimeRef.current = video.currentTime;
+              }
+              // Keep sourceConfirmedWorkingRef = true: the source IS known-good;
+              // a token refresh doesn't change that, and after resuming mid-movie
+              // the next fragment isn't sn 0/1 so it would never re-confirm. This
+              // lets repeated expiries keep triggering recovery (budget-limited).
+
+              try {
+                const result = await fetchFromProvider(provider);
+                if (result && result.sources.length > 0 && result.sources[0]?.url) {
+                  const idx = Math.min(currentSourceIndex, result.sources.length - 1);
+                  const fresh = result.sources[idx] || result.sources[0];
+                  setSourcesCache(prev => ({ ...prev, [provider]: result.sources }));
+                  setAvailableSources(result.sources);
+                  setCurrentSourceIndex(idx);
+                  setStreamUrl(applyStreamProxy(fresh.url, provider, fresh.requiresSegmentProxy));
+                  console.log(`[VideoPlayer] ✓ ${provider} re-extracted — resuming at ${Math.round(pendingSeekTimeRef.current ?? 0)}s`);
+                  return true;
+                }
+              } catch (e) {
+                console.warn('[VideoPlayer] re-extract failed:', e instanceof Error ? e.message : e);
+              }
+              return false;
+            };
+
             const handleFatalWithFallback = (errorLabel: string) => {
               prepareAndFallback();
               tryNextSource().then(found => {
@@ -1806,9 +1863,15 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             // or immediately for manifest-level errors.
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
               if (isManifestError) {
-                // Manifest unreachable → source is dead, switch immediately
-                console.error('[HLS] Fatal manifest error — switching source:', data.details);
-                handleFatalWithFallback('Source manifest unavailable');
+                // A working stream that now fails to (re)load its manifest is
+                // usually an expired token — re-extract before switching away.
+                if (provider === 'videasy' && sourceConfirmedWorkingRef.current) {
+                  console.warn('[HLS] Manifest error on working videasy — re-extracting (token expiry?):', data.details);
+                  reExtractSameProvider().then(ok => { if (!ok) handleFatalWithFallback('Source manifest unavailable'); });
+                } else {
+                  console.error('[HLS] Fatal manifest error — switching source:', data.details);
+                  handleFatalWithFallback('Source manifest unavailable');
+                }
               } else if (isSegmentError) {
                 // Fragment or level load failed — skip the bad segment and resume
                 consecutiveSegmentErrorsRef.current++;
@@ -1819,10 +1882,17 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 );
 
                 if (consecutiveSegmentErrorsRef.current >= MAX_CONSECUTIVE_SEGMENT_ERRORS) {
-                  // Too many consecutive failures — source is likely dead
-                  console.error('[HLS] Too many consecutive segment errors — switching source');
                   consecutiveSegmentErrorsRef.current = 0;
-                  handleFatalWithFallback('Too many segment failures');
+                  // Token-based providers: persistent segment 403s on a working
+                  // stream = expired token → re-extract before switching.
+                  if (provider === 'videasy' && sourceConfirmedWorkingRef.current) {
+                    console.warn('[HLS] Persistent segment errors on working videasy — re-extracting (token expiry?)');
+                    reExtractSameProvider().then(ok => { if (!ok) handleFatalWithFallback('Too many segment failures'); });
+                  } else {
+                    // Too many consecutive failures — source is likely dead
+                    console.error('[HLS] Too many consecutive segment errors — switching source');
+                    handleFatalWithFallback('Too many segment failures');
+                  }
                 } else {
                   // Skip the bad segment and continue
                   hls.startLoad();
