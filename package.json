@@ -11,6 +11,7 @@
     "deploy:cloudflare": "next build --webpack && opennextjs-cloudflare build --skipBuild && npx wrangler deploy --env production",
     "deploy:sync-worker": "cd cf-sync-worker && npx wrangler deploy",
     "deploy:media-proxy": "cd cloudflare-proxy && npx wrangler deploy",
+    "deploy:dlhd": "cd dlhd-extractor-worker && npx wrangler deploy",
     "deploy:workers": "npm run deploy:sync-worker && npm run deploy:media-proxy",
     "deploy:all": "npm run deploy:workers && npm run deploy:cloudflare",
     "preview:cloudflare": "next build --webpack && opennextjs-cloudflare build --skipBuild && npx wrangler dev",

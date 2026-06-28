@@ -136,7 +136,7 @@ PROTECTION_MODE = "none"
 # Then update the id below with the returned ID.
 [[kv_namespaces]]
 binding = "HEXA_CONFIG"
-id = "99c9e959656047f4a5b561063b3fe66f"
+id = "1a8b96af032549f193c863d28fc73d4d"
 
 # Production environment
 [env.production]
@@ -149,7 +149,7 @@ LOG_LEVEL = "info"
 
 [[env.production.kv_namespaces]]
 binding = "HEXA_CONFIG"
-id = "99c9e959656047f4a5b561063b3fe66f"
+id = "1a8b96af032549f193c863d28fc73d4d"
 
 [env.production.observability]
 enabled = false

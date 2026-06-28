@@ -26,7 +26,7 @@ LOG_LEVEL = "info"
 [[d1_databases]]
 binding = "SYNC_DB"
 database_name = "flyx-sync-db"
-database_id = "f8fcacb1-297c-403c-aa53-0232f018ef46"
+database_id = "c75b0826-21ba-4ac2-b6a5-57dd8dee443d"
 
 # =============================================================================
 # KV NAMESPACE - For caching sync data (optional, improves performance)
