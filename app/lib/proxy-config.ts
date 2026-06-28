@@ -627,7 +627,13 @@ export function getVIPRowSegmentProxyUrl(segmentUrl: string): string {
  * pre-proxied sources through /stream/ directly — those bypass this function.
  */
 export function getVideasyStreamProxyUrl(url: string): string {
-  return url; // Raw CDN URL — flixer-cdn-sw.js intercepts and adds Referer + CORS
+  // Videasy CDN (shegu.org etc.) is Cloudflare-proxied and requires
+  // Referer: https://player.videasy.to/ fetched from a single server IP.
+  // Browser SW can't set a cross-origin Referer and CF Workers are blocked
+  // from CF-proxied origins, so route through the VPS-side Node proxy.
+  // Idempotent: if already proxied, leave it alone.
+  if (!url || url.includes('/api/stream/videasy-proxy')) return url;
+  return `/api/stream/videasy-proxy?url=${encodeURIComponent(url)}`;
 }
 
 // ─── BingeBox Proxy ─────────────────────────────────────────────

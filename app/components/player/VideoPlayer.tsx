@@ -924,10 +924,10 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             quality: s.quality || 'auto',
             title: s.title || `Videasy ${s.quality || 'auto'}`,
             // Pre-proxy through CF Worker so segment requests carry the
-            // required Referer: https://player.videasy.net/ header.
+            // required Referer: https://player.videasy.to/ header.
             url: getVideasyStreamProxyUrl(s.url),
             type: (s.type || 'hls') as 'hls' | 'mp4',
-            referer: s.referer || 'https://player.videasy.net/',
+            referer: s.referer || 'https://player.videasy.to/',
             requiresSegmentProxy: false, // URL is already proxied through media-proxy
             status: 'working' as const,
             language: s.language || s.lang || 'en',
@@ -1151,20 +1151,25 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
           return { providerName, data: { success: true, provider: providerName }, sources };
         }
 
-        // Videasy: browser-direct extraction via CF Worker
+        // Videasy: server-side extraction via Next.js API. The VPS fetches the
+        // encrypted hex (with the videasy Referer) and decrypts it with WASM —
+        // the browser can't (CORS forces Origin + forbids a cross-origin
+        // Referer). Returned sources are already wrapped through the VPS
+        // /api/stream/videasy-proxy route (playlist + segments carry Referer).
         if (providerName === 'videasy') {
-          console.log(`[VideoPlayer] Trying videasy (browser-direct)...`);
-          try {
-            const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
-            console.log('[VideoPlayer] videasy module loaded, calling extractVideasyClient...');
-            const sources = await extractVideasyClient(tmdbId, mediaType as 'movie' | 'tv', title || '', season, episode);
-            if (sources.length === 0) throw new Error('videasy: no sources');
-            console.log(`[VideoPlayer] ✓ videasy: ${sources.length} source(s)`);
-            return { providerName: 'videasy', data: { success: true, provider: 'videasy' }, sources };
-          } catch (e) {
-            console.error('[VideoPlayer] ✗ videasy browser-direct FAILED:', e instanceof Error ? e.message : e, e instanceof Error ? e.stack : '');
-            throw e;
+          console.log('[VideoPlayer] Trying videasy (server-side)...');
+          const vParams = new URLSearchParams({ tmdbId, type: mediaType, provider: 'videasy' });
+          if (title) vParams.append('title', title);
+          if (mediaType === 'tv' && season && episode) {
+            vParams.append('season', season.toString());
+            vParams.append('episode', episode.toString());
           }
+          const res = await fetchWithTimeout(`/api/stream/extract?${vParams}`, 25000);
+          if (!res || !res.ok) throw new Error(`videasy: ${res ? res.status : 'timeout'}`);
+          const d = await res.json();
+          if (!d.success || !d.sources?.length) throw new Error('videasy: no sources');
+          console.log(`[VideoPlayer] ✓ videasy: ${d.sources.length} source(s)`);
+          return { providerName: 'videasy', data: d, sources: d.sources };
         }
 
         // BingeBox: server-side extraction via Next.js API (bypasses CF Worker IP block)
