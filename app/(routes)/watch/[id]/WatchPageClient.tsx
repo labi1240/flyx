@@ -460,15 +460,21 @@ function WatchContent() {
           let validSources: any[] = [];
 
           if (provider === 'videasy') {
-            const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
-            const clientSources = await extractVideasyClient(
-              contentId,
-              mediaType as 'movie' | 'tv',
-              title || '',
-              seasonId ? Number(seasonId) : undefined,
-              episodeId ? Number(episodeId) : undefined,
-            );
-            validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+            // Videasy MUST be extracted server-side: the browser can't set the
+            // required Referer (CORS forces Origin) so api.videasy.to 403s the
+            // browser. The API fetches the hex + decrypts server-side and returns
+            // sources already wrapped through /api/stream/videasy-proxy.
+            const params = new URLSearchParams({ tmdbId: contentId, type: mediaType, provider: 'videasy' });
+            if (title) params.append('title', title);
+            if (mediaType === 'tv' && seasonId && episodeId) {
+              params.append('season', seasonId.toString());
+              params.append('episode', episodeId.toString());
+            }
+            const response = await fetch(`/api/stream/extract?${params}`, { cache: 'no-store' });
+            const data = await response.json();
+            if (data.success && data.sources?.length > 0) {
+              validSources = data.sources.filter((s: any) => s.url && s.url.length > 0);
+            }
           } else if (provider === 'bingebox') {
             const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
             const clientSources = await extractBingeBoxClient(
@@ -594,15 +600,18 @@ function WatchContent() {
       let validSources: any[] = [];
 
       if (provider === 'videasy') {
-        const { extractVideasyClient } = await import('@/app/lib/services/videasy-client-extractor');
-        const clientSources = await extractVideasyClient(
-          contentId,
-          mediaType as 'movie' | 'tv',
-          title || '',
-          seasonId ? Number(seasonId) : undefined,
-          episodeId ? Number(episodeId) : undefined,
-        );
-        validSources = clientSources.filter((s: any) => s.url && s.url.length > 0);
+        // Server-side only (see note in the initial-load loop above).
+        const params = new URLSearchParams({ tmdbId: contentId, type: mediaType, provider: 'videasy' });
+        if (title) params.append('title', title);
+        if (mediaType === 'tv' && seasonId && episodeId) {
+          params.append('season', seasonId.toString());
+          params.append('episode', episodeId.toString());
+        }
+        const response = await fetch(`/api/stream/extract?${params}`, { cache: 'no-store' });
+        const data = await response.json();
+        if (data.success && data.sources?.length > 0) {
+          validSources = data.sources.filter((s: any) => s.url && s.url.length > 0);
+        }
       } else if (provider === 'bingebox') {
         const { extractBingeBoxClient } = await import('@/app/lib/services/bingebox-client-extractor');
         const clientSources = await extractBingeBoxClient(
