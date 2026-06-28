@@ -103,7 +103,9 @@ function Start-Flyx {
     Set-HostsEntry -IP $ip
 
     Write-Log "Building and starting Flyx..."
-    docker compose -f $ComposeFile up -d --build
+    # --env-file makes Compose read docker/.env for build-arg interpolation
+    # (${NEXT_PUBLIC_*}); without it those values never reach the client bundle.
+    docker compose --env-file $EnvFile -f $ComposeFile up -d --build
 
     Write-Log "Waiting for startup..."
     $retries = 0

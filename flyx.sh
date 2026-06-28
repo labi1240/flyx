@@ -20,8 +20,11 @@ COMPOSE_LINUX="$SCRIPT_DIR/docker-compose.linux.yml"
 DOMAIN="flyx.local"
 MARKER="# flyx-self-hosted"
 
-# On Linux, use host networking override
-COMPOSE_CMD="docker compose -f $COMPOSE_FILE"
+# Use docker/.env for BOTH build-arg interpolation (${NEXT_PUBLIC_*}) and runtime.
+# Without --env-file, Compose ignores docker/.env for build args, so values set
+# there (TMDB key, Cloudflare Worker URLs) would never reach the client bundle.
+# On Linux, use host networking override.
+COMPOSE_CMD="docker compose --env-file $ENV_FILE -f $COMPOSE_FILE"
 if [ "$(uname -s)" = "Linux" ] && [ -f "$COMPOSE_LINUX" ]; then
     COMPOSE_CMD="$COMPOSE_CMD -f $COMPOSE_LINUX"
 fi

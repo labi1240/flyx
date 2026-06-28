@@ -8,23 +8,30 @@ echo "============================================="
 echo "  Flyx 2.0 - Starting..."
 echo "============================================="
 
-# ── 1. Start the Bun proxy server ──────────────────────────────────────────
-echo "[proxy] Starting Bun proxy on :8787"
-cd /proxy && bun run server.ts &
-PROXY_PID=$!
+# ── 1. Start the Bun proxy server (optional) ────────────────────────────────
+# Set DISABLE_LOCAL_PROXY=true when all proxying is handled by Cloudflare Workers
+# (app-on-VPS mode) — the local Bun proxy is then unnecessary and skipped.
+PROXY_PID=""
+if [ "$DISABLE_LOCAL_PROXY" = "true" ]; then
+    echo "[proxy] DISABLE_LOCAL_PROXY=true — skipping local Bun proxy (using Cloudflare Workers)"
+else
+    echo "[proxy] Starting Bun proxy on :8787"
+    cd /proxy && bun run server.ts &
+    PROXY_PID=$!
 
-RETRIES=0
-while [ $RETRIES -lt 10 ]; do
-    if curl -sf http://localhost:8787/health >/dev/null 2>&1; then
-        echo "[proxy] Proxy is healthy"
-        break
+    RETRIES=0
+    while [ $RETRIES -lt 10 ]; do
+        if curl -sf http://localhost:8787/health >/dev/null 2>&1; then
+            echo "[proxy] Proxy is healthy"
+            break
+        fi
+        RETRIES=$((RETRIES + 1))
+        sleep 1
+    done
+
+    if [ $RETRIES -eq 10 ]; then
+        echo "[proxy] WARNING: Proxy health check did not pass after 10 attempts"
     fi
-    RETRIES=$((RETRIES + 1))
-    sleep 1
-done
-
-if [ $RETRIES -eq 10 ]; then
-    echo "[proxy] WARNING: Proxy health check did not pass after 10 attempts"
 fi
 
 # ── 2. Start the Next.js app ───────────────────────────────────────────────
@@ -53,7 +60,9 @@ echo "  Flyx is ready!"
 echo ""
 echo "  http://localhost       (this machine)"
 echo "  http://localhost:3000  (Next.js direct)"
-echo "  http://localhost:8787  (Proxy direct)"
+if [ -n "$PROXY_PID" ]; then
+    echo "  http://localhost:8787  (Proxy direct)"
+fi
 echo "============================================="
 echo ""
 

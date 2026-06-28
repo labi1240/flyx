@@ -10,12 +10,23 @@ const filterReleasedContent = (items) => {
 	});
 };
 
+// TMDB v4 Bearer auth requires the Read Access Token, NOT the v3 api key.
+// Prefer the v4 token; if only the v3 key is configured, fall back to ?api_key=.
+const TMDB_V4_TOKEN = process.env.TMDB_API_ACCESS_TOKEN;
+const TMDB_V3_KEY = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY;
+
 const tmdbOptions = {
 	method: 'GET',
 	headers: {
 		accept: 'application/json',
-		Authorization: `Bearer ${process.env.TMDB_API_KEY}`,
+		...(TMDB_V4_TOKEN ? { Authorization: `Bearer ${TMDB_V4_TOKEN}` } : {}),
 	},
+};
+
+// Append api_key=<v3> to a TMDB URL when no v4 token is available.
+const tmdbUrl = (url) => {
+	if (TMDB_V4_TOKEN || !TMDB_V3_KEY) return url;
+	return url + (url.includes('?') ? '&' : '?') + `api_key=${TMDB_V3_KEY}`;
 };
 
 const animeOptions = {
@@ -38,11 +49,11 @@ export async function GET(request) {
 	try {
 		switch (action) {
 			case 'getShowDetails':
-				const response = await fetch(`https://api.themoviedb.org/3/tv/${movieId}?language=en-US&append_to_response=credits`, tmdbOptions);
+				const response = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}?language=en-US&append_to_response=credits`), tmdbOptions);
 				const showData = await response.json();
 
 				// Fetch external IDs (including IMDB ID) for the show
-				const externalIdsResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`, tmdbOptions);
+				const externalIdsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`), tmdbOptions);
 				const externalIds = await externalIdsResponse.json();
 
 				// Add external IDs to the response
@@ -55,11 +66,11 @@ export async function GET(request) {
 				return NextResponse.json(enrichedShowData);
 
 			case 'getMovieDetails':
-				const movieResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?language=en-US&append_to_response=credits`, tmdbOptions);
+				const movieResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/${movieId}?language=en-US&append_to_response=credits`), tmdbOptions);
 				const movieData = await movieResponse.json();
 
 				// Fetch external IDs (including IMDB ID) for the movie
-				const movieExternalIdsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/external_ids`, tmdbOptions);
+				const movieExternalIdsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/${movieId}/external_ids`), tmdbOptions);
 				const movieExternalIds = await movieExternalIdsResponse.json();
 
 				// Add external IDs to the response
@@ -72,11 +83,11 @@ export async function GET(request) {
 				return NextResponse.json(enrichedMovieData);
 
 			case 'getSeasonDetails':
-				const seasonResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/season/${seasonId}?language=en-US`, tmdbOptions);
+				const seasonResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/season/${seasonId}?language=en-US`), tmdbOptions);
 				const seasonData = await seasonResponse.json();
 
 				// Fetch external IDs for the parent TV show to get IMDB ID
-				const showExternalIdsResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`, tmdbOptions);
+				const showExternalIdsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`), tmdbOptions);
 				const showExternalIds = await showExternalIdsResponse.json();
 
 				// Add show's external IDs to season data for subtitle fetching
@@ -99,14 +110,14 @@ export async function GET(request) {
 				return NextResponse.json(enrichedSeasonData);
 
 			case 'getIMDBtv':
-				const externalIdsTvResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`, tmdbOptions);
+				const externalIdsTvResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/external_ids`), tmdbOptions);
 				const externalIdsData = await externalIdsTvResponse.json();
 				const externalData = externalIdsData.imdb_id;
 				return NextResponse.json({ externalData });
 
 			case 'getTranslations':
 				const mediaType = searchParams.get('mediaType') || 'movie'; // movie or tv
-				const translationsResponse = await fetch(`https://api.themoviedb.org/3/${mediaType}/${movieId}/translations`, tmdbOptions);
+				const translationsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/${mediaType}/${movieId}/translations`), tmdbOptions);
 				const translationsData = await translationsResponse.json();
 				return NextResponse.json(translationsData);
 
@@ -115,15 +126,15 @@ export async function GET(request) {
 				const language = searchParams.get('language') || 'en-US';
 
 				// Fetch main details
-				const detailsResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}?language=${language}`, tmdbOptions);
+				const detailsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/${type}/${movieId}?language=${language}`), tmdbOptions);
 				const detailsData = await detailsResponse.json();
 
 				// Fetch external IDs (including IMDB ID)
-				const extIdsResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}/external_ids`, tmdbOptions);
+				const extIdsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/${type}/${movieId}/external_ids`), tmdbOptions);
 				const extIds = await extIdsResponse.json();
 
 				// Fetch translations for subtitle language detection
-				const transResponse = await fetch(`https://api.themoviedb.org/3/${type}/${movieId}/translations`, tmdbOptions);
+				const transResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/${type}/${movieId}/translations`), tmdbOptions);
 				const translations = await transResponse.json();
 
 				// Build comprehensive response with subtitle-ready data
@@ -143,8 +154,8 @@ export async function GET(request) {
 				return NextResponse.json(detailedMedia);
 
 			case 'getTrendingNow':
-				const trendingMoviesDailyResponse = await fetch(`https://api.themoviedb.org/3/trending/movie/day?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
-				const trendingShowsDailyResponse = await fetch(`https://api.themoviedb.org/3/trending/tv/day?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const trendingMoviesDailyResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/trending/movie/day?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
+				const trendingShowsDailyResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/trending/tv/day?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const trendingMoviesDailyData = await trendingMoviesDailyResponse.json();
 				const trendingShowsDailyData = await trendingShowsDailyResponse.json();
 
@@ -173,8 +184,8 @@ export async function GET(request) {
 				});
 
 			case 'getTrendingWeekly':
-				const trendingMoviesWeeklyResponse = await fetch(`https://api.themoviedb.org/3/trending/movie/week?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
-				const trendingShowsWeeklyResponse = await fetch(`https://api.themoviedb.org/3/trending/tv/week?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const trendingMoviesWeeklyResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/trending/movie/week?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
+				const trendingShowsWeeklyResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/trending/tv/week?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const trendingMoviesWeeklyData = await trendingMoviesWeeklyResponse.json();
 				const trendingShowsWeeklyData = await trendingShowsWeeklyResponse.json();
 
@@ -229,9 +240,9 @@ export async function GET(request) {
 				}
 				try {
 					const searchResponse = await fetch(
-						`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(
+						tmdbUrl(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(
 							query
-						)}&language=en-US&page=${pageNumber ? pageNumber : 1}&include_adult=false`,
+						)}&language=en-US&page=${pageNumber ? pageNumber : 1}&include_adult=false`),
 						tmdbOptions
 					);
 					const searchData = await searchResponse.json();
@@ -275,7 +286,7 @@ export async function GET(request) {
 				}
 
 			case 'getTopRatedMovies':
-				const topRatedMoviesResponse = await fetch(`https://api.themoviedb.org/3/movie/top_rated?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const topRatedMoviesResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/top_rated?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const topRatedMoviesData = await topRatedMoviesResponse.json();
 
 				// Filter out unreleased movies
@@ -287,12 +298,12 @@ export async function GET(request) {
 				});
 
 			case 'getUpcomingMovies':
-				const upcomingMoviesResponse = await fetch(`https://api.themoviedb.org/3/movie/upcoming?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const upcomingMoviesResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/upcoming?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const upcomingMoviesData = await upcomingMoviesResponse.json();
 				return NextResponse.json(upcomingMoviesData);
 
 			case 'getAiringTodayShows':
-				const airingTodayShowsResponse = await fetch(`https://api.themoviedb.org/3/tv/airing_today?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const airingTodayShowsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/airing_today?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const airingTodayShowsData = await airingTodayShowsResponse.json();
 
 				// Filter out unreleased shows
@@ -304,7 +315,7 @@ export async function GET(request) {
 				});
 
 			case 'getMovieRecommendations':
-				const movieRecommendationsResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/recommendations?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const movieRecommendationsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/${movieId}/recommendations?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const movieRecommendationsData = await movieRecommendationsResponse.json();
 
 				// Filter released content and add media_type to each recommendation
@@ -319,7 +330,7 @@ export async function GET(request) {
 				});
 
 			case 'getTVRecommendations':
-				const tvRecommendationsResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/recommendations?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const tvRecommendationsResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/recommendations?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const tvRecommendationsData = await tvRecommendationsResponse.json();
 
 				// Filter released content and add media_type to each recommendation
@@ -334,7 +345,7 @@ export async function GET(request) {
 				});
 
 			case 'getSimilarMovies':
-				const similarMoviesResponse = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/similar?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const similarMoviesResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/movie/${movieId}/similar?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const similarMoviesData = await similarMoviesResponse.json();
 
 				// Filter released content and add media_type to each similar movie
@@ -349,7 +360,7 @@ export async function GET(request) {
 				});
 
 			case 'getSimilarTV':
-				const similarTVResponse = await fetch(`https://api.themoviedb.org/3/tv/${movieId}/similar?language=en-US&page=${pageNumber ? pageNumber : 1}`, tmdbOptions);
+				const similarTVResponse = await fetch(tmdbUrl(`https://api.themoviedb.org/3/tv/${movieId}/similar?language=en-US&page=${pageNumber ? pageNumber : 1}`), tmdbOptions);
 				const similarTVData = await similarTVResponse.json();
 
 				// Filter released content and add media_type to each similar show

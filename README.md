@@ -161,12 +161,13 @@ For production deployment, Flyx runs on Cloudflare's edge network using Pages, W
 
 | Service | Platform | Purpose |
 |---------|----------|---------|
-| Frontend | Cloudflare Pages | Next.js app via OpenNext |
-| Stream Proxy | Cloudflare Worker | HLS proxying, CORS, provider routing |
-| DLHD Extractor | Cloudflare Worker | Live TV extraction + PoW auth |
-| CDN-Live Extractor | Cloudflare Worker | CDN live stream extraction |
-| Sync Worker | Cloudflare Worker + D1 | Cross-device sync, analytics |
-| RPI Proxy | Raspberry Pi | Residential IP for CDN bypass |
+| Frontend (`flyx-main-v2`) | Cloudflare Pages/Workers | Next.js app via OpenNext |
+| Stream Proxy (`media-proxy`) | Cloudflare Worker | HLS proxying, CORS, provider routing, **CDN-Live**, PPV, VIPRow |
+| DLHD Extractor (`dlhd`) | Cloudflare Worker | Live TV extraction + PoW auth (optional — a shared default is used if not deployed) |
+| Sync Worker (`flyx-sync`) | Cloudflare Worker + D1 | Cross-device sync, analytics, admin data |
+| RPI Proxy | Raspberry Pi | Residential IP for CDN bypass (optional, not a CF Worker) |
+
+> CDN-Live is **not** a separate worker — it is served by the `media-proxy` worker at `/cdn-live`.
 
 ### Prerequisites
 
@@ -203,18 +204,21 @@ Update `cf-sync-worker/wrangler.toml` with your D1 database ID.
 
 ### 3. Deploy Workers
 
+Use the npm scripts (recommended):
+
 ```bash
-# Stream proxy worker
-cd cloudflare-proxy && wrangler deploy
+npm run deploy:media-proxy   # cloudflare-proxy  -> media-proxy (required; also serves CDN-Live)
+npm run deploy:sync-worker   # cf-sync-worker    -> flyx-sync   (required for sync/analytics/admin; needs D1)
+npm run deploy:dlhd          # dlhd-extractor-worker -> dlhd     (optional; only if self-hosting DLHD)
+npm run deploy:workers       # the two required workers (media-proxy + flyx-sync)
+```
 
-# DLHD extractor worker
-cd dlhd-extractor-worker && wrangler deploy
+Or deploy individually with wrangler:
 
-# CDN-Live extractor worker
-cd cdn-live-extractor && wrangler deploy
-
-# Sync worker (with D1 binding)
-cd cf-sync-worker && wrangler deploy
+```bash
+cd cloudflare-proxy && wrangler deploy        # media-proxy (includes CDN-Live at /cdn-live)
+cd cf-sync-worker && wrangler deploy           # flyx-sync (needs D1 binding)
+cd dlhd-extractor-worker && wrangler deploy     # dlhd (optional — defaults to a shared worker)
 ```
 
 ### 4. Deploy Frontend

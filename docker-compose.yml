@@ -12,8 +12,21 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      # NEXT_PUBLIC_* vars are baked into the client bundle at BUILD time, so they
+      # must be passed as build args (the runtime env_file below cannot change them).
+      # Each defaults to the local Bun proxy (localhost:8787). To route a function
+      # through a Cloudflare Worker instead, set the matching var in docker/.env and
+      # rebuild: `docker compose up -d --build`. Mix and match freely (hybrid).
       args:
         - NEXT_PUBLIC_TMDB_API_KEY=${NEXT_PUBLIC_TMDB_API_KEY:-}
+        - NEXT_PUBLIC_CF_STREAM_PROXY_URL=${NEXT_PUBLIC_CF_STREAM_PROXY_URL:-http://localhost:8787/stream}
+        - NEXT_PUBLIC_CF_TV_PROXY_URL=${NEXT_PUBLIC_CF_TV_PROXY_URL:-http://localhost:8787}
+        - NEXT_PUBLIC_CF_ANALYTICS_WORKER_URL=${NEXT_PUBLIC_CF_ANALYTICS_WORKER_URL:-http://localhost:8787/analytics}
+        - NEXT_PUBLIC_CF_SYNC_URL=${NEXT_PUBLIC_CF_SYNC_URL:-http://localhost:8787/sync}
+        - NEXT_PUBLIC_DLHD_WORKER_URL=${NEXT_PUBLIC_DLHD_WORKER_URL:-http://localhost:8787/dlhd}
+        - NEXT_PUBLIC_PROXY_URL=${NEXT_PUBLIC_PROXY_URL:-http://localhost:8787}
+        - NEXT_PUBLIC_CDN_LIVE_WORKER_URL=${NEXT_PUBLIC_CDN_LIVE_WORKER_URL:-http://localhost:8787/cdn-live}
+        - NEXT_PUBLIC_CF_TMDB_URL=${NEXT_PUBLIC_CF_TMDB_URL:-http://localhost:8787}
     container_name: flyx
     restart: unless-stopped
     ports:
