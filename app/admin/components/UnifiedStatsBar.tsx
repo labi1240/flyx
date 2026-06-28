@@ -37,6 +37,7 @@ export default function UnifiedStatsBar() {
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: isMobile ? '12px' : '24px',
+        WebkitBackdropFilter: 'blur(10px)',
         backdropFilter: 'blur(10px)',
         flexWrap: isMobile ? 'wrap' : 'nowrap',
         minHeight: '60px',

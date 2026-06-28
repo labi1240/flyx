@@ -120,6 +120,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
                 boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
                 width: '100%',
                 maxWidth: '420px',
+                WebkitBackdropFilter: 'blur(20px)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 position: 'relative',
@@ -188,6 +189,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
                                 outline: 'none',
                                 background: 'rgba(255, 255, 255, 0.05)',
                                 color: '#f8fafc',
+                                WebkitBackdropFilter: 'blur(10px)',
                                 backdropFilter: 'blur(10px)'
                             }}
                             onFocus={(e) => {
@@ -231,6 +233,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
                                 outline: 'none',
                                 background: 'rgba(255, 255, 255, 0.05)',
                                 color: '#f8fafc',
+                                WebkitBackdropFilter: 'blur(10px)',
                                 backdropFilter: 'blur(10px)'
                             }}
                             onFocus={(e) => {
@@ -256,6 +259,7 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
                             textAlign: 'center',
                             fontSize: '14px',
                             border: '1px solid rgba(239, 68, 68, 0.2)',
+                            WebkitBackdropFilter: 'blur(10px)',
                             backdropFilter: 'blur(10px)'
                         }}>
                             {error}

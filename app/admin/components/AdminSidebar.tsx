@@ -75,6 +75,7 @@ export default function AdminSidebar() {
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '24px',
+                WebkitBackdropFilter: 'blur(20px)',
                 backdropFilter: 'blur(20px)',
                 position: 'relative',
                 zIndex: 50

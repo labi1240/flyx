@@ -80,6 +80,7 @@ export default function DateRangePicker() {
                     minWidth: '200px',
                     boxShadow: '0 10px 40px rgba(0, 0, 0, 0.4)',
                     zIndex: 50,
+                    WebkitBackdropFilter: 'blur(20px)',
                     backdropFilter: 'blur(20px)'
                 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

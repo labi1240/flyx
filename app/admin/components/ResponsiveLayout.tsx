@@ -47,6 +47,7 @@ export default function ResponsiveLayout({ sidebar, children }: ResponsiveLayout
             borderRadius: '8px',
             color: '#f8fafc',
             cursor: 'pointer',
+            WebkitBackdropFilter: 'blur(10px)',
             backdropFilter: 'blur(10px)',
           }}
           aria-label={sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}

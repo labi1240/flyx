@@ -13,6 +13,7 @@ export default function AdminHeader() {
             justifyContent: 'space-between',
             borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
             background: 'rgba(15, 23, 42, 0.4)',
+            WebkitBackdropFilter: 'blur(20px)',
             backdropFilter: 'blur(20px)',
             position: 'sticky',
             top: 0,

@@ -127,6 +127,7 @@ export default function AdminBanner() {
       fontSize: '14px',
       fontWeight: '500',
       animation: 'slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+      WebkitBackdropFilter: 'blur(12px)',
       backdropFilter: 'blur(12px)',
       borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
     };

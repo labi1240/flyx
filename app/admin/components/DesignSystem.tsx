@@ -107,6 +107,7 @@ export const COMPONENT_STYLES = {
     border: `1px solid ${DESIGN_TOKENS.colors.border}`,
     borderRadius: DESIGN_TOKENS.borderRadius.lg,
     padding: DESIGN_TOKENS.spacing.lg,
+    WebkitBackdropFilter: 'blur(20px)',
     backdropFilter: 'blur(20px)',
   },
   

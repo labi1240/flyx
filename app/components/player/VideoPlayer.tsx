@@ -3858,6 +3858,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             gap: '10px',
             zIndex: 100,
             animation: 'fadeIn 0.2s ease',
+            WebkitBackdropFilter: 'blur(4px)',
             backdropFilter: 'blur(4px)',
           }}
         >
@@ -3887,6 +3888,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             gap: '10px',
             zIndex: 100,
             animation: 'fadeIn 0.2s ease',
+            WebkitBackdropFilter: 'blur(4px)',
             backdropFilter: 'blur(4px)',
           }}
         >
@@ -4980,6 +4982,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                 alignItems: 'center',
                 gap: '6px',
                 background: 'rgba(0,0,0,0.6)',
+                WebkitBackdropFilter: 'blur(4px)',
                 backdropFilter: 'blur(4px)',
                 padding: '6px 10px',
                 borderRadius: '20px',
@@ -5141,6 +5144,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
             data-player-top-control="server"
             style={{
               background: 'rgba(0,0,0,0.5)',
+              WebkitBackdropFilter: 'blur(4px)',
               backdropFilter: 'blur(4px)',
               padding: '0.75rem',
               borderRadius: '50%'

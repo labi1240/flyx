@@ -75,6 +75,7 @@ export default function LoadingSpinner({
           alignItems: 'center',
           justifyContent: 'center',
           background: 'rgba(15, 23, 42, 0.8)',
+          WebkitBackdropFilter: 'blur(4px)',
           backdropFilter: 'blur(4px)',
           zIndex: 9999,
         }}

@@ -69,6 +69,7 @@ export default function SystemStatus() {
       padding: '28px',
       borderRadius: '16px',
       border: '1px solid rgba(255, 255, 255, 0.1)',
+      WebkitBackdropFilter: 'blur(20px)',
       backdropFilter: 'blur(20px)',
       marginTop: '24px'
     }}>
@@ -95,6 +96,7 @@ export default function SystemStatus() {
           borderRadius: '24px',
           background: `${overall.color}20`,
           border: `1px solid ${overall.color}40`,
+          WebkitBackdropFilter: 'blur(10px)',
           backdropFilter: 'blur(10px)'
         }}>
           <span style={{ fontSize: '16px' }}>{overall.icon}</span>
