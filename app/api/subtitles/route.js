@@ -69,18 +69,32 @@ async function fetchSubtitlesForLanguage(imdbId, languageId, season, episode, qu
     
     console.log(`[SUBTITLES] Fetching ${languageId}:`, apiUrl);
     
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'TemporaryUserAgent',
-        'X-User-Agent': 'TemporaryUserAgent',
-        'Accept': 'application/json',
-      },
-      redirect: 'follow',
-    });
-    
-    if (!response.ok) {
-      console.log(`[SUBTITLES] No results for ${languageId} (${response.status})`);
+    // OpenSubtitles' legacy REST endpoint resets/throttles bursts of concurrent
+    // connections from one IP. A single failed request shouldn't drop the whole
+    // language — retry once after a short backoff before giving up.
+    let response = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'TemporaryUserAgent',
+            'X-User-Agent': 'TemporaryUserAgent',
+            'Accept': 'application/json',
+          },
+          redirect: 'follow',
+        });
+        if (response.ok) break;
+        console.log(`[SUBTITLES] ${languageId} HTTP ${response.status} (attempt ${attempt + 1})`);
+      } catch (e) {
+        console.log(`[SUBTITLES] ${languageId} fetch failed (attempt ${attempt + 1}): ${e.message}`);
+        response = null;
+      }
+      if (attempt === 0) await new Promise(r => setTimeout(r, 400));
+    }
+
+    if (!response || !response.ok) {
+      console.log(`[SUBTITLES] No results for ${languageId}`);
       return [];
     }
     
@@ -150,11 +164,22 @@ export async function GET(request) {
   try {
     console.log('[SUBTITLES] Request:', { imdbId, query, season, episode });
 
-    // Fetch subtitles for all languages in parallel
+    // Fetch subtitles with LIMITED concurrency. OpenSubtitles' legacy endpoint
+    // resets the connection when too many requests arrive from one IP at once
+    // (firing all ~30 languages in parallel returns empty for nearly all of
+    // them). A small worker pool keeps us under that limit while staying well
+    // within the function time budget (~30 langs / 4 workers x ~0.8s ≈ 6s).
     const languageIds = Object.keys(languageMap);
-    const results = await Promise.all(
-      languageIds.map(langId => fetchSubtitlesForLanguage(imdbId, langId, season, episode, query))
-    );
+    const CONCURRENCY = 4;
+    const results = [];
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < languageIds.length) {
+        const langId = languageIds[cursor++];
+        results.push(await fetchSubtitlesForLanguage(imdbId, langId, season, episode, query));
+      }
+    };
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
     // Flatten all subtitles
     const allSubtitles = results.flat();

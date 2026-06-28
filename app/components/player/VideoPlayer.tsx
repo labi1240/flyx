@@ -497,7 +497,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       // Video is paused
       if (showControls) {
         // Controls are visible, so unpause
-        videoRef.current.play();
+        videoRef.current.play().catch(() => {});
       } else {
         // Controls are hidden, just show them first
         setShowControls(true);
@@ -1612,25 +1612,20 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
         });
 
         hls.on(Hls.Events.ERROR, async (_event, data) => {
-          // Use console.warn for non-fatal errors to avoid triggering Next.js dev overlay
+          // Use console.warn for non-fatal errors to avoid triggering Next.js dev overlay.
+          // Fold the fields into the message STRING — Next.js 16's dev overlay
+          // serializes object args to console.* as an empty `{}`, so anything
+          // passed as a separate object would be invisible right when it matters.
           const logFn = data.fatal ? console.error : console.warn;
-          logFn('[HLS] Error:', {
-            type: data.type,
-            details: data.details,
-            fatal: data.fatal,
-            url: data.url,
-            response: data.response,
-            reason: data.reason,
-            frag: data.frag ? { sn: data.frag.sn, url: data.frag.url } : null,
-          });
-
-          // Log the actual response if available
-          if (data.response) {
-            logFn('[HLS] Response details:', {
-              code: data.response.code,
-              text: data.response.text,
-            });
-          }
+          const resp = data.response
+            ? ` [resp ${data.response.code ?? '?'} ${data.response.text ?? ''}]`
+            : '';
+          const fragInfo = data.frag ? ` [frag sn=${data.frag.sn} ${data.frag.url}]` : '';
+          logFn(
+            `[HLS] ${data.fatal ? 'FATAL' : 'non-fatal'} ${data.type}/${data.details}` +
+            `${data.url ? ` url=${data.url}` : ''}${resp}${fragInfo}` +
+            `${data.reason ? ` reason=${data.reason}` : ''}`
+          );
 
           if (data.fatal) {
             // Determine if this is a segment-level error (single fragment/level)
@@ -3035,7 +3030,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     if (isPlaying) {
       videoRef.current.pause();
     } else {
-      videoRef.current.play();
+      videoRef.current.play().catch(() => {});
     }
   };
 
@@ -3624,7 +3619,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const handleStartOver = () => {
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
-      videoRef.current.play();
+      videoRef.current.play().catch(() => {});
     }
     setShowResumePrompt(false);
     shouldShowResumePromptRef.current = false;
@@ -3633,7 +3628,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
   const handleResume = () => {
     if (videoRef.current) {
       videoRef.current.currentTime = savedProgress;
-      videoRef.current.play();
+      videoRef.current.play().catch(() => {});
       // Resync subtitles after a short delay to ensure seek is complete
       setTimeout(resyncSubtitles, 100);
     }
