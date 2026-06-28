@@ -1,6 +1,7 @@
 import './globals.css'
 import { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import AnalyticsProvider from './components/analytics/AnalyticsProvider'
 import PresenceProvider from './components/analytics/PresenceProvider'
 import { RegionProvider } from './lib/context/RegionContext'
@@ -131,6 +132,7 @@ export default function RootLayout({
             </PresenceProvider>
           </AnalyticsProvider>
         </RegionProvider>
+        <SpeedInsights />
       </body>
     </html>
   )
