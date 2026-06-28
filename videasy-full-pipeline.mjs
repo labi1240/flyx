@@ -141,13 +141,13 @@ async function main() {
       tmdbId,
       imdbId,
     });
-    const url = `https://api.videasy.net${endpoint}?${params}`;
+    const url = `https://api.videasy.to${endpoint}?${params}`;
 
     try {
       const res = await fetch(url, {
         headers: {
-          'Origin': 'https://player.videasy.net',
-          'Referer': 'https://player.videasy.net/',
+          'Origin': 'https://player.videasy.to',
+          'Referer': 'https://player.videasy.to/',
         }
       });
       const text = await res.text();

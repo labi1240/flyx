@@ -323,15 +323,15 @@ async function main() {
   }
 
   console.log('\n=== Step 2: Fetch encrypted API data ===');
-  const apiUrl = `https://api.videasy.net/downloader2/sources-with-title?tmdbId=${tmdbId}&type=movie&title=Fight+Club&season=0&episode=0`;
+  const apiUrl = `https://api.videasy.to/downloader2/sources-with-title?tmdbId=${tmdbId}&type=movie&title=Fight+Club&season=0&episode=0`;
   console.log('API URL:', apiUrl);
 
   let encryptedHex;
   try {
     const res = await fetch(apiUrl, {
       headers: {
-        'Origin': 'https://player.videasy.net',
-        'Referer': 'https://player.videasy.net/',
+        'Origin': 'https://player.videasy.to',
+        'Referer': 'https://player.videasy.to/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });

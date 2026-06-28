@@ -1,5 +1,5 @@
 // Videasy Source Extractor for Flyx
-// Reverse engineered from player.videasy.net — May 2026
+// Reverse engineered from player.videasy.to — May 2026
 //
 // Pipeline:
 //   API → WASM decrypt(hex, tmdbId) → AES decrypt(base64, "") → JSON {sources, subtitles}
@@ -8,7 +8,7 @@
 //   - b35ebba4 key is ALWAYS empty string (XOR hex fails Hashids decimal validation)
 //   - WASM g_sb global must be patched from 0→1 to bypass verify() gate
 //   - WASM decrypt resets g_sb each call; patched to keep it at 1
-//   - API endpoint: api.videasy.net/cdn/sources-with-title (most reliable)
+//   - API endpoint: api.videasy.to/cdn/sources-with-title (most reliable)
 import { readFileSync } from 'fs';
 import crypto from 'crypto';
 import path from 'path';
@@ -133,10 +133,10 @@ async function wasmDecrypt(hexData, tmdbId) {
 // ============================================================================
 // API Client
 // ============================================================================
-const API_BASE = 'https://api.videasy.net';
+const API_BASE = 'https://api.videasy.to';
 const DEFAULT_HEADERS = {
-  'Origin': 'https://player.videasy.net',
-  'Referer': 'https://player.videasy.net/',
+  'Origin': 'https://player.videasy.to',
+  'Referer': 'https://player.videasy.to/',
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 };
 

@@ -1,7 +1,7 @@
 /**
  * Videasy Source Proxy
  *
- * CORS proxy for api.videasy.net. Fetches the raw hex-encrypted API response
+ * CORS proxy for api.videasy.to. Fetches the raw hex-encrypted API response
  * and returns it to the caller. WASM + AES decryption happens client-side.
  *
  * Extraction priority:
@@ -548,7 +548,7 @@ export async function handleVideasyRequest(
 
     // ── SECONDARY PATH: VPS Turnstile solver (cf_clearance from OVH VPS) ──
     // The VPS solves Cloudflare Turnstile challenges from a non-Cloudflare IP.
-    // We get the cf_clearance cookie and use it to call api.videasy.net.
+    // We get the cf_clearance cookie and use it to call api.videasy.to.
     console.log('[Videasy] Trying VPS Turnstile solver...');
     try {
       const turnstileResult = await fetchWithTurnstile(extractParams);
