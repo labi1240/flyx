@@ -413,8 +413,8 @@
 }
 
 .iconButton {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -430,6 +430,13 @@
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   transform: translateZ(0);
+}
+
+/* Override the SVGs' inline width/height so the glyphs are actually visible
+   on phone screens — 20px icons inside a 48px button read as tiny dots. */
+.iconButton svg {
+  width: 24px;
+  height: 24px;
 }
 
 .iconButton:active {
@@ -916,11 +923,32 @@
   height: 54px;
 }
 
+/* Portrait: slightly larger top-bar icons for easier tapping */
+.container.portrait .topBar .iconButton {
+  width: 50px;
+  height: 50px;
+}
+.container.portrait .topBar .iconButton svg {
+  width: 26px;
+  height: 26px;
+}
+
 /* Landscape mode specific styles */
 .container.landscape .topBar {
   padding: 0.75rem 1.5rem;
   padding-left: max(1.5rem, env(safe-area-inset-left));
   padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+
+/* Landscape: the screen is wide and the center controls are big (80/60px),
+   so scale the top-bar icons up to match instead of leaving them tiny. */
+.container.landscape .topBar .iconButton {
+  width: 54px;
+  height: 54px;
+}
+.container.landscape .topBar .iconButton svg {
+  width: 30px;
+  height: 30px;
 }
 
 .container.landscape .bottomBar {
