@@ -13,6 +13,7 @@
 
 import { getWasm, wasmDecrypt, aesDecrypt } from './videasy-crypto';
 import { getVideasyStreamProxyUrl } from '../proxy-config';
+import { nextVideasyDispatcher } from './videasy-proxy-pool';
 import type { StreamSource } from '../providers/types';
 
 function getCfWorkerBaseUrl(): string {
@@ -93,10 +94,13 @@ async function fetchVideasyHexDirect(
       ? `${base}?title=${encTitle}&mediaType=tv&year=&episodeId=${episode}&seasonId=${season}&tmdbId=${encodeURIComponent(tmdbId)}&imdbId=`
       : `${base}?title=${encTitle}&mediaType=movie&year=&tmdbId=${encodeURIComponent(tmdbId)}&imdbId=`;
 
+  // Optional outbound proxy pool (rotate datacenter IPs to dodge per-IP limits).
+  const dispatcher = nextVideasyDispatcher();
   const res = await fetch(url, {
     headers: VIDEASY_API_HEADERS,
     signal: AbortSignal.timeout(20000),
-  });
+    ...(dispatcher ? { dispatcher } : {}),
+  } as RequestInit & { dispatcher?: unknown });
   if (!res.ok) {
     console.warn(`[Videasy] hex fetch HTTP ${res.status} for ${type} ${tmdbId}`);
     return null;

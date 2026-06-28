@@ -86,7 +86,11 @@ Env values live in **`.env.local`** (gitignored): TMDB v3 key `550b3a6b5e7c1af89
 
 ## Important caveats / gotchas
 
-1. **VPS datacenter IP risk (UNTESTED):** all videasy proof was on the user's **residential** Mac IP. On a cloud VPS (datacenter IP), `api.videasy.to` and/or `shegu.org` *may* 403. If so, route through a residential box. The architecture is unchanged either way.
+1. **VPS IP — TESTED OK for videasy:** videasy works through a VPN AND a thordata proxy (different ISP IPs): api.videasy.to hex (200), shegu.org playlist + segment (200). Gate is the **Referer header, not the IP type**, so videasy works on the VPS. (RPI/residential proxy still needed for OTHER providers that DO block datacenter IPs — Flixer CDN, PPV/poocloud.in.)
+
+1b. **Videasy CANNOT run on a Cloudflare Worker — CONFIRMED (403).** Tested: a CF Worker fetching api.videasy.to AND shegu.org returns **403 even with the correct Referer**, while residential/datacenter/VPN IPs return 200. Cloudflare attaches a `cf-worker` header + exits known Cloudflare IPs, which videasy (itself a CF customer) blocks. So videasy delivery MUST come from non-Cloudflare servers.
+
+1c. **Scaling videasy:** every videasy segment flows through the VPS (~4 Mbps per 1080p viewer) — a single VPS handles a few dozen concurrent streams (bandwidth/NIC-bound). To scale: **unmetered datacenter boxes + a POOL of IPs rotated per request** (videasy rate-limits per IP). Implemented: set `VIDEASY_PROXY_POOL` (comma-separated `http://user:pass@ip:port` list) — `app/lib/services/videasy-proxy-pool.ts` round-robins it via undici `ProxyAgent` for both the extraction hex fetch and the segment delivery. Unset = direct fetch from the host IP (default). Flixer/BingeBox ride Cloudflare and scale for free — keep them primary at high traffic.
 2. **NEXT_PUBLIC_* are build-time:** baked into the client bundle. Changing them requires a rebuild (`docker compose up -d --build`); editing `docker/.env` + restart is NOT enough. `flyx.sh`/`flyx.ps1` were fixed to pass `--env-file docker/.env` so Compose reads them for build args.
 3. **D1 errors in local dev are EXPECTED** — D1 only binds inside Cloudflare Workers; `next dev` logs "D1 not available" for banner/sync. Harmless locally.
 4. **TMDB:** code uses the **v3 key** (`?api_key=`). `app/api/tmdb/route.js` was fixed (it wrongly sent v3 key as a Bearer → 401); now uses v4 `TMDB_API_ACCESS_TOKEN` for Bearer with v3 fallback.

@@ -16,6 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { nextVideasyDispatcher } from '@/app/lib/services/videasy-proxy-pool';
 
 export const runtime = 'nodejs';
 
@@ -53,7 +54,14 @@ export async function GET(request: NextRequest) {
     const range = request.headers.get('range');
     if (range) headers.Range = range;
 
-    const upstream = await fetch(decodedUrl, { headers, redirect: 'follow' });
+    // Optional outbound proxy pool (rotates datacenter IPs to dodge per-IP
+    // rate limits at scale). Undefined = direct fetch from this host's IP.
+    const dispatcher = nextVideasyDispatcher();
+    const upstream = await fetch(decodedUrl, {
+      headers,
+      redirect: 'follow',
+      ...(dispatcher ? { dispatcher } : {}),
+    } as RequestInit & { dispatcher?: unknown });
 
     if (!upstream.ok && upstream.status !== 206) {
       return NextResponse.json(
