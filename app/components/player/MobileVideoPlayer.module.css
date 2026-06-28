@@ -476,6 +476,7 @@
   align-items: center;
   gap: 6px;
   background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   padding: 6px 10px;
   border-radius: 20px;
@@ -1185,8 +1186,8 @@
   touch-action: manipulation;
   transition: background 0.2s ease, transform 0.1s ease, border-color 0.2s ease;
   z-index: 100;
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 .skipIntroOutroButton:active {

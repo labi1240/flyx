@@ -82,6 +82,7 @@
   width: 100%;
   text-align: left;
   /* Override global button styles */
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
   transform: none;
 }
@@ -158,6 +159,7 @@
   margin: 0 auto;
   flex-shrink: 0;
   /* Override global button styles */
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
   overflow: visible;
   transform: none;
