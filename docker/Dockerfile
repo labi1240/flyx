@@ -65,8 +65,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public/flixer.wasm ./public/flixer.wasm
-COPY --from=builder /app/pow_wasm.js ./pow_wasm.js
-COPY --from=builder /app/pow_wasm_bg.wasm ./pow_wasm_bg.wasm
 
 # ── Copy proxy TypeScript source (Bun runs it directly, no build step) ──────
 COPY docker/proxy /proxy
