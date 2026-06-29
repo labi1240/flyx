@@ -58,10 +58,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Set secure cookie
+    // Set secure cookie.
+    // `Secure` cookies are dropped by browsers over plain HTTP, so a bare-IP /
+    // HTTP-only deployment can't hold a session. Set ALLOW_INSECURE_COOKIES=true
+    // to relax this for HTTP access (e.g. http://<vps-ip> before HTTPS is set up).
+    // Remove it once the site is served over HTTPS.
+    const secureCookie =
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_INSECURE_COOKIES !== 'true';
     response.cookies.set(ADMIN_COOKIE, authResult.token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: secureCookie,
       sameSite: 'lax', // Changed from 'strict' to allow redirects
       maxAge: 24 * 60 * 60, // 24 hours
       path: '/', // Ensure cookie is available on all paths
