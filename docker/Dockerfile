@@ -9,7 +9,9 @@
 ###############################################################################
 
 # ── Stage 1: Build the Next.js app with Node.js ────────────────────────────
-FROM node:20-alpine AS builder
+# Must match the runner's Node major (Alpine apk nodejs = 22) or better-sqlite3's
+# native binary fails to load at runtime (ERR_DLOPEN_FAILED / V8 symbol mismatch).
+FROM node:22-alpine AS builder
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
