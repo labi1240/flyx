@@ -72,6 +72,9 @@ COPY --from=builder /app/pow_wasm_bg.wasm ./pow_wasm_bg.wasm
 COPY docker/proxy /proxy
 RUN cd /proxy && bun install --production
 
+# ── Admin seed script (run once after first boot to create your login) ──────
+COPY docker/seed-admin.mjs /app/scripts/seed-admin.mjs
+
 # ── Entrypoint ──────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

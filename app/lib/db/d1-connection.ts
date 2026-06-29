@@ -96,6 +96,14 @@ export function getD1Database(env?: D1Env): D1Database {
     return env.DB;
   }
 
+  // Local/VPS fallback: use a SQLite file when DATABASE_BACKEND=sqlite.
+  // (Shim + better-sqlite3 are lazy-required so they never enter the CF build.)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { shouldUseSqlite, getSqliteD1 } = require('./d1-sqlite-shim');
+  if (shouldUseSqlite()) {
+    return getSqliteD1('flyx-analytics');
+  }
+
   // Try OpenNext's getCloudflareContext (preferred method for Next.js on Cloudflare)
   try {
     // Dynamic import to avoid build errors when not in Cloudflare environment
@@ -140,6 +148,13 @@ export function getAdminD1Database(env?: D1Env): D1Database {
   // First, check if env is passed directly (preferred in Workers)
   if (env?.ADMIN_DB) {
     return env.ADMIN_DB;
+  }
+
+  // Local/VPS fallback: separate SQLite file for admin tables.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { shouldUseSqlite, getSqliteD1 } = require('./d1-sqlite-shim');
+  if (shouldUseSqlite()) {
+    return getSqliteD1('flyx-admin');
   }
 
   // Try OpenNext's getCloudflareContext (preferred method for Next.js on Cloudflare)

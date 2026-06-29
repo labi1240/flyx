@@ -17,13 +17,13 @@ directory = ".open-next/assets"
 [[d1_databases]]
 binding = "DB"
 database_name = "flyx-analytics-db"
-database_id = "07bf7704-5198-4f57-80f3-8e4d58626d3e"
+database_id = "5944fd0b-262f-4ab2-85fb-1647aba06982"
 
 # ADMIN_DB = Admin database for admin_users, feedback, bot_detections
 [[d1_databases]]
 binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
-database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
+database_id = "df0cfada-d9cc-4205-b38f-9fec4e9dfd48"
 
 # Service Binding: media-proxy
 # Direct worker→worker calls via env.MEDIA_PROXY.fetch() bypass the public HTTP
@@ -115,12 +115,12 @@ DECODER_SANDBOX_API_KEY = "your-sandbox-api-key"
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "flyx-analytics-db"
-database_id = "07bf7704-5198-4f57-80f3-8e4d58626d3e"
+database_id = "5944fd0b-262f-4ab2-85fb-1647aba06982"
 
 [[env.production.d1_databases]]
 binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
-database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
+database_id = "df0cfada-d9cc-4205-b38f-9fec4e9dfd48"
 
 [[env.production.services]]
 binding = "MEDIA_PROXY"
@@ -162,12 +162,12 @@ DECODER_SANDBOX_API_KEY = "your-sandbox-api-key"
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "flyx-analytics-db"
-database_id = "07bf7704-5198-4f57-80f3-8e4d58626d3e"
+database_id = "5944fd0b-262f-4ab2-85fb-1647aba06982"
 
 [[env.preview.d1_databases]]
 binding = "ADMIN_DB"
 database_name = "flyx-admin-db"
-database_id = "a7e294a7-ca7d-499f-9194-eb33b641e39a"
+database_id = "df0cfada-d9cc-4205-b38f-9fec4e9dfd48"
 
 [[env.preview.services]]
 binding = "MEDIA_PROXY"
