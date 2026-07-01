@@ -103,7 +103,7 @@ export class PloyanProvider implements Provider {
     }
   }
 
-  async fetchSourceByName(sourceName: string, request: ExtractionRequest): Promise<StreamSource | null> {
+  async fetchSourceByName(_sourceName: string, request: ExtractionRequest): Promise<StreamSource | null> {
     const result = await this.extract(request);
     if (!result.success || result.sources.length === 0) return null;
     
