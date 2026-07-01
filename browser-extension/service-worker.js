@@ -12,6 +12,12 @@
  */
 import { solveRecaptchaV3, verifyToken } from './lib/recaptcha.js';
 
+// ── Deployment config ───────────────────────────────────────────────────
+// Your media-proxy Cloudflare Worker base URL. Used for StreamNinja bundle
+// extraction and the Videasy proxy pool. When self-hosting, set this to YOUR
+// workers.dev subdomain (or a custom domain) — NOT the original owner's.
+const MEDIA_PROXY_BASE = 'https://media-proxy.lovepreetgill1238.workers.dev';
+
 // ── Provider Definitions ────────────────────────────────────────────────
 
 const PROVIDERS = {
@@ -764,7 +770,7 @@ async function snLoadBundle() {
 
   snBundlePromise = (async () => {
     // Fetch cached bundle from our Worker (avoids hitting streamninja.xyz)
-    var resp = await fetch('https://media-proxy.vynx-3b3.workers.dev/streamninja/bundle');
+    var resp = await fetch(MEDIA_PROXY_BASE + '/streamninja/bundle');
     var source = await resp.text();
     source = source.replace(
       /export\{hQ0VQk as j,jJfxvqG as m\};/,
@@ -927,7 +933,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
     if (cookieValue) {
       cacheVideasySession({ token: cookieValue, cookieName: cookieName, expiresIn: 3600 });
       // POST to CF Worker pool for non-extension users
-      var poolUrl = 'https://media-proxy.vynx-3b3.workers.dev/stream/videasy/pool';
+      var poolUrl = MEDIA_PROXY_BASE + '/stream/videasy/pool';
       fetch(poolUrl.replace(/\/stream\//, '/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

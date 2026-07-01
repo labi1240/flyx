@@ -18,7 +18,7 @@
 (function () {
   'use strict';
 
-  window.__FLYX_EXTENSION__ = { version: '3.2.0', installed: true };
+  window.__FLYX_EXTENSION__ = { version: '3.4.0', installed: true };
   var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36';
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -144,8 +144,13 @@
   function isWorker(url) {
     try { return new URL(url, location.origin).hostname.endsWith('.workers.dev'); } catch (e) { return false; }
   }
+  // Match ANY dlhd.*.workers.dev (your own deployment's DLHD worker, not just
+  // the original owner's), so DLHD extraction is delegated to the SW correctly.
   function isDLHD(url) {
-    try { return new URL(url, location.origin).hostname === 'dlhd.vynx-3b3.workers.dev'; } catch (e) { return false; }
+    try {
+      var h = new URL(url, location.origin).hostname;
+      return h.indexOf('dlhd.') === 0 && h.endsWith('.workers.dev');
+    } catch (e) { return false; }
   }
 
   // ── DLHD Handler ──────────────────────────────────────────────────────

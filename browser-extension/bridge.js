@@ -41,7 +41,7 @@
 
     // Extension detection ping/pong
     if (e.data.__flyx === 'ping') {
-      window.postMessage({ __flyx: 'pong', version: '3.2.0' }, '*');
+      window.postMessage({ __flyx: 'pong', version: '3.4.0' }, '*');
       return;
     }
 

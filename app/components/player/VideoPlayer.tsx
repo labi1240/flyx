@@ -369,6 +369,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
     animekai: false, // AnimeKai requires RPI for full pipeline — dead without RPI
     hianime: true, // Browser-direct via CF Worker /hianime/extract (search→match→extract→decrypt)
     miruro: true, // Browser-direct via CF Worker /miruro/* (pipe-encrypted API, MAL→AniList)
+    ployan: true, // VPS Headless Extractor bypassing Cloudflare
   });
   const [isAnimeContent, setIsAnimeContent] = useState(false); // Track if current content is anime
   const [providerTabOrder, setProviderTabOrder] = useState<string[]>([]); // User-preferred provider tab order
