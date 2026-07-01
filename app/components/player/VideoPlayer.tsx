@@ -1095,7 +1095,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
       // Anime: ONLY use anime-native providers (Miruro, AnimeKai).
       // Movie/TV providers do NOT understand anime titles/MAL IDs and return
       // wrong content or garbage. Never fall back to them for anime.
-      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox'];
+      const movieTvOrder: string[] = ['videasy', 'flixer', 'bingebox', 'ployan'];
       const animeOrder: string[] = ['miruro', 'animekai'];
       const defaultOrder: string[] = isAnime
         ? animeOrder
@@ -5185,6 +5185,7 @@ export default function VideoPlayer({ tmdbId, mediaType, season, episode, title,
                         videasy: 'Videasy',
                         flixer: 'Flixer',
                         bingebox: 'BingeBox',
+                        ployan: 'Ployan',
                       };
                       return (
                         <button
